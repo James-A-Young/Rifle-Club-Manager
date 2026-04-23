@@ -1,0 +1,119 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MembershipRole {
+  MEMBER
+  ADMIN
+}
+
+enum OwnerType {
+  USER
+  CLUB
+}
+
+model User {
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role     @default(MEMBER)
+  gdprConsentDate DateTime
+  address         String
+  placeOfBirth    String
+  dateOfBirth     DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ownedClubs   Club[]
+  memberships  ClubMembership[]
+  visitLogs    VisitLog[]
+  firearms     Firearm[]
+}
+
+model Club {
+  id            String   @id @default(cuid())
+  name          String
+  homeOfficeRef String?
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id])
+  createdAt     DateTime @default(now())
+
+  memberships ClubMembership[]
+  visitLogs   VisitLog[]
+  signInLinks SignInLink[]
+  firearms    Firearm[]
+}
+
+model ClubMembership {
+  id        String           @id @default(cuid())
+  userId    String
+  clubId    String
+  status    MembershipStatus @default(PENDING)
+  role      MembershipRole   @default(MEMBER)
+  expiresAt DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
+
+  @@unique([userId, clubId])
+}
+
+model Firearm {
+  id           String    @id @default(cuid())
+  make         String
+  model        String
+  caliber      String
+  serialNumber String
+  ownerType    OwnerType
+  userId       String?
+  clubId       String?
+  createdAt    DateTime  @default(now())
+
+  user      User?      @relation(fields: [userId], references: [id])
+  club      Club?      @relation(fields: [clubId], references: [id])
+  visitLogs VisitLog[]
+}
+
+model VisitLog {
+  id            String    @id @default(cuid())
+  userId        String
+  clubId        String
+  purpose       String
+  firearmUsedId String?
+  timeIn        DateTime  @default(now())
+  timeOut       DateTime?
+  createdAt     DateTime  @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+  club        Club     @relation(fields: [clubId], references: [id])
+  firearmUsed Firearm? @relation(fields: [firearmUsedId], references: [id])
+}
+
+model SignInLink {
+  id          String   @id @default(cuid())
+  clubId      String
+  cryptoToken String   @unique
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  club Club @relation(fields: [clubId], references: [id])
+}

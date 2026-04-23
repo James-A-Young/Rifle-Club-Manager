@@ -1,0 +1,166 @@
+import React, { useEffect, useState } from 'react';
+import { api } from '../api';
+import FirearmForm from '../components/FirearmForm';
+
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  address: string;
+  placeOfBirth: string;
+  dateOfBirth: string;
+  role: string;
+}
+
+interface Firearm {
+  id: string;
+  make: string;
+  model: string;
+  caliber: string;
+  serialNumber: string;
+}
+
+export default function Profile() {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [firearms, setFirearms] = useState<Firearm[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [showFirearmForm, setShowFirearmForm] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', placeOfBirth: '', dateOfBirth: '' });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    api.get<UserProfile>('/api/users/me').then(p => {
+      setProfile(p);
+      setForm({
+        name: p.name,
+        address: p.address,
+        placeOfBirth: p.placeOfBirth,
+        dateOfBirth: p.dateOfBirth.split('T')[0],
+      });
+    });
+    api.get<Firearm[]>('/api/users/me/firearms').then(setFirearms);
+  }, []);
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    try {
+      const updated = await api.patch<UserProfile>('/api/users/me', form);
+      setProfile(updated);
+      setEditing(false);
+      setSuccess('Profile updated successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error updating profile');
+    }
+  }
+
+  async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
+    const f = await api.post<Firearm>('/api/users/me/firearms', data);
+    setFirearms(prev => [...prev, f]);
+    setShowFirearmForm(false);
+  }
+
+  async function removeFirearm(id: string) {
+    await api.delete(`/api/users/me/firearms/${id}`);
+    setFirearms(prev => prev.filter(f => f.id !== id));
+  }
+
+  if (!profile) return <div>Loading…</div>;
+
+  return (
+    <>
+      <h1>Profile</h1>
+      {error && <div className="alert alert-error">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
+
+      <section>
+        <div className="page-header">
+          <h2>Personal Information</h2>
+          <button className="btn btn-secondary btn-sm" onClick={() => setEditing(e => !e)}>
+            {editing ? 'Cancel' : 'Edit'}
+          </button>
+        </div>
+
+        {editing ? (
+          <form onSubmit={saveProfile}>
+            <div className="form-group">
+              <label>Full Name</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Address</label>
+              <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Place of Birth</label>
+              <input value={form.placeOfBirth} onChange={e => setForm(f => ({ ...f, placeOfBirth: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Date of Birth</label>
+              <input type="date" value={form.dateOfBirth} onChange={e => setForm(f => ({ ...f, dateOfBirth: e.target.value }))} required />
+            </div>
+            <button type="submit" className="btn btn-primary">Save Changes</button>
+          </form>
+        ) : (
+          <dl style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '0.5rem 1rem' }}>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Name</dt>
+            <dd>{profile.name}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Email</dt>
+            <dd>{profile.email}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Address</dt>
+            <dd>{profile.address}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Place of Birth</dt>
+            <dd>{profile.placeOfBirth}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Date of Birth</dt>
+            <dd>{new Date(profile.dateOfBirth).toLocaleDateString()}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Role</dt>
+            <dd><span className={`badge badge-${profile.role.toLowerCase()}`}>{profile.role}</span></dd>
+          </dl>
+        )}
+      </section>
+
+      <section>
+        <div className="page-header">
+          <h2>My Firearms</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowFirearmForm(s => !s)}>
+            Add Firearm
+          </button>
+        </div>
+        {showFirearmForm && (
+          <div style={{ marginBottom: '1rem' }}>
+            <FirearmForm onSubmit={addFirearm} onCancel={() => setShowFirearmForm(false)} />
+          </div>
+        )}
+        <table>
+          <thead>
+            <tr>
+              <th>Make</th>
+              <th>Model</th>
+              <th>Caliber</th>
+              <th>Serial Number</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {firearms.map(f => (
+              <tr key={f.id}>
+                <td>{f.make}</td>
+                <td>{f.model}</td>
+                <td>{f.caliber}</td>
+                <td>{f.serialNumber}</td>
+                <td>
+                  <button className="btn btn-danger btn-sm" onClick={() => removeFirearm(f.id)}>Remove</button>
+                </td>
+              </tr>
+            ))}
+            {firearms.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No firearms registered</td></tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </>
+  );
+}
