@@ -16,8 +16,17 @@ export function createApp() {
   const app = express();
 
   app.use(helmet());
-  app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? '*' }));
+
+  const corsOrigin = process.env.CLIENT_ORIGIN;
+  app.use(cors({ origin: corsOrigin ?? false }));
+
   app.use(express.json());
+
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    message: { error: 'Too many requests, please try again later.' },
+  });
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -25,6 +34,7 @@ export function createApp() {
     message: { error: 'Too many requests, please try again later.' },
   });
 
+  app.use(globalLimiter);
   app.use('/api/auth', authLimiter, authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/clubs', clubsRouter);
