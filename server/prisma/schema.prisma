@@ -91,21 +91,28 @@ model Firearm {
   user      User?      @relation(fields: [userId], references: [id])
   club      Club?      @relation(fields: [clubId], references: [id])
   visitLogs VisitLog[]
+
+  @@index([serialNumber])
 }
 
 model VisitLog {
-  id            String    @id @default(cuid())
-  userId        String
-  clubId        String
-  purpose       String
-  firearmUsedId String?
-  timeIn        DateTime  @default(now())
-  timeOut       DateTime?
-  createdAt     DateTime  @default(now())
+  id              String    @id @default(cuid())
+  publicVisitRef  String?   @unique @default(cuid())
+  userId          String
+  clubId          String
+  purpose         String
+  firearmUsedId   String?
+  timeIn          DateTime  @default(now())
+  timeOut         DateTime?
+  createdAt       DateTime  @default(now())
 
   user        User     @relation(fields: [userId], references: [id])
   club        Club     @relation(fields: [clubId], references: [id])
   firearmUsed Firearm? @relation(fields: [firearmUsedId], references: [id])
+
+  @@index([clubId, timeIn])
+  @@index([clubId, userId, timeIn])
+  @@index([clubId, firearmUsedId, timeIn])
 }
 
 model SignInLink {

@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import QRCodeDisplay from '../components/QRCodeDisplay';
 import FirearmForm from '../components/FirearmForm';
 
 interface Firearm { id: string; make: string; model: string; caliber: string; serialNumber: string; }
 interface Club { id: string; name: string; homeOfficeRef?: string; }
 interface Member { id: string; userId: string; status: string; role: string; user: { id: string; name: string; email: string; }; }
-interface SignInLink { id: string; cryptoToken: string; expiresAt: string; }
+interface SignInLink { id: string; cryptoToken: string; expiresAt: string; mode?: 'KIOSK' | 'QR'; }
 
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
@@ -16,7 +15,7 @@ export default function ClubDashboard() {
   const [club, setClub] = useState<Club | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [firearms, setFirearms] = useState<Firearm[]>([]);
-  const [link, setLink] = useState<SignInLink | null>(null);
+  const [links, setLinks] = useState<SignInLink[]>([]);
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -33,6 +32,13 @@ export default function ClubDashboard() {
       .catch(() => setIsAdmin(false));
   }, [id, user?.id]);
 
+  useEffect(() => {
+    if (!id || !isAdmin) return;
+    api.get<SignInLink[]>(`/api/sign-in-links/club/${id}`)
+      .then(setLinks)
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading links'));
+  }, [id, isAdmin]);
+
   async function approveMember(userId: string, status: 'APPROVED' | 'REJECTED') {
     if (!id) return;
     try {
@@ -44,13 +50,22 @@ export default function ClubDashboard() {
     }
   }
 
-  async function generateLink() {
+  async function generateKioskLink() {
     if (!id) return;
     try {
-      const l = await api.post<SignInLink>('/api/sign-in-links', { clubId: id, expiresInHours: 24 });
-      setLink(l);
+      const l = await api.post<SignInLink>('/api/sign-in-links/kiosk', { clubId: id });
+      setLinks(prev => [{ ...l, mode: 'KIOSK' }, ...prev]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error generating link');
+      setError(e instanceof Error ? e.message : 'Error generating kiosk link');
+    }
+  }
+
+  async function revokeLink(linkId: string) {
+    try {
+      await api.delete(`/api/sign-in-links/${linkId}`);
+      setLinks(prev => prev.filter(l => l.id !== linkId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error revoking link');
     }
   }
 
@@ -69,8 +84,6 @@ export default function ClubDashboard() {
 
   if (!club) return <div>Loading…</div>;
 
-  const signInUrl = link ? `${window.location.origin}/sign-in/${link.cryptoToken}` : '';
-
   return (
     <>
       <div className="page-header">
@@ -78,6 +91,11 @@ export default function ClubDashboard() {
           <h1>{club.name}</h1>
           {club.homeOfficeRef && <p style={{ color: 'var(--gray-600)', fontSize: '0.9rem' }}>Home Office Ref: {club.homeOfficeRef}</p>}
         </div>
+        {isAdmin && (
+          <Link to={`/clubs/${id}/history`} className="btn btn-secondary btn-sm">
+            View Sign-In History
+          </Link>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -85,10 +103,45 @@ export default function ClubDashboard() {
       {isAdmin && (
         <section>
           <div className="page-header">
-            <h2>Sign-In Link / QR Code</h2>
-            <button className="btn btn-primary btn-sm" onClick={generateLink}>Generate New Link</button>
+            <h2>Kiosk Links</h2>
+            <div className="actions">
+              <button className="btn btn-primary btn-sm" onClick={generateKioskLink}>Create Kiosk Link</button>
+            </div>
           </div>
-          {link && <QRCodeDisplay url={signInUrl} clubName={club.name} />}
+          <table style={{ marginTop: '1rem' }}>
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Link</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {links.filter(l => l.mode === 'KIOSK').map(l => {
+                const path = `/kiosk/${l.cryptoToken}`;
+                const fullUrl = `${window.location.origin}${path}`;
+                return (
+                  <tr key={l.id}>
+                    <td><span className="badge badge-member">KIOSK</span></td>
+                    <td style={{ maxWidth: 360 }}>
+                      <a href={path} target="_blank" rel="noreferrer">{fullUrl}</a>
+                    </td>
+                    <td>{new Date(l.expiresAt).toLocaleString()}</td>
+                    <td>
+                      <div className="actions">
+                        <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(fullUrl)}>Copy</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => revokeLink(l.id)}>Revoke</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {links.filter(l => l.mode === 'KIOSK').length === 0 && (
+                <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No active kiosk links</td></tr>
+              )}
+            </tbody>
+          </table>
         </section>
       )}
 

@@ -267,3 +267,15 @@ tr:hover td { background: var(--gray-50); }
   justify-content: space-between;
   margin-bottom: 1.5rem;
 }
+
+.kiosk-page {
+  min-height: calc(100vh - 4rem);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.kiosk-card {
+  width: min(680px, 95vw);
+  text-align: center;
+}
