@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import Landing from './pages/Landing';
 import ClubDashboard from './pages/ClubDashboard';
 import ClubHistory from './pages/ClubHistory';
 import ClubMemberProfile from './pages/ClubMemberProfile';
@@ -43,6 +44,11 @@ function RegisterRoute() {
   return user ? <AuthenticatedRedirect /> : <Register />;
 }
 
+function HomeRoute() {
+  const { user } = useAuth();
+  return user ? <Dashboard /> : <Landing />;
+}
+
 function AppRoutes() {
   const { loading } = useAuth();
   const location = useLocation();
@@ -56,7 +62,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterRoute />} />
-          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
           <Route path="/clubs/:id/history" element={<ProtectedRoute><ClubHistory /></ProtectedRoute>} />
           <Route path="/clubs/:id/members/:userId" element={<ProtectedRoute><ClubMemberProfile /></ProtectedRoute>} />
