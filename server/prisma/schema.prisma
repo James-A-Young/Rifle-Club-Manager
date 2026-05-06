@@ -42,10 +42,12 @@ model User {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  ownedClubs   Club[]
-  memberships  ClubMembership[]
-  visitLogs    VisitLog[]
-  firearms     Firearm[]
+  ownedClubs      Club[]
+  memberships     ClubMembership[]
+  visitLogs       VisitLog[]
+  firearms        Firearm[]
+  createdInvites  ClubInvite[] @relation("InviteCreatedBy")
+  redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
 }
 
 model Club {
@@ -60,6 +62,7 @@ model Club {
   visitLogs   VisitLog[]
   signInLinks SignInLink[]
   firearms    Firearm[]
+  invites     ClubInvite[]
 }
 
 model ClubMembership {
@@ -123,4 +126,25 @@ model SignInLink {
   createdAt   DateTime @default(now())
 
   club Club @relation(fields: [clubId], references: [id])
+}
+
+model ClubInvite {
+  id               String         @id @default(cuid())
+  clubId           String
+  email            String
+  role             MembershipRole
+  token            String         @unique
+  expiresAt        DateTime
+  redeemedAt       DateTime?
+  redeemedByUserId String?
+  createdByUserId  String
+  createdAt        DateTime       @default(now())
+
+  club       Club  @relation(fields: [clubId], references: [id])
+  createdBy  User  @relation("InviteCreatedBy", fields: [createdByUserId], references: [id])
+  redeemedBy User? @relation("InviteRedeemedBy", fields: [redeemedByUserId], references: [id])
+
+  @@index([clubId, createdAt])
+  @@index([clubId, email])
+  @@index([email])
 }

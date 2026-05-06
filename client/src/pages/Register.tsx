@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api, setToken } from '../api';
 
 interface RegisterResponse {
@@ -9,6 +9,19 @@ interface RegisterResponse {
 
 export default function Register() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const inviteToken = useMemo(() => searchParams.get('inviteToken')?.trim() ?? '', [searchParams]);
+  const nextPath = useMemo(() => {
+    const next = searchParams.get('next')?.trim();
+    return next && next.startsWith('/') ? next : '/';
+  }, [searchParams]);
+
+  const loginHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (nextPath !== '/') params.set('next', nextPath);
+    const query = params.toString();
+    return query ? `/login?${query}` : '/login';
+  }, [nextPath]);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -34,9 +47,12 @@ export default function Register() {
     setLoading(true);
     setError('');
     try {
-      const data = await api.post<RegisterResponse>('/api/auth/register', form);
+      const data = await api.post<RegisterResponse>('/api/auth/register', {
+        ...form,
+        inviteToken: inviteToken || undefined,
+      });
       setToken(data.token);
-      navigate('/');
+      navigate(inviteToken ? '/' : nextPath, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -48,6 +64,11 @@ export default function Register() {
     <div className="auth-page">
       <div className="card">
         <h1>Register</h1>
+        {inviteToken && (
+          <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
+            You are registering with a club invite. Use the invited email address to complete registration.
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-error">{error}</div>}
           <div className="form-group">
@@ -92,7 +113,7 @@ export default function Register() {
           </button>
         </form>
         <p style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>
-          Already have an account? <Link to="/login">Sign in</Link>
+          Already have an account? <Link to={loginHref}>Sign in</Link>
         </p>
       </div>
     </div>

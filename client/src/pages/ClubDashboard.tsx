@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
@@ -6,8 +6,31 @@ import FirearmForm from '../components/FirearmForm';
 
 interface Firearm { id: string; make: string; model: string; caliber: string; serialNumber: string; }
 interface Club { id: string; name: string; homeOfficeRef?: string; }
-interface Member { id: string; userId: string; status: string; role: string; user: { id: string; name: string; email: string; }; }
+interface Member {
+  id: string;
+  userId: string;
+  status: string;
+  role: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    address?: string;
+    placeOfBirth?: string;
+    dateOfBirth?: string;
+    gdprConsentDate?: string;
+  };
+}
 interface SignInLink { id: string; cryptoToken: string; expiresAt: string; mode?: 'KIOSK' | 'QR'; }
+interface ClubInvite {
+  id: string;
+  email: string;
+  role: 'MEMBER' | 'ADMIN';
+  token: string;
+  expiresAt: string;
+  redeemedAt: string | null;
+  createdAt: string;
+}
 
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
@@ -16,9 +39,15 @@ export default function ClubDashboard() {
   const [members, setMembers] = useState<Member[]>([]);
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [links, setLinks] = useState<SignInLink[]>([]);
+  const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'MEMBER' | 'ADMIN'>('MEMBER');
+  const [inviteExpiresInDays, setInviteExpiresInDays] = useState(14);
+  const [editingRole, setEditingRole] = useState<{ userId: string; role: 'MEMBER' | 'ADMIN' } | null>(null);
+  const [savingRole, setSavingRole] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -37,16 +66,37 @@ export default function ClubDashboard() {
     api.get<SignInLink[]>(`/api/sign-in-links/club/${id}`)
       .then(setLinks)
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading links'));
+    api.get<ClubInvite[]>(`/api/clubs/${id}/invites`)
+      .then(setInvites)
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
   }, [id, isAdmin]);
+
+  const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
 
   async function approveMember(userId: string, status: 'APPROVED' | 'REJECTED') {
     if (!id) return;
     try {
-      await api.patch(`/api/clubs/${id}/members/${userId}`, { status });
-      const updated = await api.get<Member[]>(`/api/clubs/${id}/members`);
-      setMembers(updated);
+      const updated = await api.patch<Member>(`/api/clubs/${id}/members/${userId}`, { status });
+      setMembers(members.map(m => (m.userId === userId ? updated : m)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error');
+      setError(e instanceof Error ? e.message : 'Error updating member');
+    }
+  }
+
+  async function saveRoleChange(userId: string, newRole: 'MEMBER' | 'ADMIN') {
+    if (!id || !editingRole) return;
+    setSavingRole(true);
+    setError('');
+    try {
+      const updated = await api.patch<Member>(`/api/clubs/${id}/members/${userId}`, {
+        role: newRole,
+      });
+      setMembers(members.map(m => (m.userId === userId ? updated : m)));
+      setEditingRole(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating member role');
+    } finally {
+      setSavingRole(false);
     }
   }
 
@@ -67,6 +117,38 @@ export default function ClubDashboard() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error revoking link');
     }
+  }
+
+  async function createInvite() {
+    if (!id || !inviteEmail.trim()) return;
+    try {
+      const invite = await api.post<ClubInvite>(`/api/clubs/${id}/invites`, {
+        email: inviteEmail.trim().toLowerCase(),
+        role: inviteRole,
+        expiresInDays: inviteExpiresInDays,
+      });
+      setInvites(prev => [invite, ...prev]);
+      setInviteEmail('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error creating invite');
+    }
+  }
+
+  function getInviteUrl(token: string): string {
+    return `${inviteBaseUrl}/${token}/accept`;
+  }
+
+  async function copyInviteUrl(token: string) {
+    await navigator.clipboard.writeText(getInviteUrl(token));
+  }
+
+  function sendInviteEmail(invite: ClubInvite) {
+    const inviteUrl = getInviteUrl(invite.token);
+    const subject = encodeURIComponent(`Invitation to join ${club?.name ?? 'the club'}`);
+    const body = encodeURIComponent(
+      `Hello,\n\nYou have been invited to join ${club?.name ?? 'our club'} as ${invite.role}.\n\nUse this link to accept your invite:\n${inviteUrl}\n\nIf you already have an account, sign in and accept directly. If not, register using the same email address this invite was sent to.\n\nThanks.`
+    );
+    window.location.href = `mailto:${encodeURIComponent(invite.email)}?subject=${subject}&body=${body}`;
   }
 
   async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
@@ -103,6 +185,81 @@ export default function ClubDashboard() {
       {isAdmin && (
         <section>
           <div className="page-header">
+            <h2>Invites</h2>
+          </div>
+          <div className="stats-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', marginBottom: '1rem' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Email</label>
+              <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="member@example.com" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Role</label>
+              <select value={inviteRole} onChange={e => setInviteRole(e.target.value as 'MEMBER' | 'ADMIN')}>
+                <option value="MEMBER">MEMBER</option>
+                <option value="ADMIN">ADMIN</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Expires (days)</label>
+              <input
+                type="number"
+                min={1}
+                max={90}
+                value={inviteExpiresInDays}
+                onChange={e => setInviteExpiresInDays(Number(e.target.value) || 14)}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'end' }}>
+              <button className="btn btn-primary btn-sm" onClick={createInvite} disabled={!inviteEmail.trim()}>
+                Create Invite
+              </button>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map(invite => (
+                <tr key={invite.id}>
+                  <td>{invite.email}</td>
+                  <td><span className={`badge badge-${invite.role.toLowerCase()}`}>{invite.role}</span></td>
+                  <td>
+                    {invite.redeemedAt ? (
+                      <span className="badge badge-approved">REDEEMED</span>
+                    ) : new Date(invite.expiresAt) < new Date() ? (
+                      <span className="badge badge-rejected">EXPIRED</span>
+                    ) : (
+                      <span className="badge badge-pending">PENDING</span>
+                    )}
+                  </td>
+                  <td>{new Date(invite.expiresAt).toLocaleString()}</td>
+                  <td>
+                    <div className="actions">
+                      <button className="btn btn-secondary btn-sm" onClick={() => copyInviteUrl(invite.token)}>Copy Link</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => sendInviteEmail(invite)}>Send Email</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {invites.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No invites created yet</td></tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section>
+          <div className="page-header">
             <h2>Kiosk Links</h2>
             <div className="actions">
               <button className="btn btn-primary btn-sm" onClick={generateKioskLink}>Create Kiosk Link</button>
@@ -124,7 +281,7 @@ export default function ClubDashboard() {
                 return (
                   <tr key={l.id}>
                     <td><span className="badge badge-member">KIOSK</span></td>
-                    <td style={{ maxWidth: 360 }}>
+                    <td style={{ maxWidth: 360, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       <a href={path} target="_blank" rel="noreferrer">{fullUrl}</a>
                     </td>
                     <td>{new Date(l.expiresAt).toLocaleString()}</td>
@@ -168,20 +325,50 @@ export default function ClubDashboard() {
                   <span className={`badge badge-${m.status.toLowerCase()}`}>{m.status}</span>
                 </td>
                 <td>
-                  <span className={`badge badge-${m.role.toLowerCase()}`}>{m.role}</span>
+                  {editingRole?.userId === m.userId && m.status === 'APPROVED' ? (
+                    <select
+                      value={editingRole.role}
+                      onChange={e => setEditingRole({ ...editingRole, role: e.target.value as 'MEMBER' | 'ADMIN' })}
+                      className="btn btn-sm"
+                    >
+                      <option value="MEMBER">MEMBER</option>
+                      <option value="ADMIN">ADMIN</option>
+                    </select>
+                  ) : (
+                    <span className={`badge badge-${m.role.toLowerCase()}`}>{m.role}</span>
+                  )}
                 </td>
                 {isAdmin && (
                   <td>
-                    {m.status === 'PENDING' && (
-                      <div className="actions">
-                        <button className="btn btn-success btn-sm" onClick={() => approveMember(m.userId, 'APPROVED')}>
-                          Approve
-                        </button>
-                        <button className="btn btn-danger btn-sm" onClick={() => approveMember(m.userId, 'REJECTED')}>
-                          Reject
-                        </button>
-                      </div>
-                    )}
+                    <div className="actions" style={{ flexWrap: 'wrap', gap: '0.25rem' }}>
+                      <Link className="btn btn-secondary btn-sm" to={`/clubs/${id}/members/${m.userId}`}>View Profile</Link>
+                      {m.status === 'PENDING' && (
+                        <>
+                          <button className="btn btn-success btn-sm" onClick={() => approveMember(m.userId, 'APPROVED')}>
+                            Approve
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={() => approveMember(m.userId, 'REJECTED')}>
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {m.status === 'APPROVED' && (
+                        editingRole?.userId === m.userId ? (
+                          <>
+                            <button className="btn btn-success btn-sm" onClick={() => saveRoleChange(m.userId, editingRole.role)} disabled={savingRole}>
+                              {savingRole ? 'Saving…' : 'Save'}
+                            </button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole(null)} disabled={savingRole}>
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole({ userId: m.userId, role: m.role as 'MEMBER' | 'ADMIN' })}>
+                            Edit Role
+                          </button>
+                        )
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>

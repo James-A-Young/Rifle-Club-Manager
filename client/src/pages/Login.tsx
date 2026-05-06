@@ -1,14 +1,33 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const nextPath = useMemo(() => {
+    const next = searchParams.get('next')?.trim();
+    return next && next.startsWith('/') ? next : '/';
+  }, [searchParams]);
+
+  const inviteTokenFromNext = useMemo(() => {
+    const match = nextPath.match(/^\/invites\/([^/]+)\/accept$/);
+    return match?.[1] ?? '';
+  }, [nextPath]);
+
+  const registerHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (nextPath !== '/') params.set('next', nextPath);
+    if (inviteTokenFromNext) params.set('inviteToken', inviteTokenFromNext);
+    const query = params.toString();
+    return query ? `/register?${query}` : '/register';
+  }, [nextPath, inviteTokenFromNext]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -16,7 +35,7 @@ export default function Login() {
     setError('');
     try {
       await login(email, password);
-      navigate('/');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -43,7 +62,7 @@ export default function Login() {
           </button>
         </form>
         <p style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>
-          Don't have an account? <Link to="/register">Register</Link>
+          Don't have an account? <Link to={registerHref}>Register</Link>
         </p>
       </div>
     </div>
