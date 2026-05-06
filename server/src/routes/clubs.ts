@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole, OwnerType, Role } from '@prisma/client';
+import { formatZodError } from '../utils/zodError';
 
 const router = Router();
 
@@ -29,7 +30,7 @@ const createClubSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = createClubSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
   const club = await prisma.club.create({
@@ -144,7 +145,7 @@ router.post('/:id/invites', async (req: AuthRequest, res: Response) => {
 
   const parsed = createInviteSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -339,7 +340,7 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
   }
   const parsed = updateMemberSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -393,7 +394,7 @@ router.post('/:id/firearms', async (req: AuthRequest, res: Response) => {
   }
   const parsed = firearmSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
   const firearm = await prisma.firearm.create({

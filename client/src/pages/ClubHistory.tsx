@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 
 type TimeWindowPreset = '3m' | '6m' | '12m' | 'custom';
+type VisitorTypeFilter = 'all' | 'guest' | 'member';
 
 interface HistoryRow {
   id: string;
@@ -87,6 +88,7 @@ export default function ClubHistory() {
   const [memberId, setMemberId] = useState('');
   const [firearmSerial, setFirearmSerial] = useState('');
   const [attendeeEmail, setAttendeeEmail] = useState('');
+  const [visitorType, setVisitorType] = useState<VisitorTypeFilter>('all');
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -100,6 +102,7 @@ export default function ClubHistory() {
     if (search) params.set('search', search);
     if (memberId) params.set('memberId', memberId);
     if (firearmSerial.trim()) params.set('firearmSerial', firearmSerial.trim());
+    if (visitorType !== 'all') params.set('visitorType', visitorType);
     params.set('timeWindowPreset', timeWindowPreset);
 
     if (timeWindowPreset === 'custom') {
@@ -108,7 +111,7 @@ export default function ClubHistory() {
     }
 
     return params;
-  }, [search, memberId, firearmSerial, timeWindowPreset, fromDate, toDate]);
+  }, [search, memberId, firearmSerial, visitorType, timeWindowPreset, fromDate, toDate]);
 
   const summaryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -122,9 +125,10 @@ export default function ClubHistory() {
     if (firearmSerial.trim()) params.set('firearmSerial', firearmSerial.trim());
     if (attendeeEmail.trim()) params.set('attendeeEmail', attendeeEmail.trim());
     if (search) params.set('search', search);
+    if (visitorType !== 'all') params.set('visitorType', visitorType);
 
     return params;
-  }, [timeWindowPreset, fromDate, toDate, memberId, firearmSerial, attendeeEmail, search]);
+  }, [timeWindowPreset, fromDate, toDate, memberId, firearmSerial, attendeeEmail, search, visitorType]);
 
   async function loadHistory(reset = false) {
     if (!id) return;
@@ -284,6 +288,15 @@ export default function ClubHistory() {
               onChange={e => setAttendeeEmail(e.target.value)}
               placeholder="For attendance count"
             />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Visitor Type</label>
+            <select value={visitorType} onChange={e => setVisitorType(e.target.value as VisitorTypeFilter)}>
+              <option value="all">All visits</option>
+              <option value="guest">Guests only</option>
+              <option value="member">Members only</option>
+            </select>
           </div>
 
           {timeWindowPreset === 'custom' && (

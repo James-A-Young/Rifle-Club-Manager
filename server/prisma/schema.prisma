@@ -101,15 +101,18 @@ model Firearm {
 model VisitLog {
   id              String    @id @default(cuid())
   publicVisitRef  String?   @unique @default(cuid())
-  userId          String
+  userId          String?
   clubId          String
   purpose         String
+  guestName       String?
+  guestEmail      String?
+  guestClubRepresented String?
   firearmUsedId   String?
   timeIn          DateTime  @default(now())
   timeOut         DateTime?
   createdAt       DateTime  @default(now())
 
-  user        User     @relation(fields: [userId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   club        Club     @relation(fields: [clubId], references: [id])
   firearmUsed Firearm? @relation(fields: [firearmUsedId], references: [id])
 

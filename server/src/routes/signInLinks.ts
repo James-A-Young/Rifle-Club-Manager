@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole } from '@prisma/client';
+import { formatZodError } from '../utils/zodError';
 
 const router = Router();
 
@@ -44,7 +45,7 @@ function isKioskLink(expiresAt: Date): boolean {
 router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = createLinkSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -71,7 +72,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
 router.post('/kiosk', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = createKioskLinkSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -140,7 +141,7 @@ router.delete('/:id', requireAuth, async (req: AuthRequest, res: Response) => {
 router.post('/:token/issue', async (req: AuthRequest, res: Response) => {
   const parsed = issueQrSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -219,6 +220,7 @@ router.get('/:token', async (req: AuthRequest, res: Response) => {
   res.json({
     ...link,
     mode: isKioskLink(link.expiresAt) ? 'KIOSK' : 'QR',
+    isAuthenticated: Boolean(req.user?.id),
     accessToken,
     accessTokenExpiresInMinutes: ACCESS_TOKEN_TTL_MINUTES,
   });

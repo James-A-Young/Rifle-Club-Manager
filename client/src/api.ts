@@ -25,7 +25,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((body as { error?: string }).error ?? res.statusText);
+    const errorMessage = 
+      (body as { error?: string | { message?: string } }).error || 
+      ((body as { message?: string }).message) ||
+      res.statusText;
+    const message = typeof errorMessage === 'string' ? errorMessage : (errorMessage?.message ?? res.statusText);
+    throw new Error(message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

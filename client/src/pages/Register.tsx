@@ -54,7 +54,8 @@ export default function Register() {
       setToken(data.token);
       navigate(inviteToken ? '/' : nextPath, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
+      setError(message);
     } finally {
       setLoading(false);
     }

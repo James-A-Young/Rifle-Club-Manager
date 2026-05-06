@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { OwnerType } from '@prisma/client';
+import { formatZodError } from '../utils/zodError';
 
 const router = Router();
 
@@ -41,7 +42,7 @@ const updateSchema = z.object({
 router.patch('/me', async (req: AuthRequest, res: Response) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
   const { dateOfBirth, ...rest } = parsed.data;
@@ -82,7 +83,7 @@ const firearmSchema = z.object({
 router.post('/me/firearms', async (req: AuthRequest, res: Response) => {
   const parsed = firearmSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
   const firearm = await prisma.firearm.create({

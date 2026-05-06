@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest, attachOptionalAuth } from '../middleware/auth
 import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { formatZodError } from '../utils/zodError';
 
 const router = Router();
 
@@ -19,6 +20,7 @@ type HistoryFilters = {
   memberId?: string;
   firearmId?: string;
   firearmSerial?: string;
+  visitorType?: 'guest' | 'member';
   from?: Date;
   to?: Date;
 };
@@ -76,12 +78,15 @@ function parseTimeWindow(req: AuthRequest): { from?: Date; to?: Date } {
 
 function parseHistoryFilters(req: AuthRequest): HistoryFilters {
   const { from, to } = parseTimeWindow(req);
+  const visitorTypeRaw = typeof req.query.visitorType === 'string' ? req.query.visitorType.toLowerCase() : undefined;
+  const visitorType = visitorTypeRaw === 'guest' || visitorTypeRaw === 'member' ? visitorTypeRaw : undefined;
 
   return {
     search: typeof req.query.search === 'string' ? req.query.search.trim() : undefined,
     memberId: typeof req.query.memberId === 'string' ? req.query.memberId : undefined,
     firearmId: typeof req.query.firearmId === 'string' ? req.query.firearmId : undefined,
     firearmSerial: typeof req.query.firearmSerial === 'string' ? req.query.firearmSerial.trim() : undefined,
+    visitorType,
     from,
     to,
   };
@@ -123,6 +128,7 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
   if (filters.search) {
     andFilters.push({
       OR: [
+        // Member search: in user name/email
         {
           user: {
             is: {
@@ -143,6 +149,25 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
             },
           },
         },
+        // Guest search: in guest name/email/club represented
+        {
+          guestName: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          guestEmail: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          guestClubRepresented: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
         {
           firearmUsed: {
             is: {
@@ -154,6 +179,18 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
           },
         },
       ],
+    });
+  }
+
+  if (filters.visitorType === 'guest') {
+    andFilters.push({
+      userId: null,
+    });
+  }
+
+  if (filters.visitorType === 'member') {
+    andFilters.push({
+      userId: { not: null },
     });
   }
 
@@ -210,14 +247,11 @@ const publicCreateVisitSchema = z.object({
   purpose: z.string().min(1),
   firearmUsedId: z.string().optional(),
   firearmSerialNumber: z.string().trim().min(1).optional(),
-  userDetails: z.object({
-    name: z.string().min(2),
-    email: z.string().email(),
-    address: z.string().min(5),
-    placeOfBirth: z.string().min(2),
-    dateOfBirth: z.string().min(1),
-    gdprConsent: z.boolean().refine(v => v === true, { message: 'GDPR consent required' }),
-  }),
+  guestDetails: z.object({
+    guestName: z.string().min(2),
+    guestClubRepresented: z.string().min(1),
+    guestEmail: z.string().email().optional(),
+  }).optional(),
 }).refine(data => Boolean(data.signInToken || data.signInAccessToken), {
   message: 'signInToken or signInAccessToken is required',
 });
@@ -225,7 +259,7 @@ const publicCreateVisitSchema = z.object({
 router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Response) => {
   const parsed = publicCreateVisitSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -287,50 +321,9 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     return;
   }
 
-  const details = parsed.data.userDetails;
-  let userId = req.user?.id;
-
-  if (userId) {
-    const existing = await prisma.user.findUnique({ where: { id: userId } });
-    if (!existing) {
-      userId = undefined;
-    }
-  }
-
-  if (!userId) {
-    const randomPasswordHash = await bcrypt.hash(`${Date.now()}-${Math.random()}`, 10);
-    const user = await prisma.user.upsert({
-      where: { email: details.email },
-      update: {
-        name: details.name,
-        address: details.address,
-        placeOfBirth: details.placeOfBirth,
-        dateOfBirth: new Date(details.dateOfBirth),
-        gdprConsentDate: new Date(),
-      },
-      create: {
-        name: details.name,
-        email: details.email,
-        passwordHash: randomPasswordHash,
-        gdprConsentDate: new Date(),
-        address: details.address,
-        placeOfBirth: details.placeOfBirth,
-        dateOfBirth: new Date(details.dateOfBirth),
-      },
-    });
-    userId = user.id;
-  } else {
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        name: details.name,
-        address: details.address,
-        placeOfBirth: details.placeOfBirth,
-        dateOfBirth: new Date(details.dateOfBirth),
-        gdprConsentDate: new Date(),
-      },
-    });
-  }
+  // Determine if this is an authenticated user or guest visit
+  const userId = req.user?.id;
+  const isAuthenticatedUser = Boolean(userId);
 
   let firearmUsedId = parsed.data.firearmUsedId;
   if (!firearmUsedId && parsed.data.firearmSerialNumber) {
@@ -343,27 +336,48 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     if (existingFirearm) {
       firearmUsedId = existingFirearm.id;
     } else {
-      const firearm = await prisma.firearm.create({
-        data: {
-          make: 'Unknown',
-          model: 'Unknown',
-          caliber: 'Unknown',
-          serialNumber: parsed.data.firearmSerialNumber,
-          ownerType: OwnerType.USER,
-          userId,
-        },
-      });
-      firearmUsedId = firearm.id;
+      // Only create firearm if authenticated (guests don't own firearms)
+      if (isAuthenticatedUser) {
+        const firearm = await prisma.firearm.create({
+          data: {
+            make: 'Unknown',
+            model: 'Unknown',
+            caliber: 'Unknown',
+            serialNumber: parsed.data.firearmSerialNumber,
+            ownerType: OwnerType.USER,
+            userId,
+          },
+        });
+        firearmUsedId = firearm.id;
+      }
     }
   }
 
+  // Create visit log
+  const visitData: any = {
+    clubId: signInLink.clubId,
+    purpose: parsed.data.purpose,
+    firearmUsedId,
+  };
+
+  if (isAuthenticatedUser) {
+    // Authenticated user: set userId only
+    visitData.userId = userId;
+  } else {
+    // Guest visit: populate guest fields
+    const guestDetails = parsed.data.guestDetails;
+    if (!guestDetails) {
+      res.status(400).json({ error: 'guestDetails are required for guest sign-in' });
+      return;
+    }
+    visitData.userId = null;
+    visitData.guestName = guestDetails.guestName;
+    visitData.guestClubRepresented = guestDetails.guestClubRepresented;
+    visitData.guestEmail = guestDetails.guestEmail || null;
+  }
+
   const visit = await prisma.visitLog.create({
-    data: {
-      userId,
-      clubId: signInLink.clubId,
-      purpose: parsed.data.purpose,
-      firearmUsedId,
-    },
+    data: visitData,
     include: {
       user: { select: { id: true, name: true, email: true } },
       firearmUsed: true,
@@ -416,8 +430,9 @@ router.get('/kiosk/:kioskToken/active', async (req: AuthRequest, res: Response) 
   // Return only safe public fields, using publicVisitRef instead of id
   const safeVisits = visits.map(v => ({
     publicVisitRef: v.publicVisitRef,
-    visitorName: v.user.name,
-    visitorEmail: v.user.email,
+    visitorName: v.userId ? v.user?.name : v.guestName,
+    visitorEmail: v.userId ? v.user?.email : v.guestEmail,
+    guestClubRepresented: v.guestClubRepresented,
     purpose: v.purpose,
     timeIn: v.timeIn,
     firearm: v.firearmUsed ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})` : null,
@@ -499,7 +514,7 @@ const createVisitSchema = z.object({
 router.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = createVisitSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
+    res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
 
@@ -618,9 +633,13 @@ router.get('/club/:clubId/history', async (req: AuthRequest, res: Response) => {
     select: {
       id: true,
       publicVisitRef: true,
+      userId: true,
       purpose: true,
       timeIn: true,
       timeOut: true,
+      guestName: true,
+      guestEmail: true,
+      guestClubRepresented: true,
       user: {
         select: {
           id: true,
@@ -773,8 +792,10 @@ router.get('/club/:clubId/history/export.csv', async (req: AuthRequest, res: Res
 
   res.write([
     'visit_id',
+    'visitor_type',
     'visitor_name',
     'visitor_email',
+    'guest_club_represented',
     'purpose',
     'firearm_serial',
     'firearm_make',
@@ -797,9 +818,13 @@ router.get('/club/:clubId/history/export.csv', async (req: AuthRequest, res: Res
       ],
       select: {
         id: true,
+        userId: true,
         purpose: true,
         timeIn: true,
         timeOut: true,
+        guestName: true,
+        guestEmail: true,
+        guestClubRepresented: true,
         user: {
           select: {
             name: true,
@@ -822,10 +847,16 @@ router.get('/club/:clubId/history/export.csv', async (req: AuthRequest, res: Res
     }
 
     for (const row of rows) {
+      const visitorType = row.userId ? 'member' : 'guest';
+      const visitorName = row.userId ? row.user?.name : row.guestName;
+      const visitorEmail = row.userId ? row.user?.email : row.guestEmail;
+
       res.write([
         csvCell(row.id),
-        csvCell(row.user.name),
-        csvCell(row.user.email),
+        csvCell(visitorType),
+        csvCell(visitorName ?? ''),
+        csvCell(visitorEmail ?? ''),
+        csvCell(row.guestClubRepresented ?? ''),
         csvCell(row.purpose),
         csvCell(row.firearmUsed?.serialNumber ?? ''),
         csvCell(row.firearmUsed?.make ?? ''),

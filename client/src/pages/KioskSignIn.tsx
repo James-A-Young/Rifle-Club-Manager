@@ -16,6 +16,7 @@ interface KioskLinkData {
   id: string;
   clubId: string;
   mode: 'KIOSK' | 'QR';
+  isAuthenticated?: boolean;
   accessToken: string;
   accessTokenExpiresInMinutes: number;
   club: {
@@ -46,12 +47,9 @@ const REFRESH_VISITS_INTERVAL_MS = 5_000;
 const PURPOSES = ['Practice', 'Competition', 'Training', 'Other'];
 
 const EMPTY_DETAILS = {
-  name: '',
-  email: '',
-  address: '',
-  placeOfBirth: '',
-  dateOfBirth: '',
-  gdprConsent: false,
+  guestName: '',
+  guestClubRepresented: '',
+  guestEmail: '',
 };
 
 export default function KioskSignIn() {
@@ -65,7 +63,7 @@ export default function KioskSignIn() {
     purpose: 'Practice',
     firearmUsedId: '',
     firearmSerialNumber: '',
-    userDetails: EMPTY_DETAILS,
+    guestDetails: EMPTY_DETAILS,
   });
   const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualSuccess, setManualSuccess] = useState(false);
@@ -75,6 +73,7 @@ export default function KioskSignIn() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [signoutLoading, setSignoutLoading] = useState<string | null>(null);
   const [signoutAllLoading, setSignoutAllLoading] = useState(false);
+  const isAuthenticatedKioskUser = Boolean(kioskData?.isAuthenticated);
 
   // Load kiosk data on mount
   useEffect(() => {
@@ -182,19 +181,32 @@ export default function KioskSignIn() {
     setManualSubmitting(true);
     setError('');
     try {
-      await api.post('/api/visits/public', {
+      const payload: {
+        signInAccessToken: string;
+        purpose: string;
+        firearmUsedId?: string;
+        firearmSerialNumber?: string;
+        guestDetails?: typeof EMPTY_DETAILS;
+      } = {
         signInAccessToken: kioskData.accessToken,
         purpose: manualForm.purpose,
         firearmUsedId: manualForm.firearmUsedId || undefined,
         firearmSerialNumber: manualForm.firearmSerialNumber || undefined,
-        userDetails: manualForm.userDetails,
+      };
+
+      if (!isAuthenticatedKioskUser) {
+        payload.guestDetails = manualForm.guestDetails;
+      }
+
+      await api.post('/api/visits/public', {
+        ...payload,
       });
       setManualSuccess(true);
       setManualForm({
         purpose: 'Practice',
         firearmUsedId: '',
         firearmSerialNumber: '',
-        userDetails: EMPTY_DETAILS,
+        guestDetails: EMPTY_DETAILS,
       });
       // Refresh visits list
       setTimeout(async () => {
@@ -289,80 +301,53 @@ export default function KioskSignIn() {
 
         {kioskData && (
           <form onSubmit={handleManualSubmit}>
-            <div className="form-group">
-              <label>Full Name *</label>
-              <input
-                type="text"
-                value={manualForm.userDetails.name}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, name: e.target.value },
-                  }))
-                }
-                required
-              />
-            </div>
+            {!isAuthenticatedKioskUser && (
+              <>
+                <div className="form-group">
+                  <label>Full Name *</label>
+                  <input
+                    type="text"
+                    value={manualForm.guestDetails.guestName}
+                    onChange={e =>
+                      setManualForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestName: e.target.value },
+                      }))
+                    }
+                    required
+                  />
+                </div>
 
-            <div className="form-group">
-              <label>Email Address *</label>
-              <input
-                type="email"
-                value={manualForm.userDetails.email}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, email: e.target.value },
-                  }))
-                }
-                required
-              />
-            </div>
+                <div className="form-group">
+                  <label>Club/Organization You Represent *</label>
+                  <input
+                    type="text"
+                    value={manualForm.guestDetails.guestClubRepresented}
+                    onChange={e =>
+                      setManualForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestClubRepresented: e.target.value },
+                      }))
+                    }
+                    required
+                  />
+                </div>
 
-            <div className="form-group">
-              <label>Address *</label>
-              <input
-                type="text"
-                value={manualForm.userDetails.address}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, address: e.target.value },
-                  }))
-                }
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Place of Birth *</label>
-              <input
-                type="text"
-                value={manualForm.userDetails.placeOfBirth}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, placeOfBirth: e.target.value },
-                  }))
-                }
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Date of Birth *</label>
-              <input
-                type="date"
-                value={manualForm.userDetails.dateOfBirth}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, dateOfBirth: e.target.value },
-                  }))
-                }
-                required
-              />
-            </div>
+                <div className="form-group">
+                  <label>Email Address (optional)</label>
+                  <input
+                    type="email"
+                    value={manualForm.guestDetails.guestEmail}
+                    onChange={e =>
+                      setManualForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestEmail: e.target.value },
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            )}
 
             <div className="form-group">
               <label>Purpose of Visit *</label>
@@ -412,23 +397,15 @@ export default function KioskSignIn() {
               />
             </div>
 
-            <div className="form-group checkbox-group">
-              <input
-                id="gdprConsent"
-                type="checkbox"
-                checked={manualForm.userDetails.gdprConsent}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    userDetails: { ...f.userDetails, gdprConsent: e.target.checked },
-                  }))
-                }
-                required
-              />
-              <label htmlFor="gdprConsent" style={{ marginBottom: 0 }}>
-                I consent to processing of my details for club sign-in records. *
-              </label>
-            </div>
+            {!isAuthenticatedKioskUser && (
+              <div className="form-group">
+                <label>Reason for Visit (optional)</label>
+                <input
+                  type="text"
+                  placeholder="E.g., Guest of [member name]"
+                />
+              </div>
+            )}
 
             <button
               type="submit"
