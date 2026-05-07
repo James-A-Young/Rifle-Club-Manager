@@ -11,11 +11,14 @@ interface HistoryRow {
   purpose: string;
   timeIn: string;
   timeOut: string | null;
+  guestName: string | null;
+  guestEmail: string | null;
+  guestClubRepresented: string | null;
   user: {
     id: string;
     name: string;
     email: string;
-  };
+  } | null;
   firearmUsed: {
     id: string;
     make: string;
@@ -382,6 +385,7 @@ export default function ClubHistory() {
             <table>
               <thead>
                 <tr>
+                  <th>Visitor Type</th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>Purpose</th>
@@ -393,8 +397,9 @@ export default function ClubHistory() {
               <tbody>
                 {rows.map(row => (
                   <tr key={row.id}>
-                    <td>{row.user.name}</td>
-                    <td>{row.user.email}</td>
+                    <td>{row.user ? 'Member' : 'Guest'}</td>
+                    <td>{row.user?.name ?? row.guestName ?? 'Guest Visitor'}</td>
+                    <td>{row.user?.email ?? row.guestEmail ?? 'N/A'}</td>
                     <td>{row.purpose}</td>
                     <td>{row.firearmUsed ? `${row.firearmUsed.serialNumber} (${row.firearmUsed.make} ${row.firearmUsed.model})` : 'N/A'}</td>
                     <td>{new Date(row.timeIn).toLocaleString()}</td>
@@ -403,7 +408,7 @@ export default function ClubHistory() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                       No results for selected filters
                     </td>
                   </tr>
