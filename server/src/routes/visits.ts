@@ -237,10 +237,13 @@ async function ensureAdminForClub(userId: string, clubId: string): Promise<boole
 }
 
 function csvCell(value: unknown): string {
-  const normalized = value == null ? '' : String(value);
   return `"${normalized.replace(/"/g, '""')}"`;
 }
 
+// Schema for public sign-in endpoint: explicitly excludes account/profile mutations
+// - Intentionally does NOT accept: userDetails, name, email, address, dateOfBirth, placeOfBirth, password, etc.
+// - This endpoint can only create visits and optionally add guest details or create firearms
+// - User creation/modification must use /auth/register and /api/users/me respectively
 const publicCreateVisitSchema = z.object({
   signInToken: z.string().min(1).optional(),
   signInAccessToken: z.string().min(1).optional(),
@@ -257,6 +260,15 @@ const publicCreateVisitSchema = z.object({
 });
 
 router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Response) => {
+  // Reject if request contains account-like fields (defensive check)
+  const forbiddenFields = ['userDetails', 'name', 'email', 'address', 'dateOfBirth', 'placeOfBirth', 'gdprConsent', 'password'];
+  const providedKeys = Object.keys(req.body);
+  const accountFieldsProvided = forbiddenFields.filter(f => providedKeys.includes(f));
+  if (accountFieldsProvided.length > 0) {
+    res.status(400).json({ error: `Account modification not allowed in sign-in endpoint. Rejected fields: ${accountFieldsProvided.join(', ')}` });
+    return;
+  }
+
   const parsed = publicCreateVisitSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatZodError(parsed.error) });

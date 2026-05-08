@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 
@@ -14,38 +14,25 @@ interface LinkData {
   accessTokenExpiresInMinutes: number;
   club: Club;
 }
-interface UserFirearm { id: string; make: string; model: string; caliber: string; }
-interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  address: string;
-  placeOfBirth: string;
-  dateOfBirth: string;
-  gdprConsentDate: string;
-}
 
 const PURPOSES = ['Practice', 'Competition', 'Training', 'Other'];
 
-const EMPTY_DETAILS = {
-  name: '',
-  email: '',
-  address: '',
-  placeOfBirth: '',
-  dateOfBirth: '',
-  gdprConsent: false,
+const EMPTY_GUEST_DETAILS = {
+  guestName: '',
+  guestClubRepresented: '',
+  guestEmail: '',
 };
 
 export default function SignIn() {
   const { token } = useParams<{ token: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [linkData, setLinkData] = useState<LinkData | null>(null);
-  const [userFirearms, setUserFirearms] = useState<UserFirearm[]>([]);
   const [form, setForm] = useState({
     purpose: 'Practice',
     firearmUsedId: '',
     firearmSerialNumber: '',
-    userDetails: EMPTY_DETAILS,
+    guestDetails: EMPTY_GUEST_DETAILS,
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -66,27 +53,6 @@ export default function SignIn() {
         const ld = await api.get<LinkData>(`/api/sign-in-links/${token}`);
         setLinkData(ld);
         setSignInAccessToken(ld.accessToken);
-
-        if (user) {
-          const [profile, firearms] = await Promise.all([
-            api.get<UserProfile>('/api/users/me'),
-            api.get<UserFirearm[]>('/api/users/me/firearms'),
-          ]);
-          setUserFirearms(firearms);
-          setForm(f => ({
-            ...f,
-            userDetails: {
-              name: profile.name ?? '',
-              email: profile.email ?? '',
-              address: profile.address ?? '',
-              placeOfBirth: profile.placeOfBirth ?? '',
-              dateOfBirth: profile.dateOfBirth ? profile.dateOfBirth.split('T')[0] : '',
-              gdprConsent: Boolean(profile.gdprConsentDate),
-            },
-          }));
-        } else {
-          setUserFirearms([]);
-        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Invalid or expired link');
       } finally {
@@ -95,19 +61,31 @@ export default function SignIn() {
     };
 
     load();
-  }, [token, user]);
+  }, [token]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/api/visits/public', {
+      const payload: {
+        signInAccessToken: string;
+        purpose: string;
+        firearmUsedId?: string;
+        firearmSerialNumber?: string;
+        guestDetails?: typeof EMPTY_GUEST_DETAILS;
+      } = {
         signInAccessToken,
         purpose: form.purpose,
         firearmUsedId: form.firearmUsedId || undefined,
-        firearmSerialNumber: !user ? form.firearmSerialNumber || undefined : undefined,
-        userDetails: form.userDetails,
-      });
+        firearmSerialNumber: form.firearmSerialNumber || undefined,
+      };
+
+      // Only include guestDetails if user is not authenticated
+      if (!user) {
+        payload.guestDetails = form.guestDetails;
+      }
+
+      await api.post('/api/visits/public', payload);
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error signing in');
@@ -130,6 +108,7 @@ export default function SignIn() {
   }
 
   const clubFirearms = linkData?.club.firearms ?? [];
+  const isAuthenticatedUser = Boolean(user);
 
   return (
     <div className="auth-page" style={{ maxWidth: 640 }}>
@@ -139,67 +118,83 @@ export default function SignIn() {
 
         {error && <div className="alert alert-error">{error}</div>}
 
+        {!isAuthenticatedUser && (
+          <div style={{ backgroundColor: 'var(--blue-50)', border: '1px solid var(--blue-200)', borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.5rem' }}>
+            <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem' }}>
+              <strong>Not signed in?</strong> Sign in to your account to have your details automatically populated.
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate(`/login?next=/sign-in/${token}`)}
+              style={{ width: '100%' }}
+            >
+              Sign In to Your Account
+            </button>
+          </div>
+        )}
+
         {linkData && (
           <form onSubmit={handleSubmit}>
+            {!isAuthenticatedUser && (
+              <>
+                <div className="form-group">
+                  <label>Full Name *</label>
+                  <input
+                    type="text"
+                    value={form.guestDetails.guestName}
+                    onChange={e =>
+                      setForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestName: e.target.value },
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Club/Organization You Represent *</label>
+                  <input
+                    type="text"
+                    value={form.guestDetails.guestClubRepresented}
+                    onChange={e =>
+                      setForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestClubRepresented: e.target.value },
+                      }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Email Address (optional)</label>
+                  <input
+                    type="email"
+                    value={form.guestDetails.guestEmail}
+                    onChange={e =>
+                      setForm(f => ({
+                        ...f,
+                        guestDetails: { ...f.guestDetails, guestEmail: e.target.value },
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            )}
+
             <div className="form-group">
-              <label>Full Name</label>
-              <input
-                value={form.userDetails.name}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, name: e.target.value } }))}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Email Address</label>
-              <input
-                type="email"
-                value={form.userDetails.email}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, email: e.target.value } }))}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Address</label>
-              <input
-                value={form.userDetails.address}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, address: e.target.value } }))}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Place of Birth</label>
-              <input
-                value={form.userDetails.placeOfBirth}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, placeOfBirth: e.target.value } }))}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Date of Birth</label>
-              <input
-                type="date"
-                value={form.userDetails.dateOfBirth}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, dateOfBirth: e.target.value } }))}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Purpose of Visit</label>
+              <label>Purpose of Visit *</label>
               <select value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))}>
                 {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
+
             <div className="form-group">
               <label>Firearm Used (optional)</label>
               <select value={form.firearmUsedId} onChange={e => setForm(f => ({ ...f, firearmUsedId: e.target.value }))}>
                 <option value="">None / Not applicable</option>
-                {userFirearms.length > 0 && (
-                  <optgroup label="Your Firearms">
-                    {userFirearms.map(f => (
-                      <option key={f.id} value={f.id}>{f.make} {f.model} ({f.caliber})</option>
-                    ))}
-                  </optgroup>
-                )}
                 {clubFirearms.length > 0 && (
                   <optgroup label="Club Firearms">
                     {clubFirearms.map(f => (
@@ -209,28 +204,17 @@ export default function SignIn() {
                 )}
               </select>
             </div>
-            {!user && (
-              <div className="form-group">
-                <label>Rifle Serial Number (optional)</label>
-                <input
-                  value={form.firearmSerialNumber}
-                  onChange={e => setForm(f => ({ ...f, firearmSerialNumber: e.target.value }))}
-                  placeholder="Enter serial number if using personal rifle"
-                />
-              </div>
-            )}
-            <div className="form-group checkbox-group">
+
+            <div className="form-group">
+              <label>Rifle Serial Number (optional)</label>
               <input
-                id="gdprConsent"
-                type="checkbox"
-                checked={form.userDetails.gdprConsent}
-                onChange={e => setForm(f => ({ ...f, userDetails: { ...f.userDetails, gdprConsent: e.target.checked } }))}
-                required
+                type="text"
+                value={form.firearmSerialNumber}
+                onChange={e => setForm(f => ({ ...f, firearmSerialNumber: e.target.value }))}
+                placeholder="Enter serial number if using personal rifle"
               />
-              <label htmlFor="gdprConsent" style={{ marginBottom: 0 }}>
-                I consent to processing of my details for club sign-in records.
-              </label>
             </div>
+
             <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
               Sign In to Club
             </button>
