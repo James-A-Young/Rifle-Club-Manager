@@ -13,6 +13,7 @@ import InviteAccept from './pages/InviteAccept';
 import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
+import ClubPublicProfile from './pages/ClubPublicProfile';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -63,6 +64,7 @@ function AppRoutes() {
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterRoute />} />
           <Route path="/" element={<HomeRoute />} />
+          <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
           <Route path="/clubs/:id/history" element={<ProtectedRoute><ClubHistory /></ProtectedRoute>} />
           <Route path="/clubs/:id/members/:userId" element={<ProtectedRoute><ClubMemberProfile /></ProtectedRoute>} />

@@ -5,7 +5,16 @@ import { useAuth } from '../auth/AuthContext';
 import FirearmForm from '../components/FirearmForm';
 
 interface Firearm { id: string; make: string; model: string; caliber: string; serialNumber: string; }
-interface Club { id: string; name: string; homeOfficeRef?: string; }
+interface Club {
+  id: string;
+  name: string;
+  homeOfficeRef?: string | null;
+  address?: string | null;
+  disciplinesOffered?: string[] | null;
+  acceptingNewMembers: boolean;
+  openingTimes?: string | null;
+  description?: string | null;
+}
 interface Member {
   id: string;
   userId: string;
@@ -18,6 +27,10 @@ interface Member {
     address?: string;
     placeOfBirth?: string;
     dateOfBirth?: string;
+    firearmCertificateNumber?: string | null;
+    firearmCertificateExpiry?: string | null;
+    shotgunCertificateNumber?: string | null;
+    shotgunCertificateExpiry?: string | null;
     gdprConsentDate?: string;
   };
 }
@@ -32,6 +45,13 @@ interface ClubInvite {
   createdAt: string;
 }
 
+function normalizeDisciplines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => (typeof item === 'string' ? item.trim() : ''))
+    .filter(item => item.length > 0);
+}
+
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -43,6 +63,18 @@ export default function ClubDashboard() {
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [editingClubProfile, setEditingClubProfile] = useState(false);
+  const [savingClubProfile, setSavingClubProfile] = useState(false);
+  const [disciplineInput, setDisciplineInput] = useState('');
+  const [clubForm, setClubForm] = useState({
+    name: '',
+    homeOfficeRef: '',
+    address: '',
+    disciplinesOffered: [] as string[],
+    acceptingNewMembers: true,
+    openingTimes: '',
+    description: '',
+  });
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'MEMBER' | 'ADMIN'>('MEMBER');
   const [inviteExpiresInDays, setInviteExpiresInDays] = useState(14);
@@ -51,7 +83,18 @@ export default function ClubDashboard() {
 
   useEffect(() => {
     if (!id) return;
-    api.get<Club>(`/api/clubs/${id}`).then(setClub).catch(e => setError(e instanceof Error ? e.message : 'Error'));
+    api.get<Club>(`/api/clubs/${id}`).then(clubData => {
+      setClub(clubData);
+      setClubForm({
+        name: clubData.name,
+        homeOfficeRef: clubData.homeOfficeRef ?? '',
+        address: clubData.address ?? '',
+        disciplinesOffered: normalizeDisciplines(clubData.disciplinesOffered),
+        acceptingNewMembers: clubData.acceptingNewMembers ?? true,
+        openingTimes: clubData.openingTimes ?? '',
+        description: clubData.description ?? '',
+      });
+    }).catch(e => setError(e instanceof Error ? e.message : 'Error'));
     api.get<Member[]>(`/api/clubs/${id}/members`)
       .then(ms => {
         setMembers(ms);
@@ -72,6 +115,59 @@ export default function ClubDashboard() {
   }, [id, isAdmin]);
 
   const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
+
+  function addDiscipline() {
+    const value = disciplineInput.trim();
+    if (!value) return;
+    setClubForm(prev => {
+      if (prev.disciplinesOffered.includes(value)) return prev;
+      return {
+        ...prev,
+        disciplinesOffered: [...prev.disciplinesOffered, value],
+      };
+    });
+    setDisciplineInput('');
+  }
+
+  function removeDiscipline(discipline: string) {
+    setClubForm(prev => ({
+      ...prev,
+      disciplinesOffered: prev.disciplinesOffered.filter(item => item !== discipline),
+    }));
+  }
+
+  async function saveClubProfile(e: React.FormEvent) {
+    e.preventDefault();
+    if (!id) return;
+    setSavingClubProfile(true);
+    setError('');
+    try {
+      const updated = await api.patch<Club>(`/api/clubs/${id}`, {
+        name: clubForm.name,
+        homeOfficeRef: clubForm.homeOfficeRef,
+        address: clubForm.address,
+        disciplinesOffered: clubForm.disciplinesOffered,
+        acceptingNewMembers: clubForm.acceptingNewMembers,
+        openingTimes: clubForm.openingTimes,
+        description: clubForm.description,
+      });
+      setClub(updated);
+      setClubForm({
+        name: updated.name,
+        homeOfficeRef: updated.homeOfficeRef ?? '',
+        address: updated.address ?? '',
+        disciplinesOffered: normalizeDisciplines(updated.disciplinesOffered),
+        acceptingNewMembers: updated.acceptingNewMembers,
+        openingTimes: updated.openingTimes ?? '',
+        description: updated.description ?? '',
+      });
+      setEditingClubProfile(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating club profile');
+    } finally {
+      setSavingClubProfile(false);
+    }
+  }
 
   async function approveMember(userId: string, status: 'APPROVED' | 'REJECTED') {
     if (!id) return;
@@ -173,14 +269,111 @@ export default function ClubDashboard() {
           <h1>{club.name}</h1>
           {club.homeOfficeRef && <p style={{ color: 'var(--gray-600)', fontSize: '0.9rem' }}>Home Office Ref: {club.homeOfficeRef}</p>}
         </div>
-        {isAdmin && (
-          <Link to={`/clubs/${id}/history`} className="btn btn-secondary btn-sm">
-            View Sign-In History
-          </Link>
-        )}
+        <div className="actions">
+          <Link to={`/clubs/profile/${id}`} className="btn btn-secondary btn-sm">Public Profile</Link>
+          {isAdmin && (
+            <Link to={`/clubs/${id}/history`} className="btn btn-secondary btn-sm">
+              View Sign-In History
+            </Link>
+          )}
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      <section>
+        <div className="page-header">
+          <h2>Club Profile</h2>
+          {isAdmin && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setEditingClubProfile(v => !v)}>
+              {editingClubProfile ? 'Cancel' : 'Edit'}
+            </button>
+          )}
+        </div>
+
+        {editingClubProfile ? (
+          <form onSubmit={saveClubProfile}>
+            <div className="form-group">
+              <label>Club Name</label>
+              <input value={clubForm.name} onChange={e => setClubForm(prev => ({ ...prev, name: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Home Office Reference</label>
+              <input value={clubForm.homeOfficeRef} onChange={e => setClubForm(prev => ({ ...prev, homeOfficeRef: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Address</label>
+              <input value={clubForm.address} onChange={e => setClubForm(prev => ({ ...prev, address: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Disciplines Offered</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <input
+                  value={disciplineInput}
+                  onChange={e => setDisciplineInput(e.target.value)}
+                  placeholder="Type a discipline and click Add"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addDiscipline();
+                    }
+                  }}
+                />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={addDiscipline}>Add</button>
+              </div>
+              <div className="actions" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                {clubForm.disciplinesOffered.map(discipline => (
+                  <button
+                    key={discipline}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => removeDiscipline(discipline)}
+                  >
+                    {discipline} ×
+                  </button>
+                ))}
+                {clubForm.disciplinesOffered.length === 0 && (
+                  <span style={{ color: 'var(--gray-600)' }}>No disciplines added</span>
+                )}
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Accepting New Members</label>
+              <select
+                value={clubForm.acceptingNewMembers ? 'yes' : 'no'}
+                onChange={e => setClubForm(prev => ({ ...prev, acceptingNewMembers: e.target.value === 'yes' }))}
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Opening Times</label>
+              <input value={clubForm.openingTimes} onChange={e => setClubForm(prev => ({ ...prev, openingTimes: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <textarea value={clubForm.description} onChange={e => setClubForm(prev => ({ ...prev, description: e.target.value }))} rows={4} />
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={savingClubProfile}>
+              {savingClubProfile ? 'Saving…' : 'Save Club Profile'}
+            </button>
+          </form>
+        ) : (
+          <dl style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '0.5rem 1rem' }}>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Address</dt>
+            <dd>{club.address ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disciplines Offered</dt>
+            <dd>{normalizeDisciplines(club.disciplinesOffered).join(', ') || 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Accepting New Members</dt>
+            <dd>{club.acceptingNewMembers ? 'Yes' : 'No'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Opening Times</dt>
+            <dd>{club.openingTimes ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Description</dt>
+            <dd>{club.description ?? 'N/A'}</dd>
+          </dl>
+        )}
+      </section>
 
       {isAdmin && (
         <section>

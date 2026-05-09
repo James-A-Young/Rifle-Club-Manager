@@ -8,6 +8,41 @@ import { formatZodError } from '../utils/zodError';
 
 const router = Router();
 
+const publicClubProfileParamsSchema = z.object({
+  id: z.string().min(1),
+});
+
+router.get('/profile/:id', async (req, res: Response) => {
+  const params = publicClubProfileParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+
+  const club = await prisma.club.findUnique({
+    where: { id: params.data.id },
+    select: {
+      id: true,
+      name: true,
+      homeOfficeRef: true,
+      address: true,
+      disciplinesOffered: true,
+      acceptingNewMembers: true,
+      openingTimes: true,
+      description: true,
+      createdAt: true,
+      _count: { select: { memberships: true } },
+    },
+  });
+
+  if (!club) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+
+  res.json(club);
+});
+
 router.use(requireAuth);
 
 async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
@@ -25,7 +60,46 @@ async function ensureAdminForClub(userId: string, clubId: string): Promise<boole
 const createClubSchema = z.object({
   name: z.string().min(2),
   homeOfficeRef: z.string().optional(),
+  address: z.string().optional(),
+  disciplinesOffered: z.array(z.string().min(1)).optional(),
+  acceptingNewMembers: z.boolean().optional(),
+  openingTimes: z.string().optional(),
+  description: z.string().optional(),
 });
+
+const updateClubSchema = z.object({
+  name: z.string().min(2).optional(),
+  homeOfficeRef: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  disciplinesOffered: z.array(z.string().min(1)).optional().nullable(),
+  acceptingNewMembers: z.boolean().optional(),
+  openingTimes: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+});
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeDisciplines(value: string[] | null | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const deduped = new Set<string>();
+  value.forEach(item => {
+    const normalized = item.trim();
+    if (normalized.length > 0) {
+      deduped.add(normalized);
+    }
+  });
+
+  return Array.from(deduped);
+}
 
 router.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = createClubSchema.safeParse(req.body);
@@ -33,9 +107,18 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
+
+  const disciplinesOffered = normalizeDisciplines(parsed.data.disciplinesOffered);
+
   const club = await prisma.club.create({
     data: {
-      ...parsed.data,
+      name: parsed.data.name,
+      homeOfficeRef: normalizeOptionalText(parsed.data.homeOfficeRef),
+      address: normalizeOptionalText(parsed.data.address),
+      disciplinesOffered,
+      acceptingNewMembers: parsed.data.acceptingNewMembers ?? true,
+      openingTimes: normalizeOptionalText(parsed.data.openingTimes),
+      description: normalizeOptionalText(parsed.data.description),
       ownerId: req.user!.id,
       memberships: {
         create: {
@@ -78,6 +161,64 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   res.json(club);
 });
 
+router.patch('/:id', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = updateClubSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const updateData: {
+    name?: string;
+    homeOfficeRef?: string | null;
+    address?: string | null;
+    disciplinesOffered?: string[];
+    acceptingNewMembers?: boolean;
+    openingTimes?: string | null;
+    description?: string | null;
+  } = {};
+
+  if ('name' in parsed.data && typeof parsed.data.name === 'string') {
+    updateData.name = parsed.data.name;
+  }
+  if ('homeOfficeRef' in parsed.data) {
+    updateData.homeOfficeRef = normalizeOptionalText(parsed.data.homeOfficeRef);
+  }
+  if ('address' in parsed.data) {
+    updateData.address = normalizeOptionalText(parsed.data.address);
+  }
+  if ('disciplinesOffered' in parsed.data) {
+    updateData.disciplinesOffered = normalizeDisciplines(parsed.data.disciplinesOffered);
+  }
+  if ('acceptingNewMembers' in parsed.data && typeof parsed.data.acceptingNewMembers === 'boolean') {
+    updateData.acceptingNewMembers = parsed.data.acceptingNewMembers;
+  }
+  if ('openingTimes' in parsed.data) {
+    updateData.openingTimes = normalizeOptionalText(parsed.data.openingTimes);
+  }
+  if ('description' in parsed.data) {
+    updateData.description = normalizeOptionalText(parsed.data.description);
+  }
+
+  const club = await prisma.club.update({
+    where: { id: clubId },
+    data: updateData,
+    include: {
+      owner: { select: { id: true, name: true, email: true } },
+      _count: { select: { memberships: true } },
+    },
+  });
+
+  res.json(club);
+});
+
 router.get('/:id/members', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -96,6 +237,10 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
           address: true,
           placeOfBirth: true,
           dateOfBirth: true,
+          firearmCertificateNumber: true,
+          firearmCertificateExpiry: true,
+          shotgunCertificateNumber: true,
+          shotgunCertificateExpiry: true,
           gdprConsentDate: true,
         },
       },

@@ -14,6 +14,10 @@ interface Member {
     address?: string;
     placeOfBirth?: string;
     dateOfBirth?: string;
+    firearmCertificateNumber?: string | null;
+    firearmCertificateExpiry?: string | null;
+    shotgunCertificateNumber?: string | null;
+    shotgunCertificateExpiry?: string | null;
     gdprConsentDate?: string;
   };
 }
@@ -77,6 +81,22 @@ export default function ClubMemberProfile() {
               <tr>
                 <th>Date of Birth</th>
                 <td>{member.user.dateOfBirth ? new Date(member.user.dateOfBirth).toLocaleDateString() : 'N/A'}</td>
+              </tr>
+              <tr>
+                <th>Firearm Certificate #</th>
+                <td>{member.user.firearmCertificateNumber ?? 'N/A'}</td>
+              </tr>
+              <tr>
+                <th>Firearm Certificate Expiry</th>
+                <td>{member.user.firearmCertificateExpiry ? new Date(member.user.firearmCertificateExpiry).toLocaleDateString() : 'N/A'}</td>
+              </tr>
+              <tr>
+                <th>Shotgun Certificate #</th>
+                <td>{member.user.shotgunCertificateNumber ?? 'N/A'}</td>
+              </tr>
+              <tr>
+                <th>Shotgun Certificate Expiry</th>
+                <td>{member.user.shotgunCertificateExpiry ? new Date(member.user.shotgunCertificateExpiry).toLocaleDateString() : 'N/A'}</td>
               </tr>
               <tr>
                 <th>GDPR Consent Date</th>

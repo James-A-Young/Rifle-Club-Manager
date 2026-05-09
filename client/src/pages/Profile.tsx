@@ -9,6 +9,10 @@ interface UserProfile {
   address: string;
   placeOfBirth: string;
   dateOfBirth: string;
+  firearmCertificateNumber?: string | null;
+  firearmCertificateExpiry?: string | null;
+  shotgunCertificateNumber?: string | null;
+  shotgunCertificateExpiry?: string | null;
   role: string;
 }
 
@@ -25,7 +29,16 @@ export default function Profile() {
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [editing, setEditing] = useState(false);
   const [showFirearmForm, setShowFirearmForm] = useState(false);
-  const [form, setForm] = useState({ name: '', address: '', placeOfBirth: '', dateOfBirth: '' });
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    placeOfBirth: '',
+    dateOfBirth: '',
+    firearmCertificateNumber: '',
+    firearmCertificateExpiry: '',
+    shotgunCertificateNumber: '',
+    shotgunCertificateExpiry: '',
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -37,6 +50,10 @@ export default function Profile() {
         address: p.address,
         placeOfBirth: p.placeOfBirth,
         dateOfBirth: p.dateOfBirth.split('T')[0],
+        firearmCertificateNumber: p.firearmCertificateNumber ?? '',
+        firearmCertificateExpiry: p.firearmCertificateExpiry ? p.firearmCertificateExpiry.split('T')[0] : '',
+        shotgunCertificateNumber: p.shotgunCertificateNumber ?? '',
+        shotgunCertificateExpiry: p.shotgunCertificateExpiry ? p.shotgunCertificateExpiry.split('T')[0] : '',
       });
     });
     api.get<Firearm[]>('/api/users/me/firearms').then(setFirearms);
@@ -101,6 +118,38 @@ export default function Profile() {
               <label>Date of Birth</label>
               <input type="date" value={form.dateOfBirth} onChange={e => setForm(f => ({ ...f, dateOfBirth: e.target.value }))} required />
             </div>
+            <div className="form-group">
+              <label>Firearm Certificate Number</label>
+              <input
+                value={form.firearmCertificateNumber}
+                onChange={e => setForm(f => ({ ...f, firearmCertificateNumber: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="form-group">
+              <label>Firearm Certificate Expiry</label>
+              <input
+                type="date"
+                value={form.firearmCertificateExpiry}
+                onChange={e => setForm(f => ({ ...f, firearmCertificateExpiry: e.target.value }))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Shotgun Certificate Number</label>
+              <input
+                value={form.shotgunCertificateNumber}
+                onChange={e => setForm(f => ({ ...f, shotgunCertificateNumber: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="form-group">
+              <label>Shotgun Certificate Expiry</label>
+              <input
+                type="date"
+                value={form.shotgunCertificateExpiry}
+                onChange={e => setForm(f => ({ ...f, shotgunCertificateExpiry: e.target.value }))}
+              />
+            </div>
             <button type="submit" className="btn btn-primary">Save Changes</button>
           </form>
         ) : (
@@ -115,6 +164,14 @@ export default function Profile() {
             <dd>{profile.placeOfBirth}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Date of Birth</dt>
             <dd>{new Date(profile.dateOfBirth).toLocaleDateString()}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate #</dt>
+            <dd>{profile.firearmCertificateNumber ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate Expiry</dt>
+            <dd>{profile.firearmCertificateExpiry ? new Date(profile.firearmCertificateExpiry).toLocaleDateString() : 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Shotgun Certificate #</dt>
+            <dd>{profile.shotgunCertificateNumber ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Shotgun Certificate Expiry</dt>
+            <dd>{profile.shotgunCertificateExpiry ? new Date(profile.shotgunCertificateExpiry).toLocaleDateString() : 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Role</dt>
             <dd><span className={`badge badge-${profile.role.toLowerCase()}`}>{profile.role}</span></dd>
           </dl>

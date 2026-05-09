@@ -19,6 +19,10 @@ async function main() {
       address: '1 Main Street, London, SW1A 1AA',
       placeOfBirth: 'London',
       dateOfBirth: new Date('1980-01-01'),
+      firearmCertificateNumber: 'FAC-OWNER-001',
+      firearmCertificateExpiry: new Date('2028-01-01'),
+      shotgunCertificateNumber: 'SGC-OWNER-001',
+      shotgunCertificateExpiry: new Date('2028-01-01'),
     },
   });
 
@@ -34,6 +38,10 @@ async function main() {
       address: '2 High Street, Manchester, M1 1AA',
       placeOfBirth: 'Manchester',
       dateOfBirth: new Date('1990-06-15'),
+      firearmCertificateNumber: null,
+      firearmCertificateExpiry: null,
+      shotgunCertificateNumber: null,
+      shotgunCertificateExpiry: null,
     },
   });
 
@@ -44,6 +52,11 @@ async function main() {
       id: 'seed-club-1',
       name: 'Riverside Rifle Club',
       homeOfficeRef: 'HO-12345',
+      address: '10 Riverside Road, York, YO1 7AA',
+      disciplinesOffered: ['Smallbore', 'Fullbore', 'Prone'],
+      acceptingNewMembers: true,
+      openingTimes: 'Tue/Thu 18:00-21:00, Sat 09:00-15:00',
+      description: 'Community-focused rifle club with coached sessions for all skill levels.',
       ownerId: owner.id,
     },
   });

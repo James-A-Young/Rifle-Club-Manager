@@ -20,6 +20,10 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      firearmCertificateNumber: true,
+      firearmCertificateExpiry: true,
+      shotgunCertificateNumber: true,
+      shotgunCertificateExpiry: true,
       gdprConsentDate: true,
       createdAt: true,
       updatedAt: true,
@@ -37,7 +41,30 @@ const updateSchema = z.object({
   address: z.string().min(5).optional(),
   placeOfBirth: z.string().min(2).optional(),
   dateOfBirth: z.string().optional(),
+  firearmCertificateNumber: z.string().optional().nullable(),
+  firearmCertificateExpiry: z.string().optional().nullable(),
+  shotgunCertificateNumber: z.string().optional().nullable(),
+  shotgunCertificateExpiry: z.string().optional().nullable(),
 });
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function parseOptionalDate(value: string | null | undefined, field: string): Date | null {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid ${field}`);
+  }
+  return parsed;
+}
 
 router.patch('/me', async (req: AuthRequest, res: Response) => {
   const parsed = updateSchema.safeParse(req.body);
@@ -45,12 +72,42 @@ router.patch('/me', async (req: AuthRequest, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { dateOfBirth, ...rest } = parsed.data;
+
+  let firearmCertificateExpiry: Date | null = null;
+  let shotgunCertificateExpiry: Date | null = null;
+  try {
+    firearmCertificateExpiry = parseOptionalDate(parsed.data.firearmCertificateExpiry, 'firearm certificate expiry date');
+    shotgunCertificateExpiry = parseOptionalDate(parsed.data.shotgunCertificateExpiry, 'shotgun certificate expiry date');
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid certificate expiry date' });
+    return;
+  }
+
+  const {
+    dateOfBirth,
+    firearmCertificateNumber,
+    shotgunCertificateNumber,
+  } = parsed.data;
+
   const user = await prisma.user.update({
     where: { id: req.user!.id },
     data: {
-      ...rest,
+      ...(('name' in parsed.data) ? { name: parsed.data.name } : {}),
+      ...(('address' in parsed.data) ? { address: parsed.data.address } : {}),
+      ...(('placeOfBirth' in parsed.data) ? { placeOfBirth: parsed.data.placeOfBirth } : {}),
       ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
+      ...(('firearmCertificateNumber' in parsed.data)
+        ? { firearmCertificateNumber: normalizeOptionalText(firearmCertificateNumber) }
+        : {}),
+      ...(('firearmCertificateExpiry' in parsed.data)
+        ? { firearmCertificateExpiry }
+        : {}),
+      ...(('shotgunCertificateNumber' in parsed.data)
+        ? { shotgunCertificateNumber: normalizeOptionalText(shotgunCertificateNumber) }
+        : {}),
+      ...(('shotgunCertificateExpiry' in parsed.data)
+        ? { shotgunCertificateExpiry }
+        : {}),
     },
     select: {
       id: true,
@@ -60,6 +117,10 @@ router.patch('/me', async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      firearmCertificateNumber: true,
+      firearmCertificateExpiry: true,
+      shotgunCertificateNumber: true,
+      shotgunCertificateExpiry: true,
       updatedAt: true,
     },
   });
