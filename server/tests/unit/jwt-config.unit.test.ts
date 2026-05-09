@@ -20,7 +20,9 @@ describe('JWT config — fail-fast startup', () => {
     await expect(import('../../src/config/jwt')).rejects.toThrow(
       /JWT_SECRET environment variable is not set/,
     );
-    process.env.JWT_SECRET = original;
+    if (original !== undefined) {
+      process.env.JWT_SECRET = original;
+    }
   });
 
   it('throws when JWT_SECRET is shorter than 32 characters', async () => {
@@ -29,7 +31,11 @@ describe('JWT config — fail-fast startup', () => {
     await expect(import('../../src/config/jwt')).rejects.toThrow(
       /JWT_SECRET is too short/,
     );
-    process.env.JWT_SECRET = original;
+    if (original !== undefined) {
+      process.env.JWT_SECRET = original;
+    } else {
+      delete process.env.JWT_SECRET;
+    }
   });
 
   it('exports jwtSecret when JWT_SECRET meets the minimum length', async () => {
@@ -37,6 +43,10 @@ describe('JWT config — fail-fast startup', () => {
     process.env.JWT_SECRET = 'a'.repeat(32);
     const mod = await import('../../src/config/jwt');
     expect(mod.jwtSecret).toBe('a'.repeat(32));
-    process.env.JWT_SECRET = original;
+    if (original !== undefined) {
+      process.env.JWT_SECRET = original;
+    } else {
+      delete process.env.JWT_SECRET;
+    }
   });
 });

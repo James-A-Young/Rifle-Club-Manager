@@ -39,8 +39,8 @@ function extractToken(req: Request): string | null {
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.substring(7);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cookieToken = (req as any).cookies?.[AUTH_COOKIE_NAME];
+  const requestWithCookies = req as Request & { cookies?: Record<string, string | undefined> };
+  const cookieToken = requestWithCookies.cookies?.[AUTH_COOKIE_NAME];
   return typeof cookieToken === 'string' ? cookieToken : null;
 }
 

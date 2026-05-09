@@ -175,12 +175,10 @@ describe('security: firearm serial-number auto-link scope', () => {
 
     expect(signInRes.status).toBe(201);
 
-    // The visit must not have a firearmUsedId pointing to the club-B firearm
-    const foreignFirearm = await prisma.firearm.findFirst({
-      where: { serialNumber: 'SHARED-001' },
-    });
+    // The visit must not have a firearmUsedId at all (the serial resolved to
+    // a foreign firearm which is out of scope, so no firearm should be linked)
     const visit = await prisma.visitLog.findUnique({ where: { id: signInRes.body.id } });
-    expect(visit?.firearmUsedId).not.toBe(foreignFirearm?.id);
+    expect(visit?.firearmUsedId).toBeNull();
   });
 });
 

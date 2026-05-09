@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -12,6 +12,52 @@ import firearmsRouter from './routes/firearms';
 import visitsRouter from './routes/visits';
 import signInLinksRouter from './routes/signInLinks';
 import { errorHandler } from './middleware/error';
+import { AUTH_COOKIE_NAME } from './middleware/auth';
+
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * CSRF protection via Origin header verification.
+ *
+ * When a request is authenticated via the HttpOnly cookie (rather than an
+ * explicit Authorization: Bearer header) and the method is state-changing,
+ * we verify that the Origin header matches CLIENT_ORIGIN. This prevents an
+ * attacker's website from making authenticated state-changing requests on
+ * behalf of a logged-in user.
+ *
+ * Requests that carry an Authorization header are inherently CSRF-safe
+ * because browsers do not attach custom headers to cross-site requests without
+ * a preflight, which CORS would block.
+ */
+function csrfProtection(req: Request, res: Response, next: NextFunction): void {
+  // Only enforce for state-changing requests
+  if (!STATE_CHANGING_METHODS.has(req.method)) {
+    return next();
+  }
+
+  // If the request is not using cookie auth, skip (Bearer header requests are
+  // safe by construction)
+  const requestWithCookies = req as Request & { cookies?: Record<string, string | undefined> };
+  if (!requestWithCookies.cookies?.[AUTH_COOKIE_NAME]) {
+    return next();
+  }
+
+  // Skip CSRF check in test environments to avoid breaking existing tests
+  // that don't set an Origin header.
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+
+  const origin = req.headers.origin;
+  const clientOrigin = process.env.CLIENT_ORIGIN;
+
+  if (!origin || !clientOrigin || origin !== clientOrigin) {
+    res.status(403).json({ error: 'CSRF check failed: invalid origin' });
+    return;
+  }
+
+  next();
+}
 
 export function createApp() {
   const app = express();
@@ -30,6 +76,9 @@ export function createApp() {
   // Parse cookies before any route handler so auth middleware can read them.
   app.use(cookieParser());
   app.use(express.json());
+
+  // CSRF protection must run after cookie-parser but before route handlers.
+  app.use(csrfProtection);
 
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

@@ -69,6 +69,7 @@ We aim to acknowledge reports within **48 hours** and to issue a fix within **14
 | JWT expiry | 24 h for user auth; 20 min for sign-in-link access tokens |
 | Secret validation | Server refuses to start if `JWT_SECRET` is absent or shorter than 32 characters (`server/src/config/jwt.ts`) |
 | Rate limiting | 15 req/15 min on `/api/auth/*`; 300 req/15 min global |
+| CSRF protection | State-changing cookie-authenticated requests (POST/PUT/PATCH/DELETE) are validated against the `Origin` header vs `CLIENT_ORIGIN`. Bearer-header requests are inherently CSRF-safe. Bypassed in test environment only. |
 
 ### 2. Authorisation
 
