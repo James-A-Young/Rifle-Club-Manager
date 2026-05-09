@@ -221,6 +221,43 @@ describe('security: explicit firearmUsedId ownership check', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/does not belong/);
   });
+
+  it('rejects a firearmUsedId that belongs to a different user', async () => {
+    const { club: clubA } = await createClubWithAdmin();
+    const otherUser = await createUser({ email: `other-user-${Math.random().toString(36).slice(2)}@test.com` });
+
+    // Firearm owned by another user (not the signing-in user)
+    const otherUserFirearm = await prisma.firearm.create({
+      data: {
+        make: 'Other', model: 'User Gun', caliber: '.22', serialNumber: `OUG-${Math.random().toString(36).slice(2)}`,
+        ownerType: OwnerType.USER, userId: otherUser.id,
+      },
+    });
+
+    const link = await prisma.signInLink.create({
+      data: {
+        clubId: clubA.id,
+        cryptoToken: `user-scope-${Math.random().toString(36).slice(2)}`,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+
+    const linkRes = await request(app).get(`/api/sign-in-links/${link.cryptoToken}`);
+    const accessToken = linkRes.body.accessToken as string;
+
+    // Guest (unauthenticated) sign-in supplying another user's firearmId
+    const res = await request(app)
+      .post('/api/visits/public')
+      .send({
+        signInAccessToken: accessToken,
+        purpose: 'Practice',
+        firearmUsedId: otherUserFirearm.id,
+        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club', guestEmail: '' },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/does not belong/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,7 +337,12 @@ describe('security: HttpOnly auth cookie', () => {
   });
 
   it('clears the auth_token cookie on logout', async () => {
-    const res = await request(app).post('/api/auth/logout');
+    const user = await createUser({ email: `logout-test-${Math.random().toString(36).slice(2)}@test.com` });
+    const cookie = authCookie(user);
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', cookie);
 
     expect(res.status).toBe(200);
     const setCookieHeader = res.headers['set-cookie'] as string | string[];
@@ -313,6 +355,14 @@ describe('security: HttpOnly auth cookie', () => {
       authCookieLine?.includes('Max-Age=0') ||
       authCookieLine?.match(/expires=.*1970/i) !== null;
     expect(isCleared).toBe(true);
+
+    // After logout, a protected request using the same cookie value should fail
+    // because the server has cleared the cookie. In a stateless JWT system the
+    // token itself has not been revoked, but the client browser will have had
+    // its cookie cleared by the Set-Cookie response above.
+    // We verify the logout response signals cookie clearance (already asserted
+    // above). A stateless token revocation list is outside the scope of these
+    // tests but is documented in SECURITY.md as a future enhancement.
   });
 });
 
