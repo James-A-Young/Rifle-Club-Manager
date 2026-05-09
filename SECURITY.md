@@ -68,6 +68,7 @@ We aim to acknowledge reports within **48 hours** and to issue a fix within **14
 | JWT transport | **HttpOnly, Secure, SameSite=Lax cookie** (primary) + `Authorization: Bearer` header (backward-compat for API clients) |
 | JWT expiry | 24 h for user auth; 20 min for sign-in-link access tokens |
 | Secret validation | Server refuses to start if `JWT_SECRET` is absent or shorter than 32 characters (`server/src/config/jwt.ts`) |
+| Signup abuse prevention | Cloudflare Turnstile on registration (`POST /api/auth/register`) when `TURNSTILE_SECRET_KEY` and `VITE_TURNSTILE_SITE_KEY` are configured |
 | Rate limiting | 15 req/15 min on `/api/auth/*`; 300 req/15 min global |
 | CSRF protection | State-changing cookie-authenticated requests (POST/PUT/PATCH/DELETE) are validated against the `Origin` header vs `CLIENT_ORIGIN`. Bearer-header requests are inherently CSRF-safe. Bypassed in test environment only. |
 
@@ -136,6 +137,8 @@ All GitHub Actions steps are pinned to **full commit SHAs** (not mutable version
 | `DATABASE_URL` | ✅ Yes | PostgreSQL connection string — keep secret |
 | `JWT_SECRET` | ✅ Yes | **Minimum 32 characters**. Generate: `openssl rand -base64 48` |
 | `CLIENT_ORIGIN` | ✅ Yes | Exact origin of the React SPA (e.g. `https://app.example.com`) |
+| `TURNSTILE_SECRET_KEY` | Conditional | Required to enforce captcha verification on signup |
+| `VITE_TURNSTILE_SITE_KEY` | Conditional | Client site key for rendering Turnstile widget on register page |
 | `NODE_ENV` | ✅ Yes | Set to `production` in production |
 | `PORT` | No | Defaults to `3000` |
 | `GOOGLE_WALLET_ISSUER_ID` | Conditional | Required only if pass issuing is enabled |

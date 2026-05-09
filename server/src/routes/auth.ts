@@ -12,6 +12,7 @@ import {
   auditAuthLoginSuccess,
   auditAuthRegisterSuccess,
 } from '../middleware/auditLog';
+import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ const registerSchema = z.object({
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   inviteToken: z.string().min(1).optional(),
+  turnstileToken: z.string().min(1).optional(),
 });
 
 const loginSchema = z.object({
@@ -37,7 +39,15 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { name, email, password, address, placeOfBirth, dateOfBirth, inviteToken } = parsed.data;
+  const { name, email, password, address, placeOfBirth, dateOfBirth, inviteToken, turnstileToken } = parsed.data;
+
+  if (isTurnstileEnabled()) {
+    const turnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
+    if (!turnstileValid) {
+      res.status(400).json({ error: 'Captcha verification failed' });
+      return;
+    }
+  }
 
   const normalizedEmail = email.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });

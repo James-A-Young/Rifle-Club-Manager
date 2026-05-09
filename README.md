@@ -69,6 +69,8 @@ JWT_SECRET=your-super-secret-jwt-key-change-in-production
 NODE_ENV=development
 PORT=3000
 CLIENT_ORIGIN=http://localhost:5173
+TURNSTILE_SECRET_KEY=
+VITE_TURNSTILE_SITE_KEY=
 ```
 
 ### Optional: Google Wallet Membership Cards
@@ -98,6 +100,23 @@ Club admins can configure:
 - Toggle membership card kiosk sign-in on/off
 
 Without Google Wallet credentials, the app functions normally; pass issuing is simply unavailable.
+
+### Optional: Cloudflare Turnstile (Signup Captcha)
+
+To protect signup from automated abuse, configure Cloudflare Turnstile:
+
+1. Create a Turnstile widget in Cloudflare dashboard
+2. Add the **secret key** and **site key** to `.env`:
+
+```env
+TURNSTILE_SECRET_KEY=<turnstile_secret_key>
+VITE_TURNSTILE_SITE_KEY=<turnstile_site_key>
+```
+
+Behavior:
+- If `TURNSTILE_SECRET_KEY` is set, `POST /api/auth/register` requires a valid Turnstile token
+- If `VITE_TURNSTILE_SITE_KEY` is set, the register page renders the Turnstile widget
+- Leave both empty to disable captcha in local/dev environments
 
 Important: the server code does not automatically load `.env` by itself, so for local development load these vars into your shell before running server commands.
 
