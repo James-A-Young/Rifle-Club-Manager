@@ -1,5 +1,9 @@
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
+/**
+ * Retrieve the auth token from localStorage (legacy / API-client fallback).
+ * Browser sessions rely on the HttpOnly cookie set by the server.
+ */
 function getToken(): string | null {
   return localStorage.getItem('token');
 }
@@ -22,11 +26,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers,
+    // Include credentials so the HttpOnly auth cookie is sent with every
+    // request. This is the primary auth mechanism for browser sessions;
+    // the Authorization header is a backward-compat fallback for API clients.
+    credentials: 'include',
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    const errorMessage = 
-      (body as { error?: string | { message?: string } }).error || 
+    const errorMessage =
+      (body as { error?: string | { message?: string } }).error ||
       ((body as { message?: string }).message) ||
       res.statusText;
     const message = typeof errorMessage === 'string' ? errorMessage : (errorMessage?.message ?? res.statusText);

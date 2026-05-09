@@ -6,6 +6,7 @@ import { MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
+import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
 
 const router = Router();
 
@@ -118,6 +119,11 @@ router.post('/register', async (req: Request, res: Response) => {
       { expiresIn: JWT_ACCESS_EXPIRES }
     );
 
+    // Set the JWT as an HttpOnly cookie so it is inaccessible to JavaScript
+    // (mitigates XSS-based token theft). The token is also returned in the
+    // response body for backward compatibility with API clients that use
+    // the Authorization: Bearer header.
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
     res.status(201).json({ token, user });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'REGISTER_FAILED';
@@ -168,10 +174,18 @@ router.post('/login', async (req: Request, res: Response) => {
     { expiresIn: JWT_ACCESS_EXPIRES }
   );
 
+  // Set the JWT as an HttpOnly cookie (same reasoning as register above).
+  res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
   res.json({
     token,
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
   });
+});
+
+// Logout endpoint — clears the auth cookie server-side.
+router.post('/logout', (_req: Request, res: Response) => {
+  res.clearCookie(AUTH_COOKIE_NAME, { ...AUTH_COOKIE_OPTIONS, maxAge: 0 });
+  res.json({ success: true });
 });
 
 export default router;

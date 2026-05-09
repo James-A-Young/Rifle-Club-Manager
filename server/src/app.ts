@@ -1,6 +1,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 
@@ -18,8 +19,16 @@ export function createApp() {
   app.use(helmet());
 
   const corsOrigin = process.env.CLIENT_ORIGIN;
-  app.use(cors({ origin: corsOrigin ?? false }));
+  // credentials: true is required so the browser sends/receives the auth
+  // cookie in cross-origin requests (dev). The origin is always restricted
+  // to the configured CLIENT_ORIGIN — never '*'.
+  app.use(cors({
+    origin: corsOrigin ?? false,
+    credentials: true,
+  }));
 
+  // Parse cookies before any route handler so auth middleware can read them.
+  app.use(cookieParser());
   app.use(express.json());
 
   const globalLimiter = rateLimit({

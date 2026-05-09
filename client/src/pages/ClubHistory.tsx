@@ -199,6 +199,10 @@ export default function ClubHistory() {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams(queryParams);
       const response = await fetch(`/api/visits/club/${id}/history/export.csv?${params.toString()}`, {
+        // credentials: 'include' sends the HttpOnly auth cookie automatically.
+        // The Authorization header is retained as a fallback for API clients
+        // that do not rely on the cookie.
+        credentials: 'include',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
