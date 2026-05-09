@@ -41,9 +41,11 @@ async function createUser(overrides: Partial<{
 }
 
 function authHeader(user: { id: string; email: string; role: Role }) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET not set in test environment');
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET ?? 'test-secret',
+    secret,
     { expiresIn: '1h' }
   );
   return { Authorization: `Bearer ${token}` };

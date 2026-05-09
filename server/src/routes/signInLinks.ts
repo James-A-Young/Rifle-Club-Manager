@@ -6,11 +6,11 @@ import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
+import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 
 const router = Router();
 
 const KIOSK_LINK_MIN_HOURS = 24 * 365 * 5;
-const ACCESS_TOKEN_TTL_MINUTES = 20;
 
 const createLinkSchema = z.object({
   clubId: z.string(),
@@ -213,8 +213,8 @@ router.get('/:token', async (req: AuthRequest, res: Response) => {
       clubId: link.clubId,
       tokenType: 'sign-in-access',
     },
-    process.env.JWT_SECRET ?? 'secret',
-    { expiresIn: `${ACCESS_TOKEN_TTL_MINUTES}m` }
+    jwtSecret,
+    { expiresIn: `${JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES}m` }
   );
 
   res.json({
@@ -222,7 +222,7 @@ router.get('/:token', async (req: AuthRequest, res: Response) => {
     mode: isKioskLink(link.expiresAt) ? 'KIOSK' : 'QR',
     isAuthenticated: Boolean(req.user?.id),
     accessToken,
-    accessTokenExpiresInMinutes: ACCESS_TOKEN_TTL_MINUTES,
+    accessTokenExpiresInMinutes: JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES,
   });
 });
 

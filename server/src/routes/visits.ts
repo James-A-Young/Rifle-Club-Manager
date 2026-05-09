@@ -6,6 +6,7 @@ import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '@prisma/cli
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';
+import { jwtSecret } from '../config/jwt';
 
 const router = Router();
 
@@ -281,7 +282,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
 
   if (parsed.data.signInAccessToken) {
     try {
-      const payload = jwt.verify(parsed.data.signInAccessToken, process.env.JWT_SECRET ?? 'secret') as {
+      const payload = jwt.verify(parsed.data.signInAccessToken, jwtSecret) as {
         signInLinkId: string;
         clubId: string;
         tokenType: string;

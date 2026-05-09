@@ -45,7 +45,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://shootingmatch:shootingmatch@localhost:5432/shootingmatch_test
-      JWT_SECRET: test-secret
+      JWT_SECRET: test-secret-for-ci-integration-tests-do-not-use-in-prod
       CLIENT_ORIGIN: http://localhost:5173
     steps:
       - name: Checkout

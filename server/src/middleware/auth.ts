@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { jwtSecret } from '../config/jwt';
 
 export interface AuthRequest extends Request {
   user?: { id: string; email: string; role: string };
@@ -7,7 +8,7 @@ export interface AuthRequest extends Request {
 
 function decodeBearerToken(token: string): { id: string; email: string; role: string } | null {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET ?? 'secret') as {
+    return jwt.verify(token, jwtSecret) as {
       id: string;
       email: string;
       role: string;

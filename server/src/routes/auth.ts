@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
+import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
 
 const router = Router();
 
@@ -113,8 +114,8 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET ?? 'secret',
-      { expiresIn: '24h' }
+      jwtSecret,
+      { expiresIn: JWT_ACCESS_EXPIRES }
     );
 
     res.status(201).json({ token, user });
@@ -163,8 +164,8 @@ router.post('/login', async (req: Request, res: Response) => {
 
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET ?? 'secret',
-    { expiresIn: '24h' }
+    jwtSecret,
+    { expiresIn: JWT_ACCESS_EXPIRES }
   );
 
   res.json({
