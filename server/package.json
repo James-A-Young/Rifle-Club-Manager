@@ -10,7 +10,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
+    "test:integration": "vitest run tests/integration --maxWorkers=1",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

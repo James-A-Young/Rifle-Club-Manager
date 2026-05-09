@@ -170,7 +170,7 @@ describe('security: firearm serial-number auto-link scope', () => {
         signInAccessToken: accessToken,
         purpose: 'Practice',
         firearmSerialNumber: 'SHARED-001',
-        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club', guestEmail: '' },
+        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club' },
       });
 
     expect(signInRes.status).toBe(201);
@@ -215,7 +215,7 @@ describe('security: explicit firearmUsedId ownership check', () => {
         signInAccessToken: accessToken,
         purpose: 'Practice',
         firearmUsedId: foreignFirearm.id,
-        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club', guestEmail: '' },
+        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club' },
       });
 
     expect(res.status).toBe(400);
@@ -252,7 +252,7 @@ describe('security: explicit firearmUsedId ownership check', () => {
         signInAccessToken: accessToken,
         purpose: 'Practice',
         firearmUsedId: otherUserFirearm.id,
-        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club', guestEmail: '' },
+        guestDetails: { guestName: 'Guest', guestClubRepresented: 'Other Club' },
       });
 
     expect(res.status).toBe(400);
