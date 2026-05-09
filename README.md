@@ -29,7 +29,7 @@ It is organized as an npm workspace with:
 ## Prerequisites
 
 Install these before starting:
-- Node.js 20+ (Node 22+ recommended)
+- Node.js 24
 - npm 10+
 - Docker + Docker Compose (for local PostgreSQL)
 
@@ -155,15 +155,19 @@ Note: there is no root script named `dev:all` at the moment. Use the two-termina
 ## Available Root Scripts
 
 ```bash
-npm run dev:server   # Start server in watch mode
-npm run dev:client   # Start Vite dev server
-npm run build        # Build client and server
+npm run dev:server             # Start server in watch mode
+npm run dev:client             # Start Vite dev server
+npm run build                  # Build client and server
 npm run build:client
 npm run build:server
-npm run start        # Start built server (production mode)
+npm run start                  # Start built server (production mode)
 npm run db:generate
 npm run db:migrate
 npm run db:seed
+npm run test:server            # Run all backend tests
+npm run test:server:unit       # Run backend unit tests
+npm run test:server:integration# Run backend integration tests
+npm run test:server:coverage   # Run backend tests with coverage report
 ```
 
 ## Production Build and Run (Without Docker)
@@ -177,6 +181,47 @@ npm run start
 ```
 
 In production, the server serves static files from `public/` (built client assets).
+
+## Backend Testing
+
+Backend tests use Vitest + Supertest with two layers:
+- Unit tests: middleware and helper behavior
+- Integration tests: API routes against PostgreSQL using Prisma migrations
+
+Run tests locally:
+
+```bash
+# Start a local test database
+docker compose up -d db
+
+# Use a dedicated test database URL
+export DATABASE_URL=postgresql://shootingmatch:shootingmatch@localhost:5432/shootingmatch_test
+export JWT_SECRET=test-secret
+
+# Prepare schema and run tests
+npm run db:migrate
+npm run test:server:unit
+npm run test:server:integration
+npm run test:server:coverage
+```
+
+## Continuous Integration
+
+GitHub Actions workflows are provided:
+- `.github/workflows/ci.yml`: unit tests, integration tests, coverage artifact, workspace builds, docker build smoke
+- `.github/workflows/docker-publish.yml`: buildx publish to Docker Hub with tags
+
+Docker publish uses repository:
+- `iammind/rifle-club-manager`
+
+Tag behavior:
+- `sha-<commit>` on pushes
+- branch tags on branch pushes
+- `latest` on default branch
+
+Required repository secrets for publish:
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
 
 ## Run With Docker Compose
 

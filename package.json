@@ -11,6 +11,10 @@
     "start": "npm run start --workspace=server",
     "db:generate": "npm run db:generate --workspace=server",
     "db:migrate": "npm run db:migrate --workspace=server",
-    "db:seed": "npm run db:seed --workspace=server"
+    "db:seed": "npm run db:seed --workspace=server",
+    "test:server": "npm run test --workspace=server",
+    "test:server:unit": "npm run test:unit --workspace=server",
+    "test:server:integration": "npm run test:integration --workspace=server",
+    "test:server:coverage": "npm run test:coverage --workspace=server"
   }
 }

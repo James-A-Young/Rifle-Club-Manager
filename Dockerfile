@@ -1,30 +1,36 @@
-# Stage 1: Build client
-FROM node:24-alpine AS client-build
+# Stage 1: Build workspace artifacts
+FROM node:24-bookworm-slim AS builder
 WORKDIR /app
-COPY client/package*.json ./client/
 COPY package*.json ./
-RUN npm install --workspace=client
-COPY client ./client
-RUN npm run build:client
-
-# Stage 2: Build server
-FROM node:24-alpine AS server-build
-WORKDIR /app
 COPY server/package*.json ./server/
-COPY package*.json ./
-RUN npm install --workspace=server
+COPY client/package*.json ./client/
+RUN npm ci
 COPY server ./server
-RUN npm run build:server
+COPY client ./client
+RUN npm run db:generate --workspace=server
+RUN npm run build
 
-# Stage 3: Production
-FROM node:24-alpine AS production
+# Stage 2: Install runtime deps for server workspace
+FROM node:24-bookworm-slim AS runtime-deps
 WORKDIR /app
-COPY --from=server-build /app/server/package*.json ./server/
 COPY package*.json ./
-RUN npm install --workspace=server --omit=dev
-COPY --from=server-build /app/server/dist ./server/dist
-COPY --from=server-build /app/server/prisma ./server/prisma
-COPY --from=client-build /app/client/dist ./public
+COPY server/package*.json ./server/
+COPY client/package*.json ./client/
+RUN npm ci --omit=dev --workspace=server
+
+# Stage 3: Distroless production runtime
+FROM gcr.io/distroless/nodejs24-debian12 AS production
+WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=3000
+
+COPY --from=runtime-deps /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/server/prisma ./server/prisma
+COPY --from=builder /app/client/dist ./public
+
+USER nonroot:nonroot
 EXPOSE 3000
-CMD ["node", "server/dist/index.js"]
+CMD ["server/dist/index.js"]
