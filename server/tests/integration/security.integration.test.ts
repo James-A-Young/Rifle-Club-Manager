@@ -29,6 +29,7 @@ import { prisma } from '../../src/prisma';
 import jwt from 'jsonwebtoken';
 
 const app = createApp();
+const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2)}`;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -297,11 +298,12 @@ describe('security: sanitised error responses', () => {
 
 describe('security: HttpOnly auth cookie', () => {
   it('sets an HttpOnly auth_token cookie on successful login', async () => {
-    await createUser({ email: 'cookie-login@test.com' });
+    const email = `${unique('cookie-login')}@test.com`;
+    await createUser({ email });
 
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'cookie-login@test.com', password: 'Password123!' });
+      .send({ email, password: 'Password123!' });
 
     expect(res.status).toBe(200);
 
