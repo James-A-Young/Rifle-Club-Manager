@@ -560,6 +560,16 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
+  // Verify the firearm actually belongs to this club before deleting.
+  // Without this check an admin of one club could delete a firearm owned by
+  // another club by supplying a foreign firearmId in the URL.
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
   await prisma.firearm.delete({ where: { id: firearmId } });
   res.status(204).send();
 });
