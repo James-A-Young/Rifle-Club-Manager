@@ -8,6 +8,7 @@ interface RegisterResponse {
 }
 
 let turnstileScriptLoadPromise: Promise<void> | null = null;
+const TURNSTILE_SCRIPT_SELECTOR = 'script[data-turnstile="true"]';
 
 function loadTurnstileScript(): Promise<void> {
   if (window.turnstile) {
@@ -19,7 +20,7 @@ function loadTurnstileScript(): Promise<void> {
   }
 
   turnstileScriptLoadPromise = new Promise((resolve, reject) => {
-    const existingScript = document.querySelector<HTMLScriptElement>('script[data-turnstile="true"]');
+    const existingScript = document.querySelector<HTMLScriptElement>(TURNSTILE_SCRIPT_SELECTOR);
     const script = existingScript ?? document.createElement('script');
 
     const onLoad = () => {
