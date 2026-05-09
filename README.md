@@ -248,6 +248,17 @@ Expected in current setup because that script is not defined. Start `dev:server`
 
 Ensure `CLIENT_ORIGIN` in `.env` matches your frontend URL (default `http://localhost:5173`) and restart the server.
 
+## License
+
+This project is licensed under the **Functional Source License (FSL) 1.1** with a **Future MIT License**. 
+
+Under the FSL-1.1 license, you may use this software for non-commercial purposes and internal business use. Commercial use that competes with the Software requires a separate license agreement.
+
+Automatically, two years from the initial release date, this software will be licensed under the MIT License, at which point all commercial use will be permitted without restriction.
+
+For full license details, see [LICENSE](LICENSE).
+
+
 ### Database connection errors
 
 Check that PostgreSQL container is healthy:
