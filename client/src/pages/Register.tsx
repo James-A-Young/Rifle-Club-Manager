@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api, setToken } from '../api';
+import { useConfig } from '../context/ConfigContext';
 
 interface RegisterResponse {
   token: string;
@@ -46,6 +47,7 @@ function loadTurnstileScript(): Promise<void> {
 }
 
 export default function Register() {
+  const { turnstileSiteKey } = useConfig();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const inviteToken = useMemo(() => searchParams.get('inviteToken')?.trim() ?? '', [searchParams]);
@@ -74,7 +76,6 @@ export default function Register() {
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
-  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
 
   useEffect(() => {
     if (!turnstileSiteKey || !turnstileContainerRef.current) {
