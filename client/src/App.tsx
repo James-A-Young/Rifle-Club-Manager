@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Navbar from './components/Navbar';
@@ -14,6 +14,14 @@ import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
 import ClubPublicProfile from './pages/ClubPublicProfile';
+import { trackPageView } from './analytics';
+
+function usePageTracking(): void {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageView(location.pathname + location.search);
+  }, [location]);
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -54,6 +62,7 @@ function AppRoutes() {
   const { loading } = useAuth();
   const location = useLocation();
   const isKioskRoute = location.pathname.startsWith('/kiosk/');
+  usePageTracking();
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
   return (
