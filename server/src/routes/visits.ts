@@ -1047,10 +1047,7 @@ router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: 
     });
   } catch (error) {
     console.error('Error processing QR scan:', error);
-    res.status(500).json({
-      error: 'Failed to process QR scan',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    });
+    res.status(500).json({ error: 'Failed to process QR scan' });
   }
 });
 
