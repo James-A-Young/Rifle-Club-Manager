@@ -1,34 +1,53 @@
-# Stage 1: Build workspace artifacts
-FROM node:24-bookworm-slim AS builder
+# Stage 1: Common Node.js base for Prisma-aware stages
+FROM node:24-slim AS base
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Stage 2: Install full workspace dependencies
+FROM base AS deps
 COPY package*.json ./
 COPY server/package*.json ./server/
 COPY client/package*.json ./client/
 RUN npm ci
+
+# Stage 3: Build workspace artifacts and generate Prisma client
+FROM deps AS builder
 COPY server ./server
 COPY client ./client
 RUN npm run db:generate --workspace=server
 RUN npm run build
 
-# Stage 2: Install runtime deps for server workspace
-FROM node:24-bookworm-slim AS runtime-deps
-WORKDIR /app
+# Stage 4: Install production runtime deps for server workspace
+FROM base AS production-deps
 COPY package*.json ./
 COPY server/package*.json ./server/
 COPY client/package*.json ./client/
-RUN npm ci --omit=dev --workspace=server
+RUN npm ci --omit=dev --workspace=server \
+  && rm -rf node_modules/prisma node_modules/.bin/prisma
 
-# Stage 3: Distroless production runtime
-FROM gcr.io/distroless/nodejs24-debian12 AS production
+# Stage 5: Prisma migrator
+FROM base AS migrator
+ENV NODE_ENV=production
+
+COPY package*.json ./
+COPY server/package*.json ./server/
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/server/prisma ./server/prisma
+
+ENTRYPOINT ["npx", "prisma", "migrate", "deploy", "--schema=server/prisma/schema.prisma"]
+
+# Stage 6: Distroless production runtime
+FROM gcr.io/distroless/nodejs24-debian12 AS app
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-COPY --from=runtime-deps /app/node_modules ./node_modules
+COPY --from=production-deps /app/node_modules ./node_modules
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/server/dist ./server/dist
-COPY --from=builder /app/server/prisma ./server/prisma
 COPY --from=builder /app/client/dist ./public
 
 USER nonroot:nonroot
