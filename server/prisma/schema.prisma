@@ -1,0 +1,209 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MembershipRole {
+  MEMBER
+  ADMIN
+}
+
+enum OwnerType {
+  USER
+  CLUB
+}
+
+model User {
+  id              String   @id @default(cuid())
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role     @default(MEMBER)
+  gdprConsentDate DateTime
+  address         String
+  placeOfBirth    String
+  dateOfBirth     DateTime
+  firearmCertificateNumber String?
+  firearmCertificateExpiry DateTime?
+  shotgunCertificateNumber String?
+  shotgunCertificateExpiry DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ownedClubs      Club[]
+  memberships     ClubMembership[]
+  visitLogs       VisitLog[]
+  firearms        Firearm[]
+  createdInvites  ClubInvite[] @relation("InviteCreatedBy")
+  redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
+  membershipPasses MembershipPass[]
+}
+
+model Club {
+  id                String   @id @default(cuid())
+  name              String
+  homeOfficeRef     String?
+  address           String?
+  disciplinesOffered Json?
+  acceptingNewMembers Boolean @default(true)
+  openingTimes      String?
+  description       String?
+  ownerId           String
+  owner             User     @relation(fields: [ownerId], references: [id])
+  createdAt         DateTime @default(now())
+
+  memberships      ClubMembership[]
+  visitLogs        VisitLog[]
+  signInLinks      SignInLink[]
+  firearms         Firearm[]
+  invites          ClubInvite[]
+  settings         ClubSettings?
+  passTemplate     PassTemplate?
+  membershipPasses MembershipPass[]
+}
+
+model ClubMembership {
+  id        String           @id @default(cuid())
+  userId    String
+  clubId    String
+  status    MembershipStatus @default(PENDING)
+  role      MembershipRole   @default(MEMBER)
+  expiresAt DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  club Club @relation(fields: [clubId], references: [id])
+
+  @@unique([userId, clubId])
+}
+
+model Firearm {
+  id           String    @id @default(cuid())
+  make         String
+  model        String
+  caliber      String
+  serialNumber String
+  ownerType    OwnerType
+  userId       String?
+  clubId       String?
+  createdAt    DateTime  @default(now())
+
+  user      User?      @relation(fields: [userId], references: [id])
+  club      Club?      @relation(fields: [clubId], references: [id])
+  visitLogs VisitLog[]
+
+  @@index([serialNumber])
+}
+
+model VisitLog {
+  id              String    @id @default(cuid())
+  publicVisitRef  String?   @unique @default(cuid())
+  userId          String?
+  clubId          String
+  purpose         String
+  guestName       String?
+  guestEmail      String?
+  guestClubRepresented String?
+  firearmUsedId   String?
+  timeIn          DateTime  @default(now())
+  timeOut         DateTime?
+  createdAt       DateTime  @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  club        Club     @relation(fields: [clubId], references: [id])
+  firearmUsed Firearm? @relation(fields: [firearmUsedId], references: [id])
+
+  @@index([clubId, timeIn])
+  @@index([clubId, userId, timeIn])
+  @@index([clubId, firearmUsedId, timeIn])
+}
+
+model SignInLink {
+  id          String   @id @default(cuid())
+  clubId      String
+  cryptoToken String   @unique
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  club Club @relation(fields: [clubId], references: [id])
+}
+
+model ClubInvite {
+  id               String         @id @default(cuid())
+  clubId           String
+  email            String
+  role             MembershipRole
+  token            String         @unique
+  expiresAt        DateTime
+  redeemedAt       DateTime?
+  redeemedByUserId String?
+  createdByUserId  String
+  createdAt        DateTime       @default(now())
+
+  club       Club  @relation(fields: [clubId], references: [id])
+  createdBy  User  @relation("InviteCreatedBy", fields: [createdByUserId], references: [id])
+  redeemedBy User? @relation("InviteRedeemedBy", fields: [redeemedByUserId], references: [id])
+
+  @@index([clubId, createdAt])
+  @@index([clubId, email])
+  @@index([email])
+}
+
+model ClubSettings {
+  id                       String   @id @default(cuid())
+  clubId                   String   @unique
+  logoUrl                  String?
+  primaryColor             String?  @default("#1f2937")
+  secondaryColor           String?  @default("#374151")
+  accentColor              String?  @default("#3b82f6")
+  passIssuingEnabled       Boolean  @default(false)
+  memberCardSignInEnabled  Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+}
+
+model PassTemplate {
+  id              String   @id @default(cuid())
+  clubId          String   @unique
+  googleClassId   String?
+  googleIssuerId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+}
+
+model MembershipPass {
+  id                String   @id @default(cuid())
+  userId            String
+  clubId            String
+  googleObjectId    String?
+  qrCode            String
+  lastUpdatedAt     DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clubId])
+  @@index([clubId, createdAt])
+}
