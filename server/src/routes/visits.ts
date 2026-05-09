@@ -516,15 +516,13 @@ router.post('/kiosk/:kioskToken/signout', async (req: AuthRequest, res: Response
   res.json({ success: true, timeOut: updated.timeOut });
 });
 
-router.use(requireAuth);
-
 const createVisitSchema = z.object({
   clubId: z.string(),
   purpose: z.string().min(1),
   firearmUsedId: z.string().optional(),
 });
 
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = createVisitSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatZodError(parsed.error) });
@@ -554,7 +552,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   res.status(201).json(visit);
 });
 
-router.patch('/:id/signout', async (req: AuthRequest, res: Response) => {
+router.patch('/:id/signout', requireAuth, async (req: AuthRequest, res: Response) => {
   const visitId = req.params.id as string;
   const visit = await prisma.visitLog.findFirst({
     where: { id: visitId, userId: req.user!.id },
@@ -574,7 +572,7 @@ router.patch('/:id/signout', async (req: AuthRequest, res: Response) => {
   res.json(updated);
 });
 
-router.get('/mine', async (req: AuthRequest, res: Response) => {
+router.get('/mine', requireAuth, async (req: AuthRequest, res: Response) => {
   const visits = await prisma.visitLog.findMany({
     where: { userId: req.user!.id },
     include: {
@@ -586,7 +584,7 @@ router.get('/mine', async (req: AuthRequest, res: Response) => {
   res.json(visits);
 });
 
-router.get('/active', async (req: AuthRequest, res: Response) => {
+router.get('/active', requireAuth, async (req: AuthRequest, res: Response) => {
   const visit = await prisma.visitLog.findFirst({
     where: { userId: req.user!.id, timeOut: null },
     include: {
@@ -597,7 +595,7 @@ router.get('/active', async (req: AuthRequest, res: Response) => {
   res.json(visit ?? null);
 });
 
-router.get('/club/:clubId', async (req: AuthRequest, res: Response) => {
+router.get('/club/:clubId', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const adminMembership = await prisma.clubMembership.findFirst({
     where: {
@@ -622,7 +620,7 @@ router.get('/club/:clubId', async (req: AuthRequest, res: Response) => {
   res.json(visits);
 });
 
-router.get('/club/:clubId/history', async (req: AuthRequest, res: Response) => {
+router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
   if (!isAdmin) {
@@ -682,7 +680,7 @@ router.get('/club/:clubId/history', async (req: AuthRequest, res: Response) => {
   });
 });
 
-router.get('/club/:clubId/history/summary', async (req: AuthRequest, res: Response) => {
+router.get('/club/:clubId/history/summary', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
   if (!isAdmin) {
@@ -789,7 +787,7 @@ router.get('/club/:clubId/history/summary', async (req: AuthRequest, res: Respon
   });
 });
 
-router.get('/club/:clubId/history/export.csv', async (req: AuthRequest, res: Response) => {
+router.get('/club/:clubId/history/export.csv', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
   if (!isAdmin) {
@@ -892,7 +890,7 @@ router.get('/club/:clubId/history/export.csv', async (req: AuthRequest, res: Res
 });
 
 // Admin endpoint: sign out all active visits for a club with explicit confirmation
-router.patch('/club/:clubId/signout-all', async (req: AuthRequest, res: Response) => {
+router.patch('/club/:clubId/signout-all', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const { confirm } = req.body as { confirm?: boolean };
 
@@ -928,6 +926,96 @@ router.patch('/club/:clubId/signout-all', async (req: AuthRequest, res: Response
   });
 
   res.json({ success: true, signedOutCount: result.count });
+});
+
+// Kiosk QR scan sign-in endpoint
+const qrScanSchema = z.object({
+  qrData: z.string().min(1, 'QR data is required'),
+  clubId: z.string().min(1, 'Club ID is required'),
+});
+
+router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: Response) => {
+  const parsed = qrScanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const { qrData, clubId } = parsed.data;
+
+  try {
+    // Check if club has member card sign-in enabled
+    const clubSettings = await prisma.clubSettings.findUnique({
+      where: { clubId },
+    });
+
+    if (!clubSettings?.memberCardSignInEnabled) {
+      res.status(403).json({ error: 'Member card sign-in is not enabled for this club' });
+      return;
+    }
+
+    // Parse QR code data format: "club:clubId:member:userId"
+    const qrMatch = qrData.match(/^club:([^:]+):member:(.+)$/);
+    if (!qrMatch || qrMatch[1] !== clubId) {
+      res.status(400).json({ error: 'Invalid QR code format or club mismatch' });
+      return;
+    }
+
+    const [, , userId] = qrMatch;
+
+    // Verify membership exists and is approved
+    const membership = await prisma.clubMembership.findFirst({
+      where: {
+        userId,
+        clubId,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    if (!membership) {
+      res.status(404).json({ error: 'Member not found or not approved' });
+      return;
+    }
+
+    // Check if user is already signed in
+    const existingVisit = await prisma.visitLog.findFirst({
+      where: {
+        userId,
+        clubId,
+        timeOut: null,
+      },
+    });
+
+    if (existingVisit) {
+      res.status(409).json({ error: 'Member is already signed in' });
+      return;
+    }
+
+    // Create visit log
+    const visit = await prisma.visitLog.create({
+      data: {
+        userId,
+        clubId,
+        purpose: 'QR Card Sign-In',
+        timeIn: new Date(),
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      visitId: visit.id,
+      userId,
+      clubId,
+      timeIn: visit.timeIn,
+      message: 'Successfully signed in via membership card',
+    });
+  } catch (error) {
+    console.error('Error processing QR scan:', error);
+    res.status(500).json({
+      error: 'Failed to process QR scan',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
 });
 
 export default router;

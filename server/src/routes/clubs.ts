@@ -564,4 +564,108 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
   res.status(204).send();
 });
 
+// Club Settings endpoints for Google Wallet
+const hexColorSchema = z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid hex color format').optional();
+
+const updateClubSettingsSchema = z.object({
+  logoUrl: z.string().url('Invalid URL').optional().nullable(),
+  primaryColor: hexColorSchema,
+  secondaryColor: hexColorSchema,
+  accentColor: hexColorSchema,
+  passIssuingEnabled: z.boolean().optional(),
+  memberCardSignInEnabled: z.boolean().optional(),
+});
+
+router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  let settings = await prisma.clubSettings.findUnique({
+    where: { clubId },
+  });
+
+  if (!settings) {
+    // Create default settings if they don't exist
+    settings = await prisma.clubSettings.create({
+      data: {
+        clubId,
+        primaryColor: '#1f2937',
+        secondaryColor: '#374151',
+        accentColor: '#3b82f6',
+        passIssuingEnabled: false,
+        memberCardSignInEnabled: false,
+      },
+    });
+  }
+
+  res.json(settings);
+});
+
+router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = updateClubSettingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const updateData: {
+    logoUrl?: string | null;
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+    passIssuingEnabled?: boolean;
+    memberCardSignInEnabled?: boolean;
+  } = {};
+
+  if ('logoUrl' in parsed.data) {
+    updateData.logoUrl = parsed.data.logoUrl ? normalizeOptionalText(parsed.data.logoUrl) : null;
+  }
+  if ('primaryColor' in parsed.data && parsed.data.primaryColor) {
+    updateData.primaryColor = parsed.data.primaryColor;
+  }
+  if ('secondaryColor' in parsed.data && parsed.data.secondaryColor) {
+    updateData.secondaryColor = parsed.data.secondaryColor;
+  }
+  if ('accentColor' in parsed.data && parsed.data.accentColor) {
+    updateData.accentColor = parsed.data.accentColor;
+  }
+  if ('passIssuingEnabled' in parsed.data && typeof parsed.data.passIssuingEnabled === 'boolean') {
+    updateData.passIssuingEnabled = parsed.data.passIssuingEnabled;
+  }
+  if ('memberCardSignInEnabled' in parsed.data && typeof parsed.data.memberCardSignInEnabled === 'boolean') {
+    updateData.memberCardSignInEnabled = parsed.data.memberCardSignInEnabled;
+  }
+
+  let settings = await prisma.clubSettings.findUnique({
+    where: { clubId },
+  });
+
+  if (!settings) {
+    settings = await prisma.clubSettings.create({
+      data: {
+        clubId,
+        ...updateData,
+      },
+    });
+  } else {
+    settings = await prisma.clubSettings.update({
+      where: { clubId },
+      data: updateData,
+    });
+  }
+
+  res.json(settings);
+});
+
 export default router;
