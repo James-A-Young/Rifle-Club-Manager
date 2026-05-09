@@ -7,6 +7,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
+import { auditSignInLinkInvalid } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -198,11 +199,13 @@ router.get('/:token', async (req: AuthRequest, res: Response) => {
   });
 
   if (!link) {
+    auditSignInLinkInvalid(req.ip, 'not_found');
     res.status(404).json({ error: 'Link not found' });
     return;
   }
 
   if (link.expiresAt < new Date()) {
+    auditSignInLinkInvalid(req.ip, 'expired');
     res.status(410).json({ error: 'Link expired' });
     return;
   }

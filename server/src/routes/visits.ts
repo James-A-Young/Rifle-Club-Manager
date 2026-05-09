@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret } from '../config/jwt';
+import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -354,6 +355,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
       },
     });
     if (!ownedFirearm) {
+      auditFirearmLinkDenied(req.ip, userId, clubId, firearmUsedId);
       res.status(400).json({ error: 'Firearm not found or does not belong to this club or user' });
       return;
     }
@@ -434,6 +436,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     },
   });
 
+  auditKioskSignIn(req.ip, clubId, isAuthenticatedUser ? 'member' : 'guest', userId);
   res.status(201).json(visit);
 });
 

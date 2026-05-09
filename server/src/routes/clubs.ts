@@ -5,6 +5,11 @@ import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole, OwnerType, Role } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
+import {
+  auditFirearmDeleteDenied,
+  auditMemberStatusChange,
+  auditMemberRoleChange,
+} from '../middleware/auditLog';
 
 const router = Router();
 
@@ -520,6 +525,14 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
     data: { ...(status && { status }), ...(role && { role }) },
     include: { user: { select: { id: true, name: true, email: true } } },
   });
+
+  if (status) {
+    auditMemberStatusChange(req.ip, req.user!.id, clubId, targetUserId, status);
+  }
+  if (role) {
+    auditMemberRoleChange(req.ip, req.user!.id, clubId, targetUserId, role);
+  }
+
   res.json(updated);
 });
 
@@ -567,6 +580,7 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
     where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
   });
   if (!firearm) {
+    auditFirearmDeleteDenied(req.ip, req.user!.id, clubId, firearmId);
     res.status(404).json({ error: 'Firearm not found' });
     return;
   }

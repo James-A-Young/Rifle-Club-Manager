@@ -7,6 +7,11 @@ import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
 import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
+import {
+  auditAuthLoginFailed,
+  auditAuthLoginSuccess,
+  auditAuthRegisterSuccess,
+} from '../middleware/auditLog';
 
 const router = Router();
 
@@ -124,6 +129,7 @@ router.post('/register', async (req: Request, res: Response) => {
     // response body for backward compatibility with API clients that use
     // the Authorization: Bearer header.
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+    auditAuthRegisterSuccess(req.ip, user.id, user.email);
     res.status(201).json({ token, user });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'REGISTER_FAILED';
@@ -158,12 +164,14 @@ router.post('/login', async (req: Request, res: Response) => {
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    auditAuthLoginFailed(req.ip, email);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
+    auditAuthLoginFailed(req.ip, email);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
@@ -176,6 +184,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
   // Set the JWT as an HttpOnly cookie (same reasoning as register above).
   res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+  auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
