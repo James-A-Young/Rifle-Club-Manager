@@ -1,10 +1,48 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api, setToken } from '../api';
 
 interface RegisterResponse {
   token: string;
   user: { id: string; name: string; email: string; role: string };
+}
+
+let turnstileScriptLoadPromise: Promise<void> | null = null;
+const TURNSTILE_SCRIPT_SELECTOR = 'script[data-turnstile="true"]';
+
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) {
+    return Promise.resolve();
+  }
+
+  if (turnstileScriptLoadPromise) {
+    return turnstileScriptLoadPromise;
+  }
+
+  turnstileScriptLoadPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(TURNSTILE_SCRIPT_SELECTOR);
+    const script = existingScript ?? document.createElement('script');
+
+    const onLoad = () => {
+      resolve();
+    };
+    const onError = () => {
+      reject(new Error('Failed to load Cloudflare Turnstile script'));
+    };
+
+    script.addEventListener('load', onLoad, { once: true });
+    script.addEventListener('error', onError, { once: true });
+
+    if (!existingScript) {
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstile = 'true';
+      document.head.appendChild(script);
+    }
+  });
+
+  return turnstileScriptLoadPromise;
 }
 
 export default function Register() {
@@ -33,6 +71,54 @@ export default function Register() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '').trim();
+
+  useEffect(() => {
+    if (!turnstileSiteKey || !turnstileContainerRef.current) {
+      return;
+    }
+
+    let isDisposed = false;
+
+    const renderWidget = async () => {
+      await loadTurnstileScript().catch(() => {
+        setError('Captcha failed to load. Please refresh and try again.');
+      });
+
+      if (isDisposed) {
+        return;
+      }
+
+      if (!window.turnstile || !turnstileContainerRef.current) {
+        return;
+      }
+
+      if (turnstileWidgetIdRef.current) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+      }
+
+      const widgetId = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: turnstileSiteKey,
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+
+      turnstileWidgetIdRef.current = String(widgetId);
+    };
+    void renderWidget();
+
+    return () => {
+      isDisposed = true;
+      if (window.turnstile && turnstileWidgetIdRef.current) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [turnstileSiteKey]);
 
   function update(field: string, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }));
@@ -44,18 +130,27 @@ export default function Register() {
       setError('You must consent to data processing to register.');
       return;
     }
+    if (turnstileSiteKey && !turnstileToken) {
+      setError('Please complete the captcha challenge.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const data = await api.post<RegisterResponse>('/api/auth/register', {
         ...form,
         inviteToken: inviteToken || undefined,
+        turnstileToken: turnstileSiteKey ? turnstileToken : undefined,
       });
       setToken(data.token);
       navigate(inviteToken ? '/' : nextPath, { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
       setError(message);
+      if (turnstileSiteKey && window.turnstile && turnstileWidgetIdRef.current) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+        setTurnstileToken('');
+      }
     } finally {
       setLoading(false);
     }
@@ -109,6 +204,11 @@ export default function Register() {
               </label>
             </div>
           </div>
+          {turnstileSiteKey && (
+            <div className="form-group">
+              <div ref={turnstileContainerRef} />
+            </div>
+          )}
           <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
             {loading ? 'Registering…' : 'Create Account'}
           </button>

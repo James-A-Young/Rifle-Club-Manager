@@ -10,12 +10,14 @@
     "db:seed": "tsx prisma/seed.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
+    "test:integration": "vitest run tests/integration --maxWorkers=1",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@types/cookie-parser": "^1.4.10",
     "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",

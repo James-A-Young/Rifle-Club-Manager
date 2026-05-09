@@ -5,6 +5,14 @@ import { z } from 'zod';
 import { MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
+import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
+import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
+import {
+  auditAuthLoginFailed,
+  auditAuthLoginSuccess,
+  auditAuthRegisterSuccess,
+} from '../middleware/auditLog';
+import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 
 const router = Router();
 
@@ -17,6 +25,15 @@ const registerSchema = z.object({
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   inviteToken: z.string().min(1).optional(),
+  turnstileToken: z.string().min(1).optional(),
+}).superRefine((data, ctx) => {
+  if (isTurnstileEnabled() && !data.turnstileToken) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['turnstileToken'],
+      message: 'Captcha token is required',
+    });
+  }
 });
 
 const loginSchema = z.object({
@@ -30,7 +47,15 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { name, email, password, address, placeOfBirth, dateOfBirth, inviteToken } = parsed.data;
+  const { name, email, password, address, placeOfBirth, dateOfBirth, inviteToken, turnstileToken } = parsed.data;
+
+  if (isTurnstileEnabled()) {
+    const turnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
+    if (!turnstileValid) {
+      res.status(400).json({ error: 'Captcha verification failed' });
+      return;
+    }
+  }
 
   const normalizedEmail = email.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -113,10 +138,16 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET ?? 'secret',
-      { expiresIn: '24h' }
+      jwtSecret,
+      { expiresIn: JWT_ACCESS_EXPIRES }
     );
 
+    // Set the JWT as an HttpOnly cookie so it is inaccessible to JavaScript
+    // (mitigates XSS-based token theft). The token is also returned in the
+    // response body for backward compatibility with API clients that use
+    // the Authorization: Bearer header.
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+    auditAuthRegisterSuccess(req.ip, user.id, user.email);
     res.status(201).json({ token, user });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'REGISTER_FAILED';
@@ -151,26 +182,37 @@ router.post('/login', async (req: Request, res: Response) => {
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    auditAuthLoginFailed(req.ip, email);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
+    auditAuthLoginFailed(req.ip, email);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET ?? 'secret',
-    { expiresIn: '24h' }
+    jwtSecret,
+    { expiresIn: JWT_ACCESS_EXPIRES }
   );
 
+  // Set the JWT as an HttpOnly cookie (same reasoning as register above).
+  res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+  auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
   });
+});
+
+// Logout endpoint — clears the auth cookie server-side.
+router.post('/logout', (_req: Request, res: Response) => {
+  res.clearCookie(AUTH_COOKIE_NAME, { ...AUTH_COOKIE_OPTIONS, maxAge: 0 });
+  res.json({ success: true });
 });
 
 export default router;

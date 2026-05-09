@@ -5,6 +5,11 @@ import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, MembershipRole, OwnerType, Role } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
+import {
+  auditFirearmDeleteDenied,
+  auditMemberStatusChange,
+  auditMemberRoleChange,
+} from '../middleware/auditLog';
 
 const router = Router();
 
@@ -520,6 +525,14 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
     data: { ...(status && { status }), ...(role && { role }) },
     include: { user: { select: { id: true, name: true, email: true } } },
   });
+
+  if (status) {
+    auditMemberStatusChange(req.ip, req.user!.id, clubId, targetUserId, status);
+  }
+  if (role) {
+    auditMemberRoleChange(req.ip, req.user!.id, clubId, targetUserId, role);
+  }
+
   res.json(updated);
 });
 
@@ -558,6 +571,17 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
   if (!isAdmin) {
     res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  // Verify the firearm actually belongs to this club before deleting.
+  // Without this check an admin of one club could delete a firearm owned by
+  // another club by supplying a foreign firearmId in the URL.
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+  });
+  if (!firearm) {
+    auditFirearmDeleteDenied(req.ip, req.user!.id, clubId, firearmId);
+    res.status(404).json({ error: 'Firearm not found' });
     return;
   }
   await prisma.firearm.delete({ where: { id: firearmId } });

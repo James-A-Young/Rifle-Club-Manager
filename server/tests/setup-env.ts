@@ -1,3 +1,4 @@
 process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-secret';
+// Use a sufficiently long secret (≥32 chars) to satisfy the JWT validation requirement
+process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-secret-for-unit-tests-only-do-not-use-in-prod';
 process.env.CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';

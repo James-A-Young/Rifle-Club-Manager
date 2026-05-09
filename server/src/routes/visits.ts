@@ -6,6 +6,8 @@ import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '@prisma/cli
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';
+import { jwtSecret } from '../config/jwt';
+import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
 
 const router = Router();
 
@@ -281,7 +283,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
 
   if (parsed.data.signInAccessToken) {
     try {
-      const payload = jwt.verify(parsed.data.signInAccessToken, process.env.JWT_SECRET ?? 'secret') as {
+      const payload = jwt.verify(parsed.data.signInAccessToken, jwtSecret) as {
         signInLinkId: string;
         clubId: string;
         tokenType: string;
@@ -337,12 +339,40 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
   // Determine if this is an authenticated user or guest visit
   const userId = req.user?.id;
   const isAuthenticatedUser = Boolean(userId);
+  const clubId = signInLink.clubId;
 
   let firearmUsedId = parsed.data.firearmUsedId;
+
+  // Validate that an explicitly provided firearmId belongs to this club or the user.
+  if (firearmUsedId) {
+    const ownedFirearm = await prisma.firearm.findFirst({
+      where: {
+        id: firearmUsedId,
+        OR: [
+          { clubId },
+          ...(userId ? [{ userId, ownerType: OwnerType.USER }] : []),
+        ],
+      },
+    });
+    if (!ownedFirearm) {
+      auditFirearmLinkDenied(req.ip, userId, clubId, firearmUsedId);
+      res.status(400).json({ error: 'Firearm not found or does not belong to this club or user' });
+      return;
+    }
+  }
+
   if (!firearmUsedId && parsed.data.firearmSerialNumber) {
+    // Scope serial-number lookup to the club's own firearms and the
+    // authenticated user's own firearms. Looking up globally would let a
+    // visitor inadvertently (or deliberately) link a firearm from a
+    // completely unrelated club/owner to a visit record.
     const existingFirearm = await prisma.firearm.findFirst({
       where: {
         serialNumber: parsed.data.firearmSerialNumber,
+        OR: [
+          { clubId, ownerType: OwnerType.CLUB },
+          ...(userId ? [{ userId, ownerType: OwnerType.USER }] : []),
+        ],
       },
     });
 
@@ -367,8 +397,16 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
   }
 
   // Create visit log
-  const visitData: any = {
-    clubId: signInLink.clubId,
+  const visitData: {
+    clubId: string;
+    purpose: string;
+    firearmUsedId?: string;
+    userId?: string | null;
+    guestName?: string;
+    guestClubRepresented?: string;
+    guestEmail?: string | null;
+  } = {
+    clubId,
     purpose: parsed.data.purpose,
     firearmUsedId,
   };
@@ -398,6 +436,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     },
   });
 
+  auditKioskSignIn(req.ip, clubId, isAuthenticatedUser ? 'member' : 'guest', userId);
   res.status(201).json(visit);
 });
 
@@ -1011,10 +1050,7 @@ router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: 
     });
   } catch (error) {
     console.error('Error processing QR scan:', error);
-    res.status(500).json({
-      error: 'Failed to process QR scan',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    });
+    res.status(500).json({ error: 'Failed to process QR scan' });
   }
 });
 

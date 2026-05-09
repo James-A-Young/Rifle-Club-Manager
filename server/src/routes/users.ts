@@ -296,10 +296,7 @@ router.post('/me/membership-passes/:clubId', async (req: AuthRequest, res: Respo
     });
   } catch (error) {
     console.error('Error generating membership pass:', error);
-    res.status(500).json({
-      error: 'Failed to generate membership pass',
-      details: error instanceof Error ? error.message : 'Unknown error',
-    });
+    res.status(500).json({ error: 'Failed to generate membership pass' });
   }
 });
 

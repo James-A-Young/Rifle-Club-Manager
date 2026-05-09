@@ -4,11 +4,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { MembershipRole, MembershipStatus, OwnerType, Role } from '@prisma/client';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
 
 const app = createApp();
+const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
 
 async function createUser(overrides: Partial<{
   name: string;
@@ -41,9 +42,11 @@ async function createUser(overrides: Partial<{
 }
 
 function authHeader(user: { id: string; email: string; role: Role }) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET not set in test environment');
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET ?? 'test-secret',
+    secret,
     { expiresIn: '1h' }
   );
   return { Authorization: `Bearer ${token}` };
@@ -71,6 +74,15 @@ async function createClubWithAdmin() {
 }
 
 describe('auth routes', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (ORIGINAL_TURNSTILE_SECRET_KEY) {
+      process.env.TURNSTILE_SECRET_KEY = ORIGINAL_TURNSTILE_SECRET_KEY;
+    } else {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    }
+  });
+
   it('registers a user', async () => {
     const res = await request(app)
       .post('/api/auth/register')
@@ -87,6 +99,78 @@ describe('auth routes', () => {
     expect(res.status).toBe(201);
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.email).toBe('register@test.com');
+  });
+
+  it('requires captcha token when Turnstile is enabled', async () => {
+    process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Reg User Turnstile',
+        email: 'register-turnstile-missing@test.com',
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Captcha token is required');
+  });
+
+  it('rejects invalid captcha token when Turnstile is enabled', async () => {
+    process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Reg User Turnstile Invalid',
+        email: 'register-turnstile-invalid@test.com',
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        turnstileToken: 'invalid-token',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Captcha verification failed');
+  });
+
+  it('registers a user with valid captcha token when Turnstile is enabled', async () => {
+    process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Reg User Turnstile Valid',
+        email: 'register-turnstile-valid@test.com',
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        turnstileToken: 'valid-token',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.user.email).toBe('register-turnstile-valid@test.com');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('rejects invalid credentials on login', async () => {
