@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --maxWorkers=1",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage --maxWorkers=1"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

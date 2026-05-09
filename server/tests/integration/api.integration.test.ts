@@ -10,6 +10,7 @@ import { prisma } from '../../src/prisma';
 
 const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
+const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2)}`;
 
 async function createUser(overrides: Partial<{
   name: string;
@@ -53,7 +54,7 @@ function authHeader(user: { id: string; email: string; role: Role }) {
 }
 
 async function createClubWithAdmin() {
-  const admin = await createUser({ role: Role.OWNER, email: 'admin@test.com' });
+  const admin = await createUser({ role: Role.OWNER, email: `${unique('admin')}@test.com` });
   const club = await prisma.club.create({
     data: {
       name: 'Integration Club',
@@ -84,11 +85,12 @@ describe('auth routes', () => {
   });
 
   it('registers a user', async () => {
+    const email = `${unique('register')}@test.com`;
     const res = await request(app)
       .post('/api/auth/register')
       .send({
         name: 'Reg User',
-        email: 'register@test.com',
+        email,
         password: 'Password123!',
         gdprConsent: true,
         address: '123 Test Road',
@@ -98,17 +100,18 @@ describe('auth routes', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBeTruthy();
-    expect(res.body.user.email).toBe('register@test.com');
+    expect(res.body.user.email).toBe(email);
   });
 
   it('requires captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+    const email = `${unique('register-turnstile-missing')}@test.com`;
 
     const res = await request(app)
       .post('/api/auth/register')
       .send({
         name: 'Reg User Turnstile',
-        email: 'register-turnstile-missing@test.com',
+        email,
         password: 'Password123!',
         gdprConsent: true,
         address: '123 Test Road',
@@ -122,6 +125,7 @@ describe('auth routes', () => {
 
   it('rejects invalid captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+    const email = `${unique('register-turnstile-invalid')}@test.com`;
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ success: false }), {
         status: 200,
@@ -133,7 +137,7 @@ describe('auth routes', () => {
       .post('/api/auth/register')
       .send({
         name: 'Reg User Turnstile Invalid',
-        email: 'register-turnstile-invalid@test.com',
+        email,
         password: 'Password123!',
         gdprConsent: true,
         address: '123 Test Road',
@@ -148,6 +152,7 @@ describe('auth routes', () => {
 
   it('registers a user with valid captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
+    const email = `${unique('register-turnstile-valid')}@test.com`;
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -159,7 +164,7 @@ describe('auth routes', () => {
       .post('/api/auth/register')
       .send({
         name: 'Reg User Turnstile Valid',
-        email: 'register-turnstile-valid@test.com',
+        email,
         password: 'Password123!',
         gdprConsent: true,
         address: '123 Test Road',
@@ -169,16 +174,17 @@ describe('auth routes', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.user.email).toBe('register-turnstile-valid@test.com');
+    expect(res.body.user.email).toBe(email);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('rejects invalid credentials on login', async () => {
-    await createUser({ email: 'login@test.com' });
+    const email = `${unique('login')}@test.com`;
+    await createUser({ email });
 
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'login@test.com', password: 'wrong' });
+      .send({ email, password: 'wrong' });
 
     expect(res.status).toBe(401);
   });
@@ -191,7 +197,7 @@ describe('users routes', () => {
   });
 
   it('updates certificate fields for authenticated user', async () => {
-    const user = await createUser({ email: 'profile@test.com' });
+    const user = await createUser({ email: `${unique('profile')}@test.com` });
 
     const res = await request(app)
       .patch('/api/users/me')
@@ -209,8 +215,8 @@ describe('users routes', () => {
   });
 
   it('creates and deletes own firearm only', async () => {
-    const owner = await createUser({ email: 'owner-firearm@test.com' });
-    const stranger = await createUser({ email: 'stranger-firearm@test.com' });
+    const owner = await createUser({ email: `${unique('owner-firearm')}@test.com` });
+    const stranger = await createUser({ email: `${unique('stranger-firearm')}@test.com` });
 
     const created = await request(app)
       .post('/api/users/me/firearms')
@@ -245,7 +251,7 @@ describe('clubs routes', () => {
 
   it('forbids non-admin club profile updates', async () => {
     const { club } = await createClubWithAdmin();
-    const member = await createUser({ email: 'member@test.com' });
+    const member = await createUser({ email: `${unique('member')}@test.com` });
 
     const res = await request(app)
       .patch(`/api/clubs/${club.id}`)
@@ -277,7 +283,7 @@ describe('clubs routes', () => {
   it('shows member certificate info to admins', async () => {
     const { club, admin } = await createClubWithAdmin();
     const member = await createUser({
-      email: 'member-cert@test.com',
+      email: `${unique('member-cert')}@test.com`,
       firearmCertificateNumber: 'FAC-MEMBER',
       shotgunCertificateNumber: 'SGC-MEMBER',
     });
@@ -303,7 +309,7 @@ describe('clubs routes', () => {
 
 describe('firearms route', () => {
   it('lists user firearms via /api/firearms', async () => {
-    const user = await createUser({ email: 'firearms-route@test.com' });
+    const user = await createUser({ email: `${unique('firearms-route')}@test.com` });
     await prisma.firearm.create({
       data: {
         make: 'CZ',
@@ -346,7 +352,7 @@ describe('visits routes', () => {
     const link = await prisma.signInLink.create({
       data: {
         clubId: club.id,
-        cryptoToken: 'public-signin-token',
+        cryptoToken: unique('public-signin-token'),
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
     });

@@ -10,7 +10,7 @@ const router = Router();
 
 router.use(requireAuth);
 
-router.get('/me', async (req: AuthRequest, res: Response) => {
+router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user!.id },
     select: {
@@ -67,7 +67,7 @@ function parseOptionalDate(value: string | null | undefined, field: string): Dat
   return parsed;
 }
 
-router.patch('/me', async (req: AuthRequest, res: Response) => {
+router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatZodError(parsed.error) });
@@ -128,7 +128,7 @@ router.patch('/me', async (req: AuthRequest, res: Response) => {
   res.json(user);
 });
 
-router.get('/me/firearms', async (req: AuthRequest, res: Response) => {
+router.get('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearms = await prisma.firearm.findMany({
     where: { userId: req.user!.id, ownerType: OwnerType.USER },
   });
@@ -142,7 +142,7 @@ const firearmSchema = z.object({
   serialNumber: z.string().min(1),
 });
 
-router.post('/me/firearms', async (req: AuthRequest, res: Response) => {
+router.post('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = firearmSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: formatZodError(parsed.error) });
@@ -158,7 +158,7 @@ router.post('/me/firearms', async (req: AuthRequest, res: Response) => {
   res.status(201).json(firearm);
 });
 
-router.delete('/me/firearms/:id', async (req: AuthRequest, res: Response) => {
+router.delete('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearmId = req.params.id as string;
   const firearm = await prisma.firearm.findFirst({
     where: { id: firearmId, userId: req.user!.id },
@@ -172,7 +172,7 @@ router.delete('/me/firearms/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Google Wallet Membership Pass endpoints
-router.post('/me/membership-passes/:clubId', async (req: AuthRequest, res: Response) => {
+router.post('/me/membership-passes/:clubId', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
 
   try {

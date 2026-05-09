@@ -93,6 +93,16 @@ export function createApp() {
   });
 
   app.use(globalLimiter);
+
+  // Public config endpoint (no auth required)
+  // Allows frontend to read runtime configuration from environment at startup
+  app.get('/api/config', (_req: Request, res: Response) => {
+    res.json({
+      apiUrl: process.env.VITE_API_URL ?? '',
+      turnstileSiteKey: process.env.VITE_TURNSTILE_SITE_KEY ?? '',
+    });
+  });
+
   app.use('/api/auth', authLimiter, authRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/clubs', clubsRouter);

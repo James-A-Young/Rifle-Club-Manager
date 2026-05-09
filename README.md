@@ -348,6 +348,30 @@ Notes:
 - Docker compose provides `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV`, and `PORT` to the app container.
 - If schema is not initialized yet, run Prisma setup once before relying on the containerized app.
 
+## Runtime Configuration
+
+Frontend configuration (API URL, Turnstile site key) is loaded at runtime from `/api/config` endpoint:
+
+```bash
+# Local development
+VITE_API_URL=http://localhost:3000 npm run dev:client
+
+# Docker with runtime config
+docker run \
+  -e VITE_API_URL=https://api.example.com \
+  -e VITE_TURNSTILE_SITE_KEY=your-turnstile-key \
+  -e DATABASE_URL=postgresql://... \
+  -e JWT_SECRET=... \
+  -p 3000:3000 \
+  iammind/rifle-club-manager
+```
+
+**Benefits:**
+- ✅ No rebuild needed when config changes
+- ✅ Docker users can pass environment variables directly
+- ✅ Config values are fetched at app startup, not build time
+- ✅ Easy to add new config options to `server/src/app.ts`
+
 ## Troubleshooting
 
 ### `npm run dev:all` fails

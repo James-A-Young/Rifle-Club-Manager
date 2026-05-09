@@ -1,4 +1,19 @@
-const BASE = import.meta.env.VITE_API_URL ?? '';
+import { RuntimeConfig } from './context/ConfigContext';
+
+let runtimeConfig: RuntimeConfig | null = null;
+
+export function setRuntimeConfig(config: RuntimeConfig): void {
+  runtimeConfig = config;
+}
+
+function getApiBase(): string {
+  // If config has been set by ConfigProvider, use it
+  if (runtimeConfig?.apiUrl) {
+    return runtimeConfig.apiUrl;
+  }
+  // Fallback: relative URLs work fine for same-origin requests
+  return '';
+}
 
 /**
  * Retrieve the auth token from localStorage (legacy / API-client fallback).
@@ -26,7 +41,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${getApiBase()}${path}`, {
     ...options,
     headers,
     // Include credentials so the HttpOnly auth cookie is sent with every
