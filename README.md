@@ -14,6 +14,8 @@ It is organized as an npm workspace with:
 - Prisma ORM
 - PostgreSQL 16
 - Docker (optional, recommended for local database)
+- Google Wallet API (optional, for digital membership cards)
+- QR code generation and scanning
 
 ## Project Structure
 
@@ -32,7 +34,6 @@ Install these before starting:
 - Node.js 24
 - npm 10+
 - Docker + Docker Compose (for local PostgreSQL)
-
 Quick checks:
 
 ```bash
@@ -69,6 +70,34 @@ NODE_ENV=development
 PORT=3000
 CLIENT_ORIGIN=http://localhost:5173
 ```
+
+### Optional: Google Wallet Membership Cards
+
+To enable digital membership cards via Google Wallet:
+
+1. Create a [Google Wallet business account](https://pay.google.com) and enable API access
+2. Generate a service account key in JSON format
+3. Extract these fields and add to `.env`:
+
+```env
+GOOGLE_WALLET_ISSUER_ID=<issuer_id>
+GOOGLE_WALLET_ISSUER_EMAIL=<service_account_email>
+GOOGLE_WALLET_PRIVATE_KEY=<private_key_pem>
+GOOGLE_WALLET_PRIVATE_KEY_ID=<key_id>
+GOOGLE_WALLET_PROJECT_ID=<project_id>
+```
+
+When configured, members can:
+- Generate QR-coded membership passes with live visit counts
+- Add passes to Google Wallet / Apple Wallet via "Save to Wallet" button
+- Sign in via QR code at kiosks (tablet-based Camera API scanning)
+
+Club admins can configure:
+- Club branding (logo URL, primary/secondary/accent colors)
+- Toggle pass issuing on/off
+- Toggle membership card kiosk sign-in on/off
+
+Without Google Wallet credentials, the app functions normally; pass issuing is simply unavailable.
 
 Important: the server code does not automatically load `.env` by itself, so for local development load these vars into your shell before running server commands.
 
@@ -193,7 +222,69 @@ Run tests locally:
 ```bash
 # Start a local test database
 docker compose up -d db
+## API Endpoints
 
+### Club Settings (Google Wallet Configuration)
+
+Admin-only endpoints for configuring membership pass branding and controls:
+
+```
+GET    /api/clubs/:clubId/settings
+POST   /api/clubs/:clubId/settings
+```
+
+Configuration options:
+- `logoUrl` (string) — External URL for club logo displayed on membership card
+- `primaryColor` (hex) — Background color for pass header
+- `secondaryColor` (hex) — Secondary accent color
+- `accentColor` (hex) — Tertiary accent color
+- `passIssuingEnabled` (boolean) — Allow members to generate membership passes
+- `memberCardSignInEnabled` (boolean) — Allow QR code kiosk sign-in via membership cards
+
+### Membership Passes
+
+Member endpoints for generating and managing digital membership cards:
+
+```
+POST   /api/users/me/membership-passes/:clubId
+```
+
+Response (when Google Wallet is configured):
+- `id` — Membership pass ID
+- `qrCode` — Base64-encoded PNG QR code (data URL)
+- `visitCount` — Year-to-date visit count
+- `addToWalletLink` — Direct URL to save pass to Google Wallet
+- `addToWalletJwt` — Raw JWT for custom wallet integration
+
+### Kiosk QR Code Sign-In
+
+Public endpoint for tablet-based kiosk check-ins via QR scan:
+
+```
+POST   /api/visits/kiosk/qr-scan
+```
+
+Request body:
+```json
+{
+	"qrData": "club:club-id:member:user-id",
+	"clubId": "club-id"
+}
+```
+
+Response on success (201):
+```json
+{
+	"success": true,
+	"visitId": "visit-id",
+	"userId": "user-id",
+	"clubId": "club-id",
+	"timeIn": "2026-05-09T14:30:00Z",
+	"message": "Successfully signed in via membership card"
+}
+```
+
+## Production Build and Run (Without Docker)
 # Use a dedicated test database URL
 export DATABASE_URL=postgresql://shootingmatch:shootingmatch@localhost:5432/shootingmatch_test
 export JWT_SECRET=test-secret

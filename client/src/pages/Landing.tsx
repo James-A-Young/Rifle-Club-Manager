@@ -10,8 +10,8 @@ export default function Landing() {
         <p className="landing-kicker">Built for clubs that take safety seriously</p>
         <h1>Run Your Range Like a Modern Operations Team</h1>
         <p className="landing-subtitle">
-          Member check-ins, invite approvals, secure kiosk sign-ins, firearm usage tracking, and
-          searchable attendance history in one clean command center.
+            Digital membership cards, QR-based check-ins, invite approvals, firearm usage tracking,
+            and searchable attendance history in one clean command center.
         </p>
 
         <div className="landing-cta-row">
@@ -25,16 +25,16 @@ export default function Landing() {
 
         <div className="landing-stats" role="list" aria-label="Platform highlights">
           <div className="landing-stat" role="listitem">
-            <strong>Invite-driven access</strong>
-            <span>Controlled onboarding with role-aware approvals</span>
+              <strong>Google Wallet passes</strong>
+              <span>Members add club cards to their phone with live visit counts</span>
           </div>
           <div className="landing-stat" role="listitem">
-            <strong>Kiosk + QR ready</strong>
-            <span>Fast check-ins with secure indirect sign-out references</span>
+              <strong>QR-based kiosk sign-in</strong>
+              <span>Members scan their card on a tablet—no PIN or paperwork needed</span>
           </div>
           <div className="landing-stat" role="listitem">
-            <strong>Auditable history</strong>
-            <span>Search, summaries, and CSV export for admin reporting</span>
+              <strong>Club-branded experience</strong>
+              <span>Custom colors, logos, and toggle controls for pass issuing and QR scanning</span>
           </div>
         </div>
       </section>
@@ -42,15 +42,15 @@ export default function Landing() {
       <section className="landing-strip">
         <article>
           <h3>For Club Admins</h3>
-          <p>Approve pending members, send role-fixed invites, and manage attendance with confidence.</p>
+            <p>Configure club branding, control pass issuing, enable QR kiosk sign-in, and audit all attendance records.</p>
         </article>
         <article>
           <h3>For Members</h3>
-          <p>Simple profile and sign-in flows that keep compliance details up to date.</p>
+            <p>Generate a digital membership card, add it to Google Wallet, and sign in with a single QR scan.</p>
         </article>
         <article>
           <h3>For Front Desk</h3>
-          <p>Dedicated kiosk mode with clear active-visitor visibility and instant sign-out controls.</p>
+            <p>Tablet-based kiosk with QR scanner, active-visitor tracking, and instant sign-out controls.</p>
         </article>
       </section>
     </div>
