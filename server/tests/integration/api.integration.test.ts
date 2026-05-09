@@ -117,7 +117,7 @@ describe('auth routes', () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Captcha verification failed');
+    expect(res.body.error).toContain('Captcha token is required');
   });
 
   it('rejects invalid captcha token when Turnstile is enabled', async () => {

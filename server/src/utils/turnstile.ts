@@ -43,7 +43,8 @@ export async function verifyTurnstileToken(
 
     const data = (await response.json()) as TurnstileVerifyResponse;
     return data.success === true;
-  } catch {
+  } catch (error) {
+    console.error('Turnstile verification request failed:', error);
     return false;
   }
 }

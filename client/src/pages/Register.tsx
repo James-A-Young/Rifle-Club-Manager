@@ -7,6 +7,43 @@ interface RegisterResponse {
   user: { id: string; name: string; email: string; role: string };
 }
 
+let turnstileScriptLoadPromise: Promise<void> | null = null;
+
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) {
+    return Promise.resolve();
+  }
+
+  if (turnstileScriptLoadPromise) {
+    return turnstileScriptLoadPromise;
+  }
+
+  turnstileScriptLoadPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>('script[data-turnstile="true"]');
+    const script = existingScript ?? document.createElement('script');
+
+    const onLoad = () => {
+      resolve();
+    };
+    const onError = () => {
+      reject(new Error('Failed to load Cloudflare Turnstile script'));
+    };
+
+    script.addEventListener('load', onLoad, { once: true });
+    script.addEventListener('error', onError, { once: true });
+
+    if (!existingScript) {
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstile = 'true';
+      document.head.appendChild(script);
+    }
+  });
+
+  return turnstileScriptLoadPromise;
+}
+
 export default function Register() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -43,7 +80,17 @@ export default function Register() {
       return;
     }
 
-    const renderWidget = () => {
+    let isDisposed = false;
+
+    const renderWidget = async () => {
+      await loadTurnstileScript().catch(() => {
+        setError('Captcha failed to load. Please refresh and try again.');
+      });
+
+      if (isDisposed) {
+        return;
+      }
+
       if (!window.turnstile || !turnstileContainerRef.current) {
         return;
       }
@@ -61,29 +108,10 @@ export default function Register() {
 
       turnstileWidgetIdRef.current = String(widgetId);
     };
-
-    const existingScript = document.querySelector<HTMLScriptElement>('script[data-turnstile="true"]');
-    const script = existingScript ?? document.createElement('script');
-
-    const onLoad = () => {
-      renderWidget();
-    };
-
-    if (!existingScript) {
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-      script.async = true;
-      script.defer = true;
-      script.dataset.turnstile = 'true';
-      document.head.appendChild(script);
-    }
-
-    script.addEventListener('load', onLoad);
-    if (window.turnstile) {
-      renderWidget();
-    }
+    void renderWidget();
 
     return () => {
-      script.removeEventListener('load', onLoad);
+      isDisposed = true;
       if (window.turnstile && turnstileWidgetIdRef.current) {
         window.turnstile.remove(turnstileWidgetIdRef.current);
         turnstileWidgetIdRef.current = null;

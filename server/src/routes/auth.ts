@@ -26,6 +26,14 @@ const registerSchema = z.object({
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   inviteToken: z.string().min(1).optional(),
   turnstileToken: z.string().min(1).optional(),
+}).superRefine((data, ctx) => {
+  if (isTurnstileEnabled() && !data.turnstileToken) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['turnstileToken'],
+      message: 'Captcha token is required',
+    });
+  }
 });
 
 const loginSchema = z.object({
