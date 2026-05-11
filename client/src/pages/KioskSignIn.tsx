@@ -278,9 +278,9 @@ export default function KioskSignIn() {
       <div className="page-header" style={{ textAlign: 'center', marginBottom: '2rem' }}>
         <h1>{kioskData?.club.name} - Kiosk</h1>
       </div>
-
+      <div style={{ display: 'flex', flexDirection: 'row', gap: '2rem', flexWrap: 'wrap' }}>
       {/* QR Code Section */}
-      <div className="card kiosk-card">
+      <div className="card kiosk-card" style={{ flex: '4' }}>
         <h2>QR Sign-In</h2>
         <p style={{ color: 'var(--gray-600)', marginBottom: '1rem' }}>Scan the QR code to open the sign-in form.</p>
         <div className="qr-container">
@@ -289,8 +289,8 @@ export default function KioskSignIn() {
         <p className="link-text" style={{ marginTop: '1rem' }}>QR rotates automatically every 45 seconds.</p>
       </div>
 
-      {/* Manual Sign-In Section */}
-      <div className="card" style={{ marginTop: '2rem' }}>
+        {/* Manual Sign-In Section */}
+        <div className="card" style={{ flex: '6' }}>
         <h2>Manual Sign-In</h2>
         {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
         {manualSuccess && (
@@ -298,7 +298,7 @@ export default function KioskSignIn() {
             ✅ Visitor signed in successfully
           </div>
         )}
-
+      
         {kioskData && (
           <form onSubmit={handleManualSubmit}>
             {!isAuthenticatedKioskUser && (
@@ -418,7 +418,7 @@ export default function KioskSignIn() {
           </form>
         )}
       </div>
-
+        </div>
       {/* Signed In List Section */}
       <div className="card" style={{ marginTop: '2rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
