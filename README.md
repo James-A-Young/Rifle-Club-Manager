@@ -6,6 +6,48 @@ It is organized as an npm workspace with:
 - `client`: React + Vite frontend
 - `server`: Express + Prisma + PostgreSQL backend
 
+## Permission Model
+
+Authorization is **entirely club-scoped**. There are no system-wide user roles.
+
+### Club Membership Types
+
+| Type | Description |
+|------|-------------|
+| **Admin** | Elevated permissions within that club only (approve members, manage invites, edit settings). |
+| **Member** | Normal permissions — can sign in, view club info, manage own profile. |
+| **Probationary Member** | Same permissions as Member; tracked as a separate category for administrative purposes. |
+
+- All admin checks are performed against the user's membership in the **specific club context**.
+- JWT/session payload contains only `id` and `email` — no global role.
+- A user can be Admin in one club and Member (or not a member) in another.
+
+### Invite-Only Registration
+
+Public registration without a valid invite token is blocked. To add a new member:
+
+1. A club admin creates an invite via the **Invites** section of the Club Dashboard.
+2. The admin shares the invite link with the prospective member.
+3. The invited person registers at `/register?inviteToken=<token>` using the email the invite was sent to.
+4. The resulting membership is **Pending** until an admin approves it.
+
+### First-Deploy Bootstrap
+
+When the database has **zero users**, a one-time bootstrap flow is available at `/setup`:
+
+1. Navigate to `/setup` in the browser (or `POST /api/auth/bootstrap` directly).
+2. Provide your account details and a name for the first club.
+3. The system creates your account, the club, and an **approved Admin** membership.
+4. Bootstrap is **automatically disabled** once any user exists — it cannot be re-triggered.
+
+Bootstrap API endpoint:
+```
+GET  /api/auth/bootstrap-status   → { bootstrapAvailable: boolean }
+POST /api/auth/bootstrap          → creates first user + club, returns { token, user, club }
+```
+
+Bootstrap is blocked (403) if any user already exists.
+
 ## Tech Stack
 
 - Node.js + npm workspaces
@@ -371,6 +413,26 @@ docker run \
 - ✅ Docker users can pass environment variables directly
 - ✅ Config values are fetched at app startup, not build time
 - ✅ Easy to add new config options to `server/src/app.ts`
+
+## Migration Note
+
+### Removing global user roles (v2+)
+
+Migration `20260511000000_remove_global_role_add_probationary` performs the following changes:
+
+- Adds `PROBATIONARY_MEMBER` to the `MembershipRole` enum (backward-compatible, no row rewrites).
+- Drops the `role` column from the `User` table (was `OWNER | ADMIN | MEMBER`).
+- Drops the now-unused `Role` enum type.
+
+**Before running in production:**
+
+1. Ensure all application instances are updated before applying the migration (the old code reads `user.role`; the new code does not).
+2. Apply with `npm run db:migrate` — no data will be lost; only the `role` column is removed.
+3. Roll back: restore from a pre-migration snapshot if needed. SQL rollback would need to re-add the column with a default:
+   ```sql
+   CREATE TYPE "Role" AS ENUM ('OWNER', 'ADMIN', 'MEMBER');
+   ALTER TABLE "User" ADD COLUMN "role" "Role" NOT NULL DEFAULT 'MEMBER';
+   ```
 
 ## Troubleshooting
 

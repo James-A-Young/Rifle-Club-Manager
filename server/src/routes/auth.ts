@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
@@ -24,7 +24,7 @@ const registerSchema = z.object({
   address: z.string().min(5),
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
-  inviteToken: z.string().min(1).optional(),
+  inviteToken: z.string().min(1),
   turnstileToken: z.string().min(1).optional(),
 }).superRefine((data, ctx) => {
   if (isTurnstileEnabled() && !data.turnstileToken) {
@@ -39,6 +39,113 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const bootstrapSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+  password: z.string().min(8),
+  gdprConsent: z.boolean().refine((v) => v === true, { message: 'GDPR consent required' }),
+  address: z.string().min(5),
+  placeOfBirth: z.string().min(2),
+  dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  clubName: z.string().min(2),
+});
+
+/** Returns true when no users exist — bootstrap mode is active. */
+async function isBootstrapAvailable(): Promise<boolean> {
+  const count = await prisma.user.count();
+  return count === 0;
+}
+
+/**
+ * GET /api/auth/bootstrap-status
+ * Public endpoint. Returns whether the first-deploy bootstrap is available.
+ */
+router.get('/bootstrap-status', async (_req: Request, res: Response) => {
+  const bootstrapAvailable = await isBootstrapAvailable();
+  res.json({ bootstrapAvailable });
+});
+
+/**
+ * POST /api/auth/bootstrap
+ * One-time endpoint to create the first user and first club.
+ * Automatically disabled once any user exists.
+ */
+router.post('/bootstrap', async (req: Request, res: Response) => {
+  const available = await isBootstrapAvailable();
+  if (!available) {
+    res.status(403).json({ error: 'Bootstrap is no longer available', code: 'BOOTSTRAP_DISABLED' });
+    return;
+  }
+
+  const parsed = bootstrapSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const {
+    name, email, password, address, placeOfBirth, dateOfBirth, clubName,
+  } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const { user, club } = await prisma.$transaction(async tx => {
+      // Double-check inside transaction to guard against races
+      const count = await tx.user.count();
+      if (count !== 0) {
+        throw new Error('BOOTSTRAP_DISABLED');
+      }
+
+      const createdUser = await tx.user.create({
+        data: {
+          name,
+          email: normalizedEmail,
+          passwordHash,
+          gdprConsentDate: new Date(),
+          address,
+          placeOfBirth,
+          dateOfBirth: new Date(dateOfBirth),
+        },
+        select: { id: true, name: true, email: true, createdAt: true },
+      });
+
+      const createdClub = await tx.club.create({
+        data: {
+          name: clubName,
+          ownerId: createdUser.id,
+          memberships: {
+            create: {
+              userId: createdUser.id,
+              status: MembershipStatus.APPROVED,
+              role: MembershipRole.ADMIN,
+            },
+          },
+        },
+      });
+
+      return { user: createdUser, club: createdClub };
+    });
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email },
+      jwtSecret,
+      { expiresIn: JWT_ACCESS_EXPIRES }
+    );
+
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+    auditAuthRegisterSuccess(req.ip, user.id, user.email);
+    res.status(201).json({ token, user, club });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'BOOTSTRAP_FAILED';
+    if (message === 'BOOTSTRAP_DISABLED') {
+      res.status(403).json({ error: 'Bootstrap is no longer available', code: 'BOOTSTRAP_DISABLED' });
+      return;
+    }
+    res.status(500).json({ error: 'Bootstrap failed' });
+  }
 });
 
 router.post('/register', async (req: Request, res: Response) => {
@@ -67,21 +174,18 @@ router.post('/register', async (req: Request, res: Response) => {
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.$transaction(async tx => {
-      let invite: Awaited<ReturnType<typeof tx.clubInvite.findUnique>> | null = null;
-      if (inviteToken) {
-        invite = await tx.clubInvite.findUnique({ where: { token: inviteToken } });
-        if (!invite) {
-          throw new Error('INVITE_NOT_FOUND');
-        }
-        if (invite.redeemedAt) {
-          throw new Error('INVITE_REDEEMED');
-        }
-        if (invite.expiresAt < new Date()) {
-          throw new Error('INVITE_EXPIRED');
-        }
-        if (invite.email.toLowerCase() !== normalizedEmail) {
-          throw new Error('INVITE_EMAIL_MISMATCH');
-        }
+      const invite = await tx.clubInvite.findUnique({ where: { token: inviteToken } });
+      if (!invite) {
+        throw new Error('INVITE_NOT_FOUND');
+      }
+      if (invite.redeemedAt) {
+        throw new Error('INVITE_REDEEMED');
+      }
+      if (invite.expiresAt < new Date()) {
+        throw new Error('INVITE_EXPIRED');
+      }
+      if (invite.email.toLowerCase() !== normalizedEmail) {
+        throw new Error('INVITE_EMAIL_MISMATCH');
       }
 
       const createdUser = await tx.user.create({
@@ -94,50 +198,48 @@ router.post('/register', async (req: Request, res: Response) => {
           placeOfBirth,
           dateOfBirth: new Date(dateOfBirth),
         },
-        select: { id: true, name: true, email: true, role: true, createdAt: true },
+        select: { id: true, name: true, email: true, createdAt: true },
       });
 
-      if (invite) {
-        await tx.clubMembership.upsert({
-          where: {
-            userId_clubId: {
-              userId: createdUser.id,
-              clubId: invite.clubId,
-            },
-          },
-          update: {
-            role: invite.role,
-            status: MembershipStatus.PENDING,
-          },
-          create: {
+      await tx.clubMembership.upsert({
+        where: {
+          userId_clubId: {
             userId: createdUser.id,
             clubId: invite.clubId,
-            role: invite.role,
-            status: MembershipStatus.PENDING,
           },
-        });
+        },
+        update: {
+          role: invite.role,
+          status: MembershipStatus.PENDING,
+        },
+        create: {
+          userId: createdUser.id,
+          clubId: invite.clubId,
+          role: invite.role,
+          status: MembershipStatus.PENDING,
+        },
+      });
 
-        const markRedeemed = await tx.clubInvite.updateMany({
-          where: {
-            id: invite.id,
-            redeemedAt: null,
-          },
-          data: {
-            redeemedAt: new Date(),
-            redeemedByUserId: createdUser.id,
-          },
-        });
+      const markRedeemed = await tx.clubInvite.updateMany({
+        where: {
+          id: invite.id,
+          redeemedAt: null,
+        },
+        data: {
+          redeemedAt: new Date(),
+          redeemedByUserId: createdUser.id,
+        },
+      });
 
-        if (markRedeemed.count !== 1) {
-          throw new Error('INVITE_REDEEMED');
-        }
+      if (markRedeemed.count !== 1) {
+        throw new Error('INVITE_REDEEMED');
       }
 
       return createdUser;
     });
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email },
       jwtSecret,
       { expiresIn: JWT_ACCESS_EXPIRES }
     );
@@ -195,7 +297,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { id: user.id, email: user.email },
     jwtSecret,
     { expiresIn: JWT_ACCESS_EXPIRES }
   );
@@ -205,7 +307,7 @@ router.post('/login', async (req: Request, res: Response) => {
   auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email },
   });
 });
 

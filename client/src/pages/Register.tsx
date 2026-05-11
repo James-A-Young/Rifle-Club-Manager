@@ -5,7 +5,7 @@ import { useConfig } from '../context/ConfigContext';
 
 interface RegisterResponse {
   token: string;
-  user: { id: string; name: string; email: string; role: string };
+  user: { id: string; name: string; email: string };
 }
 
 let turnstileScriptLoadPromise: Promise<void> | null = null;
@@ -161,7 +161,11 @@ export default function Register() {
     <div className="auth-page">
       <div className="card">
         <h1>Register</h1>
-        {inviteToken && (
+        {!inviteToken ? (
+          <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
+            <strong>Invite required.</strong> Registration is invite-only. Please ask a club admin to send you an invite link.
+          </div>
+        ) : (
           <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
             You are registering with a club invite. Use the invited email address to complete registration.
           </div>
@@ -210,7 +214,7 @@ export default function Register() {
               <div ref={turnstileContainerRef} />
             </div>
           )}
-          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading || !inviteToken}>
             {loading ? 'Registering…' : 'Create Account'}
           </button>
         </form>

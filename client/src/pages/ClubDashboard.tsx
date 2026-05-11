@@ -35,10 +35,12 @@ interface Member {
   };
 }
 interface SignInLink { id: string; cryptoToken: string; expiresAt: string; mode?: 'KIOSK' | 'QR'; }
+type MembershipRoleType = 'MEMBER' | 'ADMIN' | 'PROBATIONARY_MEMBER';
+
 interface ClubInvite {
   id: string;
   email: string;
-  role: 'MEMBER' | 'ADMIN';
+  role: MembershipRoleType;
   token: string;
   expiresAt: string;
   redeemedAt: string | null;
@@ -76,9 +78,9 @@ export default function ClubDashboard() {
     description: '',
   });
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'MEMBER' | 'ADMIN'>('MEMBER');
+  const [inviteRole, setInviteRole] = useState<MembershipRoleType>('MEMBER');
   const [inviteExpiresInDays, setInviteExpiresInDays] = useState(14);
-  const [editingRole, setEditingRole] = useState<{ userId: string; role: 'MEMBER' | 'ADMIN' } | null>(null);
+  const [editingRole, setEditingRole] = useState<{ userId: string; role: MembershipRoleType } | null>(null);
   const [savingRole, setSavingRole] = useState(false);
 
   useEffect(() => {
@@ -179,7 +181,7 @@ export default function ClubDashboard() {
     }
   }
 
-  async function saveRoleChange(userId: string, newRole: 'MEMBER' | 'ADMIN') {
+  async function saveRoleChange(userId: string, newRole: MembershipRoleType) {
     if (!id || !editingRole) return;
     setSavingRole(true);
     setError('');
@@ -387,9 +389,10 @@ export default function ClubDashboard() {
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Role</label>
-              <select value={inviteRole} onChange={e => setInviteRole(e.target.value as 'MEMBER' | 'ADMIN')}>
+              <select value={inviteRole} onChange={e => setInviteRole(e.target.value as MembershipRoleType)}>
                 <option value="MEMBER">MEMBER</option>
                 <option value="ADMIN">ADMIN</option>
+                <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -521,11 +524,12 @@ export default function ClubDashboard() {
                   {editingRole?.userId === m.userId && m.status === 'APPROVED' ? (
                     <select
                       value={editingRole.role}
-                      onChange={e => setEditingRole({ ...editingRole, role: e.target.value as 'MEMBER' | 'ADMIN' })}
+                      onChange={e => setEditingRole({ ...editingRole, role: e.target.value as MembershipRoleType })}
                       className="btn btn-sm"
                     >
                       <option value="MEMBER">MEMBER</option>
                       <option value="ADMIN">ADMIN</option>
+                      <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
                     </select>
                   ) : (
                     <span className={`badge badge-${m.role.toLowerCase()}`}>{m.role}</span>
@@ -556,7 +560,7 @@ export default function ClubDashboard() {
                             </button>
                           </>
                         ) : (
-                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole({ userId: m.userId, role: m.role as 'MEMBER' | 'ADMIN' })}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole({ userId: m.userId, role: m.role as MembershipRoleType })}>
                             Edit Role
                           </button>
                         )

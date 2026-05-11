@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipStatus, MembershipRole, OwnerType, Role } from '@prisma/client';
+import { MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import {
   auditFirearmDeleteDenied,
@@ -133,11 +133,6 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         },
       },
     },
-  });
-
-  await prisma.user.update({
-    where: { id: req.user!.id },
-    data: { role: Role.OWNER },
   });
 
   res.status(201).json(club);
@@ -281,7 +276,7 @@ router.post('/:id/join', async (req: AuthRequest, res: Response) => {
 
 const createInviteSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['MEMBER', 'ADMIN']).default('MEMBER'),
+  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER']).default('MEMBER'),
   expiresInDays: z.number().int().min(1).max(90).default(14),
 });
 
@@ -477,7 +472,7 @@ router.post('/invites/:token/accept', async (req: AuthRequest, res: Response) =>
 
 const updateMemberSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
-  role: z.enum(['MEMBER', 'ADMIN']).optional(),
+  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER']).optional(),
 });
 
 router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => {
@@ -501,7 +496,7 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
   }
 
   // Validate: cannot demote the last admin
-  if (role === MembershipRole.MEMBER) {
+  if (role && role !== MembershipRole.ADMIN) {
     const targetMember = await prisma.clubMembership.findUnique({
       where: { userId_clubId: { userId: targetUserId, clubId } },
     });
