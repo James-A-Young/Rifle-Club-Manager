@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { jwtSecret } from '../config/jwt';
 
 export interface AuthRequest extends Request {
-  user?: { id: string; email: string; role: string };
+  user?: { id: string; email: string };
 }
 
 /** Name of the HttpOnly cookie that carries the auth JWT. */
@@ -18,12 +18,11 @@ export const AUTH_COOKIE_OPTIONS = {
   path: '/',
 };
 
-function decodeToken(token: string): { id: string; email: string; role: string } | null {
+function decodeToken(token: string): { id: string; email: string } | null {
   try {
     return jwt.verify(token, jwtSecret) as {
       id: string;
       email: string;
-      role: string;
     };
   } catch {
     return null;

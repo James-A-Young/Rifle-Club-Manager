@@ -3,7 +3,7 @@ import './setup';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { MembershipRole, MembershipStatus, OwnerType, Role } from '@prisma/client';
+import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
@@ -15,7 +15,6 @@ const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice
 async function createUser(overrides: Partial<{
   name: string;
   email: string;
-  role: Role;
   firearmCertificateNumber: string | null;
   firearmCertificateExpiry: Date | null;
   shotgunCertificateNumber: string | null;
@@ -29,7 +28,6 @@ async function createUser(overrides: Partial<{
       name: overrides.name ?? 'Test User',
       email,
       passwordHash,
-      role: overrides.role ?? Role.MEMBER,
       gdprConsentDate: new Date(),
       address: '1 Test Street, London',
       placeOfBirth: 'London',
@@ -42,11 +40,11 @@ async function createUser(overrides: Partial<{
   });
 }
 
-function authHeader(user: { id: string; email: string; role: Role }) {
+function authHeader(user: { id: string; email: string }) {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET not set in test environment');
   const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { id: user.id, email: user.email },
     secret,
     { expiresIn: '1h' }
   );
@@ -54,7 +52,7 @@ function authHeader(user: { id: string; email: string; role: Role }) {
 }
 
 async function createClubWithAdmin() {
-  const admin = await createUser({ role: Role.OWNER, email: `${unique('admin')}@test.com` });
+  const admin = await createUser({ email: `${unique('admin')}@test.com` });
   const club = await prisma.club.create({
     data: {
       name: 'Integration Club',
@@ -74,6 +72,27 @@ async function createClubWithAdmin() {
   return { admin, club };
 }
 
+/** Create an invite and use it to register a new user via the API. */
+async function registerViaInvite(clubId: string, createdByUserId: string, opts: {
+  email?: string;
+  role?: MembershipRole;
+} = {}) {
+  const email = opts.email ?? `${unique('invited')}@test.com`;
+  const role = opts.role ?? MembershipRole.MEMBER;
+  const token = `invite-${Math.random().toString(36).slice(2)}`;
+  await prisma.clubInvite.create({
+    data: {
+      clubId,
+      email,
+      role,
+      token,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      createdByUserId,
+    },
+  });
+  return { email, token };
+}
+
 describe('auth routes', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -84,8 +103,9 @@ describe('auth routes', () => {
     }
   });
 
-  it('registers a user', async () => {
-    const email = `${unique('register')}@test.com`;
+  it('registers a user via invite token', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
     const res = await request(app)
       .post('/api/auth/register')
       .send({
@@ -96,16 +116,40 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        inviteToken: token,
       });
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.email).toBe(email);
+    // JWT must not contain a global role
+    const { default: jwtLib } = await import('jsonwebtoken');
+    const secret = process.env.JWT_SECRET!;
+    const payload = jwtLib.verify(res.body.token, secret) as Record<string, unknown>;
+    expect(payload.role).toBeUndefined();
+  });
+
+  it('rejects registration without invite token', async () => {
+    const email = `${unique('register-no-invite')}@test.com`;
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'No Invite User',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+      });
+
+    expect(res.status).toBe(400);
   });
 
   it('requires captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
-    const email = `${unique('register-turnstile-missing')}@test.com`;
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
 
     const res = await request(app)
       .post('/api/auth/register')
@@ -117,6 +161,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        inviteToken: token,
       });
 
     expect(res.status).toBe(400);
@@ -125,7 +170,8 @@ describe('auth routes', () => {
 
   it('rejects invalid captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
-    const email = `${unique('register-turnstile-invalid')}@test.com`;
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ success: false }), {
         status: 200,
@@ -143,6 +189,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        inviteToken: token,
         turnstileToken: 'invalid-token',
       });
 
@@ -152,7 +199,8 @@ describe('auth routes', () => {
 
   it('registers a user with valid captcha token when Turnstile is enabled', async () => {
     process.env.TURNSTILE_SECRET_KEY = 'turnstile-test-secret';
-    const email = `${unique('register-turnstile-valid')}@test.com`;
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
     vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ success: true }), {
         status: 200,
@@ -170,6 +218,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        inviteToken: token,
         turnstileToken: 'valid-token',
       });
 
@@ -580,7 +629,7 @@ describe('club settings routes', () => {
   });
 
   it('returns 404 for nonexistent club settings', async () => {
-    const admin = await createUser({ role: Role.OWNER });
+    const admin = await createUser();
 
     const res = await request(app)
       .get(`/api/clubs/nonexistent-club/settings`)
@@ -745,5 +794,219 @@ describe('membership pass routes', () => {
     if (res.body.addToWalletJwt) {
       expect(res.body.addToWalletJwt).toBeTruthy();
     }
+  });
+});
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+describe('bootstrap routes', () => {
+  it('bootstrap-status returns bootstrapAvailable=true when no users exist', async () => {
+    // We cannot guarantee the DB is empty in this shared test DB, but we can
+    // assert the status endpoint returns the correct shape.
+    const res = await request(app).get('/api/auth/bootstrap-status');
+    expect(res.status).toBe(200);
+    expect(typeof res.body.bootstrapAvailable).toBe('boolean');
+  });
+
+  it('bootstrap endpoint is blocked when users already exist', async () => {
+    // At least one user exists (created by other tests), so bootstrap must fail.
+    const res = await request(app)
+      .post('/api/auth/bootstrap')
+      .send({
+        name: 'Bootstrap Admin',
+        email: `${unique('bootstrap')}@test.com`,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '1 Bootstrap Lane',
+        placeOfBirth: 'London',
+        dateOfBirth: '1990-01-01',
+        clubName: 'Bootstrap Club',
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('BOOTSTRAP_DISABLED');
+  });
+});
+
+// ── Invite-only registration enforcement ────────────────────────────────────
+
+describe('invite-only registration', () => {
+  it('rejects registration with an invalid invite token', async () => {
+    const email = `${unique('invite-invalid')}@test.com`;
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'User',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '1 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        inviteToken: 'nonexistent-token',
+      });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects registration when invite email does not match', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const { token } = await registerViaInvite(club.id, admin.id, { email: `${unique('invited')}@test.com` });
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'User',
+        email: `${unique('wrong-email')}@test.com`,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '1 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        inviteToken: token,
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects registration with an expired invite', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const email = `${unique('expired-invite')}@test.com`;
+    const expiredToken = `expired-${Math.random().toString(36).slice(2)}`;
+    await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email,
+        role: MembershipRole.MEMBER,
+        token: expiredToken,
+        expiresAt: new Date(Date.now() - 1000),
+        createdByUserId: admin.id,
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'User',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '1 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        inviteToken: expiredToken,
+      });
+
+    expect(res.status).toBe(410);
+  });
+});
+
+// ── Probationary Member ──────────────────────────────────────────────────────
+
+describe('probationary member', () => {
+  it('admin can create invite with PROBATIONARY_MEMBER role', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/invites`)
+      .set(authHeader(admin))
+      .send({
+        email: `${unique('probationary')}@test.com`,
+        role: 'PROBATIONARY_MEMBER',
+        expiresInDays: 14,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.role).toBe('PROBATIONARY_MEMBER');
+  });
+
+  it('admin can change member role to PROBATIONARY_MEMBER', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('prob-member')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/members/${member.id}`)
+      .set(authHeader(admin))
+      .send({ role: 'PROBATIONARY_MEMBER' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.role).toBe('PROBATIONARY_MEMBER');
+  });
+
+  it('probationary member registers via invite and gets correct membership role', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id, {
+      role: MembershipRole.PROBATIONARY_MEMBER,
+    });
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Probationary User',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '1 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: '1990-01-01',
+        inviteToken: token,
+      });
+
+    expect(res.status).toBe(201);
+
+    const membership = await prisma.clubMembership.findUnique({
+      where: { userId_clubId: { userId: res.body.user.id, clubId: club.id } },
+    });
+    expect(membership?.role).toBe(MembershipRole.PROBATIONARY_MEMBER);
+  });
+
+  it('cannot demote last admin to PROBATIONARY_MEMBER', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/members/${admin.id}`)
+      .set(authHeader(admin))
+      .send({ role: 'PROBATIONARY_MEMBER' });
+
+    expect(res.status).toBe(409);
+  });
+});
+
+// ── No global role in JWT / auth payload ─────────────────────────────────────
+
+describe('no global role in auth', () => {
+  it('login JWT does not contain a role field', async () => {
+    const user = await createUser({ email: `${unique('no-role-login')}@test.com` });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: user.email, password: 'Password123!' });
+
+    expect(res.status).toBe(200);
+    const { default: jwtLib } = await import('jsonwebtoken');
+    const secret = process.env.JWT_SECRET!;
+    const payload = jwtLib.verify(res.body.token, secret) as Record<string, unknown>;
+    expect(payload.role).toBeUndefined();
+    expect(res.body.user.role).toBeUndefined();
+  });
+
+  it('/api/users/me does not return a role field', async () => {
+    const user = await createUser({ email: `${unique('no-role-me')}@test.com` });
+
+    const res = await request(app)
+      .get('/api/users/me')
+      .set(authHeader(user));
+
+    expect(res.status).toBe(200);
+    expect(res.body.role).toBeUndefined();
   });
 });

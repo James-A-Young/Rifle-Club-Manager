@@ -8,12 +8,6 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
-enum Role {
-  OWNER
-  ADMIN
-  MEMBER
-}
-
 enum MembershipStatus {
   PENDING
   APPROVED
@@ -23,6 +17,7 @@ enum MembershipStatus {
 enum MembershipRole {
   MEMBER
   ADMIN
+  PROBATIONARY_MEMBER
 }
 
 enum OwnerType {
@@ -35,7 +30,6 @@ model User {
   name            String
   email           String   @unique
   passwordHash    String
-  role            Role     @default(MEMBER)
   gdprConsentDate DateTime
   address         String
   placeOfBirth    String

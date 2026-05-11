@@ -1,4 +1,4 @@
-import { PrismaClient, Role, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
+import { PrismaClient, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -14,7 +14,6 @@ async function main() {
       name: 'Club Owner',
       email: 'owner@test.com',
       passwordHash: ownerPasswordHash,
-      role: Role.OWNER,
       gdprConsentDate: new Date(),
       address: '1 Main Street, London, SW1A 1AA',
       placeOfBirth: 'London',
@@ -33,7 +32,6 @@ async function main() {
       name: 'Test Member',
       email: 'member@test.com',
       passwordHash: memberPasswordHash,
-      role: Role.MEMBER,
       gdprConsentDate: new Date(),
       address: '2 High Street, Manchester, M1 1AA',
       placeOfBirth: 'Manchester',

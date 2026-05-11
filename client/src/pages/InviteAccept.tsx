@@ -6,7 +6,7 @@ interface InvitePreview {
   id: string;
   token: string;
   email: string;
-  role: 'MEMBER' | 'ADMIN';
+  role: 'MEMBER' | 'ADMIN' | 'PROBATIONARY_MEMBER';
   expiresAt: string;
   club: {
     id: string;

@@ -33,7 +33,7 @@ describe('auth middleware', () => {
 
   it('requireAuth attaches user and calls next for valid token', () => {
     const verifyMock = vi.mocked(jwt.verify);
-    verifyMock.mockReturnValue({ id: 'u1', email: 'u1@test.com', role: 'MEMBER' } as never);
+    verifyMock.mockReturnValue({ id: 'u1', email: 'u1@test.com' } as never);
 
     const req = { headers: { authorization: 'Bearer token' } } as unknown as AuthRequest;
     const res = mockResponse();

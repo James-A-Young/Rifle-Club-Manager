@@ -22,7 +22,7 @@ import './setup';
 
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
-import { MembershipRole, MembershipStatus, OwnerType, Role } from '@prisma/client';
+import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
@@ -36,7 +36,6 @@ const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice
 async function createUser(overrides: Partial<{
   name: string;
   email: string;
-  role: Role;
 }> = {}) {
   const passwordHash = await bcrypt.hash('Password123!', 10);
   const email = overrides.email ?? `sec-user-${Math.random().toString(36).slice(2)}@test.com`;
@@ -45,7 +44,6 @@ async function createUser(overrides: Partial<{
       name: overrides.name ?? 'Security Test User',
       email,
       passwordHash,
-      role: overrides.role ?? Role.MEMBER,
       gdprConsentDate: new Date(),
       address: '1 Security Lane',
       placeOfBirth: 'London',
@@ -54,22 +52,22 @@ async function createUser(overrides: Partial<{
   });
 }
 
-function authHeader(user: { id: string; email: string; role: Role }) {
+function authHeader(user: { id: string; email: string }) {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET not set');
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, secret, { expiresIn: '1h' });
+  const token = jwt.sign({ id: user.id, email: user.email }, secret, { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
-function authCookie(user: { id: string; email: string; role: Role }) {
+function authCookie(user: { id: string; email: string }) {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET not set');
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, secret, { expiresIn: '1h' });
+  const token = jwt.sign({ id: user.id, email: user.email }, secret, { expiresIn: '1h' });
   return `auth_token=${token}`;
 }
 
 async function createClubWithAdmin(overrides: { adminEmail?: string } = {}) {
-  const admin = await createUser({ role: Role.OWNER, email: overrides.adminEmail ?? `admin-${Math.random().toString(36).slice(2)}@test.com` });
+  const admin = await createUser({ email: overrides.adminEmail ?? `admin-${Math.random().toString(36).slice(2)}@test.com` });
   const club = await prisma.club.create({
     data: { name: 'Security Test Club', ownerId: admin.id, acceptingNewMembers: true },
   });
@@ -316,16 +314,32 @@ describe('security: HttpOnly auth cookie', () => {
   });
 
   it('sets an HttpOnly auth_token cookie on successful registration', async () => {
+    // Registration requires an invite token — create a club and invite first
+    const { admin, club } = await createClubWithAdmin();
+    const regEmail = `cookie-reg-${Math.random().toString(36).slice(2)}@test.com`;
+    const inviteToken = `cookie-reg-invite-${Math.random().toString(36).slice(2)}`;
+    await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email: regEmail,
+        role: MembershipRole.MEMBER,
+        token: inviteToken,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdByUserId: admin.id,
+      },
+    });
+
     const res = await request(app)
       .post('/api/auth/register')
       .send({
         name: 'Cookie Reg User',
-        email: `cookie-reg-${Math.random().toString(36).slice(2)}@test.com`,
+        email: regEmail,
         password: 'Password123!',
         gdprConsent: true,
         address: '1 Cookie Street',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        inviteToken,
       });
 
     expect(res.status).toBe(201);

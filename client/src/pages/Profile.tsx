@@ -13,7 +13,6 @@ interface UserProfile {
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
   shotgunCertificateExpiry?: string | null;
-  role: string;
 }
 
 interface Firearm {
@@ -172,8 +171,6 @@ export default function Profile() {
             <dd>{profile.shotgunCertificateNumber ?? 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Shotgun Certificate Expiry</dt>
             <dd>{profile.shotgunCertificateExpiry ? new Date(profile.shotgunCertificateExpiry).toLocaleDateString() : 'N/A'}</dd>
-            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Role</dt>
-            <dd><span className={`badge badge-${profile.role.toLowerCase()}`}>{profile.role}</span></dd>
           </dl>
         )}
       </section>

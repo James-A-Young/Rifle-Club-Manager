@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Bootstrap from './pages/Bootstrap';
 import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
 import ClubDashboard from './pages/ClubDashboard';
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterRoute />} />
+          <Route path="/setup" element={<Bootstrap />} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
