@@ -219,18 +219,12 @@ Run backend and frontend in separate terminals.
 Terminal 1 (server):
 
 ```bash
-set -a
-source .env.example
-set +a
 npm run dev:server
 ```
 
 Terminal 2 (client):
 
 ```bash
-set -a
-source .env.example
-set +a
 npm run dev:client
 ```
 
