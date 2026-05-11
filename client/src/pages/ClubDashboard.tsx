@@ -47,6 +47,17 @@ interface ClubInvite {
   createdAt: string;
 }
 
+interface ActiveVisitor {
+  id: string;
+  publicVisitRef: string;
+  visitorName: string;
+  visitorEmail: string;
+  guestClubRepresented?: string | null;
+  purpose: string;
+  timeIn: string;
+  firearm: string | null;
+}
+
 function normalizeDisciplines(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -82,6 +93,13 @@ export default function ClubDashboard() {
   const [inviteExpiresInDays, setInviteExpiresInDays] = useState(14);
   const [editingRole, setEditingRole] = useState<{ userId: string; role: MembershipRoleType } | null>(null);
   const [savingRole, setSavingRole] = useState(false);
+  const [activeVisits, setActiveVisits] = useState<ActiveVisitor[]>([]);
+  const [visitsLoading, setVisitsLoading] = useState(false);
+  const [visitsError, setVisitsError] = useState('');
+  const [signoutLoading, setSignoutLoading] = useState<string | null>(null);
+  const [signoutAllLoading, setSignoutAllLoading] = useState(false);
+
+  const REFRESH_VISITS_INTERVAL_MS = 5_000;
 
   useEffect(() => {
     if (!id) return;
@@ -114,6 +132,31 @@ export default function ClubDashboard() {
     api.get<ClubInvite[]>(`/api/clubs/${id}/invites`)
       .then(setInvites)
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
+  }, [id, isAdmin]);
+
+  // Load active visits periodically
+  useEffect(() => {
+    if (!id || !isAdmin) return;
+
+    const loadVisits = async () => {
+      setVisitsLoading(true);
+      setVisitsError('');
+      try {
+        const visits = await api.get<ActiveVisitor[]>(`/api/visits/club/${id}/active`);
+        setActiveVisits(visits);
+      } catch (e) {
+        setVisitsError(e instanceof Error ? e.message : 'Error loading active visits');
+      } finally {
+        setVisitsLoading(false);
+      }
+    };
+
+    loadVisits();
+    const interval = window.setInterval(loadVisits, REFRESH_VISITS_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [id, isAdmin]);
 
   const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
@@ -261,6 +304,39 @@ export default function ClubDashboard() {
     await api.delete(`/api/clubs/${id}/firearms/${firearmId}`);
     setFirearms(prev => prev.filter(f => f.id !== firearmId));
   }
+
+  const handleSignOut = async (visitId: string) => {
+    if (!id) return;
+    setSignoutLoading(visitId);
+    try {
+      await api.patch(`/api/visits/club/${id}/${visitId}/signout`, {});
+      // Refresh visits list
+      const visits = await api.get<ActiveVisitor[]>(`/api/visits/club/${id}/active`);
+      setActiveVisits(visits);
+    } catch (err) {
+      setVisitsError(err instanceof Error ? err.message : 'Error signing out');
+    } finally {
+      setSignoutLoading(null);
+    }
+  };
+
+  const handleSignOutAll = async () => {
+    if (!id || !confirm('Are you sure you want to sign out all visitors? This cannot be undone.')) {
+      return;
+    }
+
+    setSignoutAllLoading(true);
+    try {
+      await api.patch(`/api/visits/club/${id}/signout-all`, { confirm: true });
+      // Refresh visits list
+      const visits = await api.get<ActiveVisitor[]>(`/api/visits/club/${id}/active`);
+      setActiveVisits(visits);
+    } catch (err) {
+      setVisitsError(err instanceof Error ? err.message : 'Error signing out all visitors');
+    } finally {
+      setSignoutAllLoading(false);
+    }
+  };
 
   if (!club) return <div>Loading…</div>;
 
@@ -495,6 +571,64 @@ export default function ClubDashboard() {
               )}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section>
+          <div className="page-header">
+            <h2>Currently Signed In ({activeVisits.length})</h2>
+            {activeVisits.length > 0 && (
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={handleSignOutAll}
+                disabled={signoutAllLoading}
+              >
+                {signoutAllLoading ? 'Signing out…' : 'Sign Out All'}
+              </button>
+            )}
+          </div>
+
+          {visitsError && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{visitsError}</div>}
+
+          {visitsLoading ? (
+            <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>Loading…</p>
+          ) : activeVisits.length === 0 ? (
+            <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No active visitors</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Purpose</th>
+                  <th>Firearm</th>
+                  <th>Time In</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeVisits.map(v => (
+                  <tr key={v.id}>
+                    <td>{v.visitorName}</td>
+                    <td>{v.visitorEmail}</td>
+                    <td>{v.purpose}</td>
+                    <td>{v.firearm || '—'}</td>
+                    <td>{new Date(v.timeIn).toLocaleTimeString()}</td>
+                    <td>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleSignOut(v.id)}
+                        disabled={signoutLoading === v.id}
+                      >
+                        {signoutLoading === v.id ? 'Signing out…' : 'Sign Out'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       )}
 

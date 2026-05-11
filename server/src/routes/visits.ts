@@ -659,6 +659,105 @@ router.get('/club/:clubId', requireAuth, async (req: AuthRequest, res: Response)
   res.json(visits);
 });
 
+// Admin endpoint: get active (signed-in) visitors for a club
+router.get('/club/:clubId/active', requireAuth, async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+
+  // Verify user is an admin member of this club
+  const adminMembership = await prisma.clubMembership.findFirst({
+    where: {
+      clubId,
+      userId: req.user!.id,
+      role: MembershipRole.ADMIN,
+      status: MembershipStatus.APPROVED,
+    },
+  });
+
+  if (!adminMembership) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  // Get active visits (timeOut is null) for this club
+  const visits = await prisma.visitLog.findMany({
+    where: {
+      clubId,
+      timeOut: null,
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      firearmUsed: { select: { id: true, make: true, model: true, caliber: true } },
+    },
+    orderBy: { timeIn: 'desc' },
+  });
+
+  // Return safe fields, using publicVisitRef and id
+  const safeVisits = visits.map(v => ({
+    id: v.id,
+    publicVisitRef: v.publicVisitRef,
+    visitorName: v.userId ? v.user?.name : v.guestName,
+    visitorEmail: v.userId ? v.user?.email : v.guestEmail,
+    guestClubRepresented: v.guestClubRepresented,
+    purpose: v.purpose,
+    timeIn: v.timeIn,
+    firearm: v.firearmUsed ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})` : null,
+  }));
+
+  res.json(safeVisits);
+});
+
+// Admin endpoint: sign out a specific visitor by id
+router.patch('/club/:clubId/:visitId/signout', requireAuth, async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const visitId = req.params.visitId as string;
+
+  // Verify user is an admin member of this club
+  const adminMembership = await prisma.clubMembership.findFirst({
+    where: {
+      clubId,
+      userId: req.user!.id,
+      role: MembershipRole.ADMIN,
+      status: MembershipStatus.APPROVED,
+    },
+  });
+
+  if (!adminMembership) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  // Find the visit and verify it belongs to this club
+  const visit = await prisma.visitLog.findFirst({
+    where: {
+      id: visitId,
+      clubId,
+    },
+  });
+
+  if (!visit) {
+    res.status(404).json({ error: 'Visit not found' });
+    return;
+  }
+
+  if (visit.timeOut !== null) {
+    res.status(400).json({ error: 'This visitor is already signed out' });
+    return;
+  }
+
+  // Sign out the visitor
+  const updated = await prisma.visitLog.update({
+    where: { id: visitId },
+    data: { timeOut: new Date() },
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      firearmUsed: true,
+      club: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json(updated);
+});
+
 router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
