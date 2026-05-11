@@ -3,14 +3,15 @@ import { useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import VisitSignInForm, { VisitFormPayload } from '../components/VisitSignInForm';
+import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
+import { SimpleFirearm } from '../types/club';
 
 interface IssuedLink {
   id: string;
   cryptoToken: string;
   expiresAt: string;
 }
-
-interface Firearm { id: string; make: string; model: string; caliber: string; }
 
 interface KioskLinkData {
   id: string;
@@ -22,7 +23,7 @@ interface KioskLinkData {
   club: {
     id: string;
     name: string;
-    firearms: Firearm[];
+    firearms: SimpleFirearm[];
   };
 }
 
@@ -44,13 +45,6 @@ interface ClubMembership {
 
 const ISSUE_INTERVAL_MS = 45_000;
 const REFRESH_VISITS_INTERVAL_MS = 5_000;
-const PURPOSES = ['Practice', 'Competition', 'Training', 'Other'];
-
-const EMPTY_DETAILS = {
-  guestName: '',
-  guestClubRepresented: '',
-  guestEmail: '',
-};
 
 export default function KioskSignIn() {
   const { token } = useParams<{ token: string }>();
@@ -59,13 +53,6 @@ export default function KioskSignIn() {
   const [issuedLink, setIssuedLink] = useState<IssuedLink | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [manualForm, setManualForm] = useState({
-    purpose: 'Practice',
-    firearmUsedId: '',
-    firearmSerialNumber: '',
-    guestDetails: EMPTY_DETAILS,
-  });
-  const [manualSubmitting, setManualSubmitting] = useState(false);
   const [manualSuccess, setManualSuccess] = useState(false);
   const [activeVisits, setActiveVisits] = useState<ActiveVisitor[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
@@ -174,41 +161,15 @@ export default function KioskSignIn() {
     return `${window.location.origin}/sign-in/${issuedLink.cryptoToken}`;
   }, [issuedLink]);
 
-  const handleManualSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function handleManualSubmit(payload: VisitFormPayload) {
     if (!kioskData) return;
-
-    setManualSubmitting(true);
     setError('');
     try {
-      const payload: {
-        signInAccessToken: string;
-        purpose: string;
-        firearmUsedId?: string;
-        firearmSerialNumber?: string;
-        guestDetails?: typeof EMPTY_DETAILS;
-      } = {
-        signInAccessToken: kioskData.accessToken,
-        purpose: manualForm.purpose,
-        firearmUsedId: manualForm.firearmUsedId || undefined,
-        firearmSerialNumber: manualForm.firearmSerialNumber || undefined,
-      };
-
-      if (!isAuthenticatedKioskUser) {
-        payload.guestDetails = manualForm.guestDetails;
-      }
-
       await api.post('/api/visits/public', {
+        signInAccessToken: kioskData.accessToken,
         ...payload,
       });
       setManualSuccess(true);
-      setManualForm({
-        purpose: 'Practice',
-        firearmUsedId: '',
-        firearmSerialNumber: '',
-        guestDetails: EMPTY_DETAILS,
-      });
-      // Refresh visits list
       setTimeout(async () => {
         try {
           const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
@@ -220,17 +181,16 @@ export default function KioskSignIn() {
       }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error signing in');
-    } finally {
-      setManualSubmitting(false);
+      // Re-throw so VisitSignInForm keeps the form populated (doesn't reset on error)
+      throw err;
     }
-  };
+  }
 
   const handleSignOut = async (publicVisitRef: string) => {
     if (!token) return;
     setSignoutLoading(publicVisitRef);
     try {
       await api.post(`/api/visits/kiosk/${token}/signout`, { publicVisitRef });
-      // Refresh visits list
       const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
       setActiveVisits(visits);
     } catch (err) {
@@ -248,7 +208,6 @@ export default function KioskSignIn() {
     setSignoutAllLoading(true);
     try {
       await api.patch(`/api/visits/club/${kioskData.clubId}/signout-all`, { confirm: true });
-      // Refresh visits list
       const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
       setActiveVisits(visits);
     } catch (err) {
@@ -273,207 +232,65 @@ export default function KioskSignIn() {
 
   const clubFirearms = kioskData?.club.firearms ?? [];
 
+  const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
+    signOutId: v.publicVisitRef,
+    visitorName: v.visitorName,
+    visitorEmail: v.visitorEmail,
+    purpose: v.purpose,
+    firearm: v.firearm,
+    timeIn: v.timeIn,
+  }));
+
   return (
     <div className="kiosk-page">
       <div className="page-header" style={{ textAlign: 'center', marginBottom: '2rem' }}>
         <h1>{kioskData?.club.name} - Kiosk</h1>
       </div>
       <div style={{ display: 'flex', flexDirection: 'row', gap: '2rem', flexWrap: 'wrap' }}>
-      {/* QR Code Section */}
-      <div className="card kiosk-card" style={{ flex: '4' }}>
-        <h2>QR Sign-In</h2>
-        <p style={{ color: 'var(--gray-600)', marginBottom: '1rem' }}>Scan the QR code to open the sign-in form.</p>
-        <div className="qr-container">
-          {qrUrl ? <QRCodeSVG value={qrUrl} size={300} /> : <p>Preparing QR…</p>}
+        {/* QR Code Section */}
+        <div className="card kiosk-card" style={{ flex: '4' }}>
+          <h2>QR Sign-In</h2>
+          <p style={{ color: 'var(--gray-600)', marginBottom: '1rem' }}>
+            Scan the QR code to open the sign-in form.
+          </p>
+          <div className="qr-container">
+            {qrUrl ? <QRCodeSVG value={qrUrl} size={300} /> : <p>Preparing QR…</p>}
+          </div>
+          <p className="link-text" style={{ marginTop: '1rem' }}>QR rotates automatically every 45 seconds.</p>
         </div>
-        <p className="link-text" style={{ marginTop: '1rem' }}>QR rotates automatically every 45 seconds.</p>
-      </div>
 
         {/* Manual Sign-In Section */}
         <div className="card" style={{ flex: '6' }}>
-        <h2>Manual Sign-In</h2>
-        {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
-        {manualSuccess && (
-          <div className="alert alert-success" style={{ marginBottom: '1rem' }}>
-            ✅ Visitor signed in successfully
-          </div>
-        )}
-      
-        {kioskData && (
-          <form onSubmit={handleManualSubmit}>
-            {!isAuthenticatedKioskUser && (
-              <>
-                <div className="form-group">
-                  <label>Full Name *</label>
-                  <input
-                    type="text"
-                    value={manualForm.guestDetails.guestName}
-                    onChange={e =>
-                      setManualForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestName: e.target.value },
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Club/Organization You Represent *</label>
-                  <input
-                    type="text"
-                    value={manualForm.guestDetails.guestClubRepresented}
-                    onChange={e =>
-                      setManualForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestClubRepresented: e.target.value },
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Email Address (optional)</label>
-                  <input
-                    type="email"
-                    value={manualForm.guestDetails.guestEmail}
-                    onChange={e =>
-                      setManualForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestEmail: e.target.value },
-                      }))
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="form-group">
-              <label>Purpose of Visit *</label>
-              <select
-                value={manualForm.purpose}
-                onChange={e => setManualForm(f => ({ ...f, purpose: e.target.value }))}
-              >
-                {PURPOSES.map(p => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+          <h2>Manual Sign-In</h2>
+          {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{error}</div>}
+          {manualSuccess && (
+            <div className="alert alert-success" style={{ marginBottom: '1rem' }}>
+              ✅ Visitor signed in successfully
             </div>
+          )}
 
-            <div className="form-group">
-              <label>Firearm Used (optional)</label>
-              <select
-                value={manualForm.firearmUsedId}
-                onChange={e => setManualForm(f => ({ ...f, firearmUsedId: e.target.value }))}
-              >
-                <option value="">None / Not applicable</option>
-                {clubFirearms.length > 0 && (
-                  <optgroup label="Club Firearms">
-                    {clubFirearms.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.make} {f.model} ({f.caliber})
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Rifle Serial Number (optional)</label>
-              <input
-                type="text"
-                value={manualForm.firearmSerialNumber}
-                onChange={e =>
-                  setManualForm(f => ({
-                    ...f,
-                    firearmSerialNumber: e.target.value,
-                  }))
-                }
-                placeholder="Enter serial number if using personal rifle"
-              />
-            </div>
-
-            {!isAuthenticatedKioskUser && (
-              <div className="form-group">
-                <label>Reason for Visit (optional)</label>
-                <input
-                  type="text"
-                  placeholder="E.g., Guest of [member name]"
-                />
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              disabled={manualSubmitting}
-            >
-              {manualSubmitting ? 'Signing in…' : 'Sign In'}
-            </button>
-          </form>
-        )}
-      </div>
-        </div>
-      {/* Signed In List Section */}
-      <div className="card" style={{ marginTop: '2rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h2 style={{ margin: 0 }}>Currently Signed In ({activeVisits.length})</h2>
-          {isAdmin && (
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={handleSignOutAll}
-              disabled={signoutAllLoading || activeVisits.length === 0}
-            >
-              {signoutAllLoading ? 'Signing out…' : 'Sign Out All'}
-            </button>
+          {kioskData && (
+            <VisitSignInForm
+              clubFirearms={clubFirearms}
+              isAuthenticated={isAuthenticatedKioskUser}
+              onSubmit={handleManualSubmit}
+            />
           )}
         </div>
+      </div>
 
-        {visitsError && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{visitsError}</div>}
-
-        {visitsLoading ? (
-          <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>Loading…</p>
-        ) : activeVisits.length === 0 ? (
-          <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No active visitors</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Purpose</th>
-                <th>Firearm</th>
-                <th>Time In</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeVisits.map(v => (
-                <tr key={v.publicVisitRef}>
-                  <td>{v.visitorName}</td>
-                  <td>{v.visitorEmail}</td>
-                  <td>{v.purpose}</td>
-                  <td>{v.firearm || '—'}</td>
-                  <td>{new Date(v.timeIn).toLocaleTimeString()}</td>
-                  <td>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => handleSignOut(v.publicVisitRef)}
-                      disabled={signoutLoading === v.publicVisitRef}
-                    >
-                      {signoutLoading === v.publicVisitRef ? 'Signing out…' : 'Sign Out'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      {/* Signed In List Section */}
+      <div className="card" style={{ marginTop: '2rem' }}>
+        <ActiveVisitorsTable
+          visits={visitRows}
+          loading={visitsLoading}
+          error={visitsError}
+          signOutLoadingId={signoutLoading}
+          showSignOutAll={isAdmin}
+          signOutAllLoading={signoutAllLoading}
+          onSignOut={handleSignOut}
+          onSignOutAll={handleSignOutAll}
+        />
       </div>
     </div>
   );

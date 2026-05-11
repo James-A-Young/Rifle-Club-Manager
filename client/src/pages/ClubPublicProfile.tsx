@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { normalizeDisciplines } from '../shared/clubUtils';
 
 interface ClubPublicProfileData {
   id: string;
@@ -15,13 +16,6 @@ interface ClubPublicProfileData {
   _count: {
     memberships: number;
   };
-}
-
-function normalizeDisciplines(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map(item => (typeof item === 'string' ? item.trim() : ''))
-    .filter(item => item.length > 0);
 }
 
 export default function ClubPublicProfile() {
