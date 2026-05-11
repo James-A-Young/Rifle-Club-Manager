@@ -1,51 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import FirearmForm from '../components/FirearmForm';
-
-interface Firearm { id: string; make: string; model: string; caliber: string; serialNumber: string; }
-interface Club {
-  id: string;
-  name: string;
-  homeOfficeRef?: string | null;
-  address?: string | null;
-  disciplinesOffered?: string[] | null;
-  acceptingNewMembers: boolean;
-  openingTimes?: string | null;
-  description?: string | null;
-}
-interface Member {
-  id: string;
-  userId: string;
-  status: string;
-  role: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    address?: string;
-    placeOfBirth?: string;
-    dateOfBirth?: string;
-    firearmCertificateNumber?: string | null;
-    firearmCertificateExpiry?: string | null;
-    shotgunCertificateNumber?: string | null;
-    shotgunCertificateExpiry?: string | null;
-    gdprConsentDate?: string;
-  };
-}
-interface SignInLink { id: string; cryptoToken: string; expiresAt: string; mode?: 'KIOSK' | 'QR'; }
-type MembershipRoleType = 'MEMBER' | 'ADMIN' | 'PROBATIONARY_MEMBER';
-
-interface ClubInvite {
-  id: string;
-  email: string;
-  role: MembershipRoleType;
-  token: string;
-  expiresAt: string;
-  redeemedAt: string | null;
-  createdAt: string;
-}
+import { normalizeDisciplines } from '../shared/clubUtils';
+import {
+  Club,
+  Member,
+  Firearm,
+  SignInLink,
+  ClubInvite,
+  ClubSettings,
+  ClubFormData,
+  MembershipRoleType,
+  EditingRoleState,
+} from '../types/club';
+import DashboardTabNav from '../components/dashboard/DashboardTabNav';
+import ClubProfileSection from '../components/dashboard/ClubProfileSection';
+import ClubSettingsSection from '../components/dashboard/ClubSettingsSection';
+import KioskLinksSection from '../components/dashboard/KioskLinksSection';
+import ArmorySection from '../components/dashboard/ArmorySection';
+import MembersSection from '../components/dashboard/MembersSection';
+import InvitesSection from '../components/dashboard/InvitesSection';
+import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
 
 interface ActiveVisitor {
   id: string;
@@ -58,56 +34,54 @@ interface ActiveVisitor {
   firearm: string | null;
 }
 
-interface ClubSettings {
-  clubId: string;
-  logoUrl?: string | null;
-  primaryColor: string;
-  secondaryColor: string;
-  accentColor: string;
-  passIssuingEnabled: boolean;
-  memberCardSignInEnabled: boolean;
-}
-
-function normalizeDisciplines(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map(item => (typeof item === 'string' ? item.trim() : ''))
-    .filter(item => item.length > 0);
-}
-
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+
+  // Data state
   const [club, setClub] = useState<Club | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [links, setLinks] = useState<SignInLink[]>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
+
+  // UI state
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [activeTab, setActiveTab] = useState<'operations' | 'settings'>('operations');
+
+  // Club profile edit
   const [editingClubProfile, setEditingClubProfile] = useState(false);
   const [savingClubProfile, setSavingClubProfile] = useState(false);
   const [disciplineInput, setDisciplineInput] = useState('');
-  const [clubForm, setClubForm] = useState({
+  const [clubForm, setClubForm] = useState<ClubFormData>({
     name: '',
     homeOfficeRef: '',
     address: '',
-    disciplinesOffered: [] as string[],
+    disciplinesOffered: [],
     acceptingNewMembers: true,
     openingTimes: '',
     description: '',
   });
+
+  // Invite form
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<MembershipRoleType>('MEMBER');
   const [inviteExpiresInDays, setInviteExpiresInDays] = useState(14);
-  const [editingRole, setEditingRole] = useState<{ userId: string; role: MembershipRoleType } | null>(null);
+
+  // Member role editing
+  const [editingRole, setEditingRole] = useState<EditingRoleState | null>(null);
   const [savingRole, setSavingRole] = useState(false);
+
+  // Active visits
   const [activeVisits, setActiveVisits] = useState<ActiveVisitor[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
   const [visitsError, setVisitsError] = useState('');
   const [signoutLoading, setSignoutLoading] = useState<string | null>(null);
   const [signoutAllLoading, setSignoutAllLoading] = useState(false);
+
+  // Settings
   const [settings, setSettings] = useState<ClubSettings | null>(null);
   const [editingSettings, setEditingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -120,7 +94,6 @@ export default function ClubDashboard() {
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
   });
-  const [activeTab, setActiveTab] = useState<'operations' | 'settings'>('operations');
 
   const REFRESH_VISITS_INTERVAL_MS = 5_000;
 
@@ -163,7 +136,6 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
   }, [id, isAdmin]);
 
-  // Load active visits periodically
   useEffect(() => {
     if (!id || !isAdmin) return;
 
@@ -182,10 +154,7 @@ export default function ClubDashboard() {
 
     loadVisits();
     const interval = window.setInterval(loadVisits, REFRESH_VISITS_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(interval);
-    };
+    return () => window.clearInterval(interval);
   }, [id, isAdmin]);
 
   const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
@@ -195,19 +164,9 @@ export default function ClubDashboard() {
     if (!value) return;
     setClubForm(prev => {
       if (prev.disciplinesOffered.includes(value)) return prev;
-      return {
-        ...prev,
-        disciplinesOffered: [...prev.disciplinesOffered, value],
-      };
+      return { ...prev, disciplinesOffered: [...prev.disciplinesOffered, value] };
     });
     setDisciplineInput('');
-  }
-
-  function removeDiscipline(discipline: string) {
-    setClubForm(prev => ({
-      ...prev,
-      disciplinesOffered: prev.disciplinesOffered.filter(item => item !== discipline),
-    }));
   }
 
   async function saveClubProfile(e: React.FormEvent) {
@@ -247,21 +206,21 @@ export default function ClubDashboard() {
     if (!id) return;
     try {
       const updated = await api.patch<Member>(`/api/clubs/${id}/members/${userId}`, { status });
-      setMembers(members.map(m => (m.userId === userId ? updated : m)));
+      setMembers(prev => prev.map(m => (m.userId === userId ? updated : m)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error updating member');
     }
   }
 
-  async function saveRoleChange(userId: string, newRole: MembershipRoleType) {
+  async function saveRoleChange() {
     if (!id || !editingRole) return;
     setSavingRole(true);
     setError('');
     try {
-      const updated = await api.patch<Member>(`/api/clubs/${id}/members/${userId}`, {
-        role: newRole,
+      const updated = await api.patch<Member>(`/api/clubs/${id}/members/${editingRole.userId}`, {
+        role: editingRole.role,
       });
-      setMembers(members.map(m => (m.userId === userId ? updated : m)));
+      setMembers(prev => prev.map(m => (m.userId === editingRole.userId ? updated : m)));
       setEditingRole(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error updating member role');
@@ -308,8 +267,8 @@ export default function ClubDashboard() {
     return `${inviteBaseUrl}/${token}/accept`;
   }
 
-  async function copyInviteUrl(token: string) {
-    await navigator.clipboard.writeText(getInviteUrl(token));
+  function copyInviteUrl(token: string) {
+    void navigator.clipboard.writeText(getInviteUrl(token));
   }
 
   function sendInviteEmail(invite: ClubInvite) {
@@ -334,12 +293,11 @@ export default function ClubDashboard() {
     setFirearms(prev => prev.filter(f => f.id !== firearmId));
   }
 
-  const handleSignOut = async (visitId: string) => {
+  async function handleSignOut(visitId: string) {
     if (!id) return;
     setSignoutLoading(visitId);
     try {
       await api.patch(`/api/visits/club/${id}/${visitId}/signout`, {});
-      // Refresh visits list
       const visits = await api.get<ActiveVisitor[]>(`/api/visits/club/${id}/active`);
       setActiveVisits(visits);
     } catch (err) {
@@ -347,17 +305,13 @@ export default function ClubDashboard() {
     } finally {
       setSignoutLoading(null);
     }
-  };
+  }
 
-  const handleSignOutAll = async () => {
-    if (!id || !confirm('Are you sure you want to sign out all visitors? This cannot be undone.')) {
-      return;
-    }
-
+  async function handleSignOutAll() {
+    if (!id || !confirm('Are you sure you want to sign out all visitors? This cannot be undone.')) return;
     setSignoutAllLoading(true);
     try {
       await api.patch(`/api/visits/club/${id}/signout-all`, { confirm: true });
-      // Refresh visits list
       const visits = await api.get<ActiveVisitor[]>(`/api/visits/club/${id}/active`);
       setActiveVisits(visits);
     } catch (err) {
@@ -365,7 +319,7 @@ export default function ClubDashboard() {
     } finally {
       setSignoutAllLoading(false);
     }
-  };
+  }
 
   async function saveSettings(e: React.FormEvent) {
     e.preventDefault();
@@ -393,12 +347,25 @@ export default function ClubDashboard() {
 
   if (!club) return <div>Loading…</div>;
 
+  const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
+    signOutId: v.id,
+    visitorName: v.visitorName,
+    visitorEmail: v.visitorEmail,
+    purpose: v.purpose,
+    firearm: v.firearm,
+    timeIn: v.timeIn,
+  }));
+
   return (
     <>
       <div className="page-header">
         <div>
           <h1>{club.name}</h1>
-          {club.homeOfficeRef && <p style={{ color: 'var(--gray-600)', fontSize: '0.9rem' }}>Home Office Ref: {club.homeOfficeRef}</p>}
+          {club.homeOfficeRef && (
+            <p style={{ color: 'var(--gray-600)', fontSize: '0.9rem' }}>
+              Home Office Ref: {club.homeOfficeRef}
+            </p>
+          )}
         </div>
         <div className="actions">
           <Link to={`/clubs/profile/${id}`} className="btn btn-secondary btn-sm">Public Profile</Link>
@@ -412,582 +379,105 @@ export default function ClubDashboard() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {/* Tab Navigation */}
-      <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--gray-300)', marginBottom: '2rem' }}>
-        <button
-          onClick={() => setActiveTab('operations')}
-          style={{
-            padding: '0.75rem 1.5rem',
-            border: 'none',
-            background: activeTab === 'operations' ? 'transparent' : 'transparent',
-            borderBottom: activeTab === 'operations' ? '3px solid var(--primary-color, #3b82f6)' : 'none',
-            color: activeTab === 'operations' ? 'var(--primary-color, #3b82f6)' : 'var(--gray-600)',
-            fontWeight: activeTab === 'operations' ? '600' : '500',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={e => {
-            if (activeTab !== 'operations') (e.target as HTMLButtonElement).style.color = 'var(--gray-800)';
-          }}
-          onMouseLeave={e => {
-            if (activeTab !== 'operations') (e.target as HTMLButtonElement).style.color = 'var(--gray-600)';
-          }}
-        >
-          Operations
-        </button>
-        <button
-          onClick={() => setActiveTab('settings')}
-          style={{
-            padding: '0.75rem 1.5rem',
-            border: 'none',
-            background: 'transparent',
-            borderBottom: activeTab === 'settings' ? '3px solid var(--primary-color, #3b82f6)' : 'none',
-            color: activeTab === 'settings' ? 'var(--primary-color, #3b82f6)' : 'var(--gray-600)',
-            fontWeight: activeTab === 'settings' ? '600' : '500',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={e => {
-            if (activeTab !== 'settings') (e.target as HTMLButtonElement).style.color = 'var(--gray-800)';
-          }}
-          onMouseLeave={e => {
-            if (activeTab !== 'settings') (e.target as HTMLButtonElement).style.color = 'var(--gray-600)';
-          }}
-        >
-          Settings
-        </button>
-      </div>
+      <DashboardTabNav activeTab={activeTab} onChange={setActiveTab} />
 
-      {/* SETTINGS TAB */}
       {activeTab === 'settings' && (
         <>
-          <section>
-            <div className="page-header">
-              <h2>Club Profile</h2>
-              {isAdmin && (
-                <button className="btn btn-secondary btn-sm" onClick={() => setEditingClubProfile(v => !v)}>
-                  {editingClubProfile ? 'Cancel' : 'Edit'}
-                </button>
-              )}
-            </div>
-
-            {editingClubProfile ? (
-              <form onSubmit={saveClubProfile}>
-                <div className="form-group">
-                  <label>Club Name</label>
-                  <input value={clubForm.name} onChange={e => setClubForm(prev => ({ ...prev, name: e.target.value }))} required />
-                </div>
-                <div className="form-group">
-                  <label>Home Office Reference</label>
-                  <input value={clubForm.homeOfficeRef} onChange={e => setClubForm(prev => ({ ...prev, homeOfficeRef: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label>Address</label>
-                  <input value={clubForm.address} onChange={e => setClubForm(prev => ({ ...prev, address: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label>Disciplines Offered</label>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <input
-                      value={disciplineInput}
-                      onChange={e => setDisciplineInput(e.target.value)}
-                      placeholder="Type a discipline and click Add"
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addDiscipline();
-                        }
-                      }}
-                    />
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={addDiscipline}>Add</button>
-                  </div>
-                  <div className="actions" style={{ marginTop: '0.5rem', flexWrap: 'wrap' }}>
-                    {clubForm.disciplinesOffered.map(discipline => (
-                      <button
-                        key={discipline}
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => removeDiscipline(discipline)}
-                      >
-                        {discipline} ×
-                      </button>
-                    ))}
-                    {clubForm.disciplinesOffered.length === 0 && (
-                      <span style={{ color: 'var(--gray-600)' }}>No disciplines added</span>
-                    )}
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Accepting New Members</label>
-                  <select
-                    value={clubForm.acceptingNewMembers ? 'yes' : 'no'}
-                    onChange={e => setClubForm(prev => ({ ...prev, acceptingNewMembers: e.target.value === 'yes' }))}
-                  >
-                    <option value="yes">Yes</option>
-                    <option value="no">No</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Opening Times</label>
-                  <input value={clubForm.openingTimes} onChange={e => setClubForm(prev => ({ ...prev, openingTimes: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea value={clubForm.description} onChange={e => setClubForm(prev => ({ ...prev, description: e.target.value }))} rows={4} />
-                </div>
-                <button type="submit" className="btn btn-primary" disabled={savingClubProfile}>
-                  {savingClubProfile ? 'Saving…' : 'Save Club Profile'}
-                </button>
-              </form>
-            ) : (
-              <dl style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '0.5rem 1rem' }}>
-                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Address</dt>
-                <dd>{club.address ?? 'N/A'}</dd>
-                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disciplines Offered</dt>
-                <dd>{normalizeDisciplines(club.disciplinesOffered).join(', ') || 'N/A'}</dd>
-                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Accepting New Members</dt>
-                <dd>{club.acceptingNewMembers ? 'Yes' : 'No'}</dd>
-                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Opening Times</dt>
-                <dd>{club.openingTimes ?? 'N/A'}</dd>
-                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Description</dt>
-                <dd>{club.description ?? 'N/A'}</dd>
-              </dl>
-            )}
-          </section>
+          <ClubProfileSection
+            club={club}
+            isAdmin={isAdmin}
+            editing={editingClubProfile}
+            saving={savingClubProfile}
+            form={clubForm}
+            disciplineInput={disciplineInput}
+            onToggleEdit={() => setEditingClubProfile(v => !v)}
+            onSave={saveClubProfile}
+            onFormChange={partial => setClubForm(prev => ({ ...prev, ...partial }))}
+            onDisciplineInputChange={setDisciplineInput}
+            onAddDiscipline={addDiscipline}
+            onRemoveDiscipline={discipline =>
+              setClubForm(prev => ({
+                ...prev,
+                disciplinesOffered: prev.disciplinesOffered.filter(d => d !== discipline),
+              }))
+            }
+          />
 
           {isAdmin && (
-            <section>
-              <div className="page-header">
-                <h2>Club Settings</h2>
-                <button className="btn btn-secondary btn-sm" onClick={() => setEditingSettings(v => !v)}>
-                  {editingSettings ? 'Cancel' : 'Edit'}
-                </button>
-              </div>
-
-              {editingSettings ? (
-                <form onSubmit={saveSettings}>
-                  <div className="form-group">
-                    <label>Logo URL</label>
-                    <input
-                      type="url"
-                      value={settingsForm.logoUrl || ''}
-                      onChange={e => setSettingsForm(prev => ({ ...prev, logoUrl: e.target.value }))}
-                      placeholder="https://example.com/logo.png"
-                    />
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label>Primary Color</label>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input
-                          type="color"
-                          value={settingsForm.primaryColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, primaryColor: e.target.value }))}
-                        />
-                        <input
-                          type="text"
-                          value={settingsForm.primaryColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, primaryColor: e.target.value }))}
-                          placeholder="#000000"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Secondary Color</label>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input
-                          type="color"
-                          value={settingsForm.secondaryColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
-                        />
-                        <input
-                          type="text"
-                          value={settingsForm.secondaryColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, secondaryColor: e.target.value }))}
-                          placeholder="#000000"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Accent Color</label>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input
-                          type="color"
-                          value={settingsForm.accentColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, accentColor: e.target.value }))}
-                        />
-                        <input
-                          type="text"
-                          value={settingsForm.accentColor}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, accentColor: e.target.value }))}
-                          placeholder="#000000"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settingsForm.passIssuingEnabled}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, passIssuingEnabled: e.target.checked }))}
-                        />
-                        {' '}Pass Issuing Enabled
-                      </label>
-                    </div>
-
-                    <div className="form-group">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={settingsForm.memberCardSignInEnabled}
-                          onChange={e => setSettingsForm(prev => ({ ...prev, memberCardSignInEnabled: e.target.checked }))}
-                        />
-                        {' '}Member Card Sign-In Enabled
-                      </label>
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn btn-primary" disabled={savingSettings}>
-                    {savingSettings ? 'Saving…' : 'Save Settings'}
-                  </button>
-                </form>
-              ) : (
-                <dl style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '0.5rem 1rem' }}>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Logo URL</dt>
-                  <dd>{settings?.logoUrl || 'Not set'}</dd>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Primary Color</dt>
-                  <dd style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '2rem', height: '2rem', backgroundColor: settings?.primaryColor, border: '1px solid #ddd', borderRadius: '4px' }} />
-                    {settings?.primaryColor}
-                  </dd>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Secondary Color</dt>
-                  <dd style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '2rem', height: '2rem', backgroundColor: settings?.secondaryColor, border: '1px solid #ddd', borderRadius: '4px' }} />
-                    {settings?.secondaryColor}
-                  </dd>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Accent Color</dt>
-                  <dd style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <div style={{ width: '2rem', height: '2rem', backgroundColor: settings?.accentColor, border: '1px solid #ddd', borderRadius: '4px' }} />
-                    {settings?.accentColor}
-                  </dd>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Pass Issuing Enabled</dt>
-                  <dd>{settings?.passIssuingEnabled ? 'Yes' : 'No'}</dd>
-                  <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Member Card Sign-In Enabled</dt>
-                  <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
-                </dl>
-              )}
-            </section>
+            <ClubSettingsSection
+              settings={settings}
+              editing={editingSettings}
+              saving={savingSettings}
+              form={settingsForm}
+              onToggleEdit={() => setEditingSettings(v => !v)}
+              onSave={saveSettings}
+              onFormChange={partial => setSettingsForm(prev => ({ ...prev, ...partial }))}
+            />
           )}
 
           {isAdmin && (
-            <section>
-              <div className="page-header">
-                <h2>Kiosk Links</h2>
-                <div className="actions">
-                  <button className="btn btn-primary btn-sm" onClick={generateKioskLink}>Create Kiosk Link</button>
-                </div>
-              </div>
-              <table style={{ marginTop: '1rem' }}>
-                <thead>
-                  <tr>
-                    <th>Mode</th>
-                    <th>Link</th>
-                    <th>Expires</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {links.filter(l => l.mode === 'KIOSK').map(l => {
-                    const path = `/kiosk/${l.cryptoToken}`;
-                    const fullUrl = `${window.location.origin}${path}`;
-                    return (
-                      <tr key={l.id}>
-                        <td><span className="badge badge-member">KIOSK</span></td>
-                        <td style={{ maxWidth: 360, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          <a href={path} target="_blank" rel="noreferrer">{fullUrl}</a>
-                        </td>
-                        <td>{new Date(l.expiresAt).toLocaleString()}</td>
-                        <td>
-                          <div className="actions">
-                            <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(fullUrl)}>Copy</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => revokeLink(l.id)}>Revoke</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {links.filter(l => l.mode === 'KIOSK').length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No active kiosk links</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </section>
+            <KioskLinksSection
+              links={links}
+              onGenerate={generateKioskLink}
+              onRevoke={revokeLink}
+            />
           )}
 
           {isAdmin && (
-            <section>
-              <div className="page-header">
-                <h2>Club Armory</h2>
-                <button className="btn btn-primary btn-sm" onClick={() => setShowFirearmForm(s => !s)}>
-                  Add Firearm
-                </button>
-              </div>
-              {showFirearmForm && (
-                <div style={{ marginBottom: '1rem' }}>
-                  <FirearmForm onSubmit={addFirearm} onCancel={() => setShowFirearmForm(false)} />
-                </div>
-              )}
-              <table>
-                <thead>
-                  <tr>
-                    <th>Make</th>
-                    <th>Model</th>
-                    <th>Caliber</th>
-                    <th>Serial</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {firearms.map(f => (
-                    <tr key={f.id}>
-                      <td>{f.make}</td>
-                      <td>{f.model}</td>
-                      <td>{f.caliber}</td>
-                      <td>{f.serialNumber}</td>
-                      <td>
-                        <button className="btn btn-danger btn-sm" onClick={() => removeFirearm(f.id)}>Remove</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {firearms.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No firearms registered</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </section>
+            <ArmorySection
+              firearms={firearms}
+              showForm={showFirearmForm}
+              onToggleForm={() => setShowFirearmForm(s => !s)}
+              onAdd={addFirearm}
+              onRemove={removeFirearm}
+            />
           )}
         </>
       )}
 
-      {/* OPERATIONS TAB */}
       {activeTab === 'operations' && (
         <>
           {isAdmin && (
             <section>
-              <div className="page-header">
-                <h2>Currently Signed In ({activeVisits.length})</h2>
-                {activeVisits.length > 0 && (
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={handleSignOutAll}
-                    disabled={signoutAllLoading}
-                  >
-                    {signoutAllLoading ? 'Signing out…' : 'Sign Out All'}
-                  </button>
-                )}
-              </div>
-
-              {visitsError && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{visitsError}</div>}
-
-              {visitsLoading ? (
-                <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>Loading…</p>
-              ) : activeVisits.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No active visitors</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Purpose</th>
-                      <th>Firearm</th>
-                      <th>Time In</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeVisits.map(v => (
-                      <tr key={v.id}>
-                        <td>{v.visitorName}</td>
-                        <td>{v.visitorEmail}</td>
-                        <td>{v.purpose}</td>
-                        <td>{v.firearm || '—'}</td>
-                        <td>{new Date(v.timeIn).toLocaleTimeString()}</td>
-                        <td>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => handleSignOut(v.id)}
-                            disabled={signoutLoading === v.id}
-                          >
-                            {signoutLoading === v.id ? 'Signing out…' : 'Sign Out'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              <ActiveVisitorsTable
+                visits={visitRows}
+                loading={visitsLoading}
+                error={visitsError}
+                signOutLoadingId={signoutLoading}
+                showSignOutAll={activeVisits.length > 0}
+                signOutAllLoading={signoutAllLoading}
+                onSignOut={handleSignOut}
+                onSignOutAll={handleSignOutAll}
+              />
             </section>
           )}
 
-          <section>
-            <div className="page-header">
-              <h2>Members</h2>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Status</th>
-                  <th>Role</th>
-                  {isAdmin && <th>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {members.map(m => (
-                  <tr key={m.id}>
-                    <td>{m.user.name}</td>
-                    <td>{m.user.email}</td>
-                    <td>
-                      <span className={`badge badge-${m.status.toLowerCase()}`}>{m.status}</span>
-                    </td>
-                    <td>
-                      {editingRole?.userId === m.userId && m.status === 'APPROVED' ? (
-                        <select
-                          value={editingRole.role}
-                          onChange={e => setEditingRole({ ...editingRole, role: e.target.value as MembershipRoleType })}
-                          className="btn btn-sm"
-                        >
-                          <option value="MEMBER">MEMBER</option>
-                          <option value="ADMIN">ADMIN</option>
-                          <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
-                        </select>
-                      ) : (
-                        <span className={`badge badge-${m.role.toLowerCase()}`}>{m.role}</span>
-                      )}
-                    </td>
-                    {isAdmin && (
-                      <td>
-                        <div className="actions" style={{ flexWrap: 'wrap', gap: '0.25rem' }}>
-                          <Link className="btn btn-secondary btn-sm" to={`/clubs/${id}/members/${m.userId}`}>View Profile</Link>
-                          {m.status === 'PENDING' && (
-                            <>
-                              <button className="btn btn-success btn-sm" onClick={() => approveMember(m.userId, 'APPROVED')}>
-                                Approve
-                              </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => approveMember(m.userId, 'REJECTED')}>
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          {m.status === 'APPROVED' && (
-                            editingRole?.userId === m.userId ? (
-                              <>
-                                <button className="btn btn-success btn-sm" onClick={() => saveRoleChange(m.userId, editingRole.role)} disabled={savingRole}>
-                                  {savingRole ? 'Saving…' : 'Save'}
-                                </button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole(null)} disabled={savingRole}>
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <button className="btn btn-secondary btn-sm" onClick={() => setEditingRole({ userId: m.userId, role: m.role as MembershipRoleType })}>
-                                Edit Role
-                              </button>
-                            )
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+          <MembersSection
+            members={members}
+            clubId={id ?? ''}
+            isAdmin={isAdmin}
+            editingRole={editingRole}
+            savingRole={savingRole}
+            onApprove={approveMember}
+            onStartEditRole={(userId, role) => setEditingRole({ userId, role })}
+            onEditingRoleChange={role => setEditingRole(prev => prev ? { ...prev, role } : null)}
+            onSaveRole={saveRoleChange}
+            onCancelEditRole={() => setEditingRole(null)}
+          />
 
           {isAdmin && (
-            <section>
-              <div className="page-header">
-                <h2>Invites</h2>
-              </div>
-              <div className="stats-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', marginBottom: '1rem' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Email</label>
-                  <input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="member@example.com" />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Role</label>
-                  <select value={inviteRole} onChange={e => setInviteRole(e.target.value as MembershipRoleType)}>
-                    <option value="MEMBER">MEMBER</option>
-                    <option value="ADMIN">ADMIN</option>
-                    <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
-                  </select>
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Expires (days)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={90}
-                    value={inviteExpiresInDays}
-                    onChange={e => setInviteExpiresInDays(Number(e.target.value) || 14)}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'end' }}>
-                  <button className="btn btn-primary btn-sm" onClick={createInvite} disabled={!inviteEmail.trim()}>
-                    Create Invite
-                  </button>
-                </div>
-              </div>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Expires</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invites.map(invite => (
-                    <tr key={invite.id}>
-                      <td>{invite.email}</td>
-                      <td><span className={`badge badge-${invite.role.toLowerCase()}`}>{invite.role}</span></td>
-                      <td>
-                        {invite.redeemedAt ? (
-                          <span className="badge badge-approved">REDEEMED</span>
-                        ) : new Date(invite.expiresAt) < new Date() ? (
-                          <span className="badge badge-rejected">EXPIRED</span>
-                        ) : (
-                          <span className="badge badge-pending">PENDING</span>
-                        )}
-                      </td>
-                      <td>{new Date(invite.expiresAt).toLocaleString()}</td>
-                      <td>
-                        <div className="actions">
-                          <button className="btn btn-secondary btn-sm" onClick={() => copyInviteUrl(invite.token)}>Copy Link</button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => sendInviteEmail(invite)}>Send Email</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {invites.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No invites created yet</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </section>
+            <InvitesSection
+              invites={invites}
+              email={inviteEmail}
+              role={inviteRole}
+              expiresInDays={inviteExpiresInDays}
+              onEmailChange={setInviteEmail}
+              onRoleChange={setInviteRole}
+              onExpiresChange={setInviteExpiresInDays}
+              onCreate={createInvite}
+              onCopyUrl={copyInviteUrl}
+              onSendEmail={sendInviteEmail}
+            />
           )}
         </>
       )}

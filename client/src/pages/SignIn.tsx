@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import VisitSignInForm, { VisitFormPayload } from '../components/VisitSignInForm';
+import { SimpleFirearm } from '../types/club';
 
-interface Firearm { id: string; make: string; model: string; caliber: string; }
-interface Club { id: string; name: string; firearms: Firearm[]; }
+interface Club { id: string; name: string; firearms: SimpleFirearm[]; }
 interface LinkData {
   id: string;
   clubId: string;
@@ -15,25 +16,11 @@ interface LinkData {
   club: Club;
 }
 
-const PURPOSES = ['Practice', 'Competition', 'Training', 'Other'];
-
-const EMPTY_GUEST_DETAILS = {
-  guestName: '',
-  guestClubRepresented: '',
-  guestEmail: '',
-};
-
 export default function SignIn() {
   const { token } = useParams<{ token: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [linkData, setLinkData] = useState<LinkData | null>(null);
-  const [form, setForm] = useState({
-    purpose: 'Practice',
-    firearmUsedId: '',
-    firearmSerialNumber: '',
-    guestDetails: EMPTY_GUEST_DETAILS,
-  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -63,32 +50,18 @@ export default function SignIn() {
     load();
   }, [token]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(payload: VisitFormPayload) {
     setError('');
     try {
-      const payload: {
-        signInAccessToken: string;
-        purpose: string;
-        firearmUsedId?: string;
-        firearmSerialNumber?: string;
-        guestDetails?: typeof EMPTY_GUEST_DETAILS;
-      } = {
+      await api.post('/api/visits/public', {
         signInAccessToken,
-        purpose: form.purpose,
-        firearmUsedId: form.firearmUsedId || undefined,
-        firearmSerialNumber: form.firearmSerialNumber || undefined,
-      };
-
-      // Only include guestDetails if user is not authenticated
-      if (!user) {
-        payload.guestDetails = form.guestDetails;
-      }
-
-      await api.post('/api/visits/public', payload);
+        ...payload,
+      });
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error signing in');
+      // Re-throw so VisitSignInForm keeps the form populated (doesn't reset on error)
+      throw err;
     }
   }
 
@@ -114,7 +87,11 @@ export default function SignIn() {
     <div className="auth-page" style={{ maxWidth: 640 }}>
       <div className="card">
         <h1>Club Sign-In</h1>
-        {linkData && <p style={{ color: 'var(--gray-600)', marginBottom: '1.5rem' }}>Signing in to: <strong>{linkData.club.name}</strong></p>}
+        {linkData && (
+          <p style={{ color: 'var(--gray-600)', marginBottom: '1.5rem' }}>
+            Signing in to: <strong>{linkData.club.name}</strong>
+          </p>
+        )}
 
         {error && <div className="alert alert-error">{error}</div>}
 
@@ -135,90 +112,12 @@ export default function SignIn() {
         )}
 
         {linkData && (
-          <form onSubmit={handleSubmit}>
-            {!isAuthenticatedUser && (
-              <>
-                <div className="form-group">
-                  <label>Full Name *</label>
-                  <input
-                    type="text"
-                    value={form.guestDetails.guestName}
-                    onChange={e =>
-                      setForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestName: e.target.value },
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Club/Organization You Represent *</label>
-                  <input
-                    type="text"
-                    value={form.guestDetails.guestClubRepresented}
-                    onChange={e =>
-                      setForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestClubRepresented: e.target.value },
-                      }))
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Email Address (optional)</label>
-                  <input
-                    type="email"
-                    value={form.guestDetails.guestEmail}
-                    onChange={e =>
-                      setForm(f => ({
-                        ...f,
-                        guestDetails: { ...f.guestDetails, guestEmail: e.target.value },
-                      }))
-                    }
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="form-group">
-              <label>Purpose of Visit *</label>
-              <select value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))}>
-                {PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Firearm Used (optional)</label>
-              <select value={form.firearmUsedId} onChange={e => setForm(f => ({ ...f, firearmUsedId: e.target.value }))}>
-                <option value="">None / Not applicable</option>
-                {clubFirearms.length > 0 && (
-                  <optgroup label="Club Firearms">
-                    {clubFirearms.map(f => (
-                      <option key={f.id} value={f.id}>{f.make} {f.model} ({f.caliber})</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Rifle Serial Number (optional)</label>
-              <input
-                type="text"
-                value={form.firearmSerialNumber}
-                onChange={e => setForm(f => ({ ...f, firearmSerialNumber: e.target.value }))}
-                placeholder="Enter serial number if using personal rifle"
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-              Sign In to Club
-            </button>
-          </form>
+          <VisitSignInForm
+            clubFirearms={clubFirearms}
+            isAuthenticated={isAuthenticatedUser}
+            onSubmit={handleSubmit}
+            submitLabel="Sign In to Club"
+          />
         )}
       </div>
     </div>
