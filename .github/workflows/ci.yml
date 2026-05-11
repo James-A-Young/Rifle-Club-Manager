@@ -2,10 +2,11 @@ name: CI
 
 on:
   pull_request:
-  push:
     branches:
       - '**'
-
+permissions:
+  contents: read
+  
 jobs:
   unit-tests:
     name: Unit Tests
