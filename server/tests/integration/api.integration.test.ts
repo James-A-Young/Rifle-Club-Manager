@@ -800,16 +800,16 @@ describe('membership pass routes', () => {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 describe('bootstrap routes', () => {
-  it('bootstrap-status returns bootstrapAvailable=true when no users exist', async () => {
-    // We cannot guarantee the DB is empty in this shared test DB, but we can
-    // assert the status endpoint returns the correct shape.
+  it('bootstrap-status endpoint returns the correct shape', async () => {
     const res = await request(app).get('/api/auth/bootstrap-status');
     expect(res.status).toBe(200);
     expect(typeof res.body.bootstrapAvailable).toBe('boolean');
   });
 
   it('bootstrap endpoint is blocked when users already exist', async () => {
-    // At least one user exists (created by other tests), so bootstrap must fail.
+    // Ensure at least one user exists so bootstrap is definitely disabled
+    await createUser({ email: `${unique('bootstrap-guard')}@test.com` });
+
     const res = await request(app)
       .post('/api/auth/bootstrap')
       .send({
