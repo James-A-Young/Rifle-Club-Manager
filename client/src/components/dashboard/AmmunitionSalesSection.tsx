@@ -1,4 +1,3 @@
-import React from 'react';
 import { Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock, AmmunitionStockInput } from '../../types/club';
 
 interface Props {
