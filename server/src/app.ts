@@ -12,6 +12,7 @@ import firearmsRouter from './routes/firearms';
 import visitsRouter from './routes/visits';
 import signInLinksRouter from './routes/signInLinks';
 import ammunitionRouter from './routes/ammunition';
+import scoringRouter from './routes/scoring';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
 
@@ -111,6 +112,7 @@ export function createApp() {
   app.use('/api/visits', visitsRouter);
   app.use('/api/sign-in-links', signInLinksRouter);
   app.use('/api/ammunition', ammunitionRouter);
+  app.use('/api', scoringRouter);
 
   if (process.env.NODE_ENV === 'production') {
     const publicPath = path.join(__dirname, '..', '..', 'public');

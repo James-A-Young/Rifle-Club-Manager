@@ -51,6 +51,8 @@ model User {
   createdInvites  ClubInvite[] @relation("InviteCreatedBy")
   redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
   membershipPasses MembershipPass[]
+  competitionEntries CompetitionEntry[]
+  scores             Score[]
 }
 
 model Club {
@@ -79,6 +81,8 @@ model Club {
   settings         ClubSettings?
   passTemplate     PassTemplate?
   membershipPasses MembershipPass[]
+  seasons          Season[]
+  competitions     Competition[]
 }
 
 model ClubMembership {
@@ -295,6 +299,90 @@ model AmmunitionSale {
   @@index([clubId, createdAt])
   @@index([clubId, buyerUserId, createdAt])
   @@index([clubId, soldByUserId, createdAt])
+}
+
+model Season {
+  id         String   @id @default(cuid())
+  clubId     String
+  name       String
+  isArchived Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  club         Club          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  competitions Competition[]
+
+  @@unique([clubId, name])
+  @@index([clubId, createdAt])
+}
+
+model Competition {
+  id              String   @id @default(cuid())
+  clubId          String
+  seasonId        String
+  name            String
+  organiser       String?
+  roundCount      Int
+  cardsPerRound   Int
+  maxScorePerCard Int      @default(50)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  club    Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  season  Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  rounds  Round[]
+  entries CompetitionEntry[]
+  scores  Score[]
+
+  @@unique([seasonId, name])
+  @@index([clubId, createdAt])
+}
+
+model Round {
+  id            String   @id @default(cuid())
+  competitionId String
+  roundNumber   Int
+  dueDate       DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  scores      Score[]
+
+  @@unique([competitionId, roundNumber])
+  @@index([competitionId, dueDate])
+}
+
+model CompetitionEntry {
+  id            String   @id @default(cuid())
+  competitionId String
+  userId        String
+  createdAt     DateTime @default(now())
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, userId])
+  @@index([userId])
+}
+
+model Score {
+  id            String   @id @default(cuid())
+  competitionId String
+  roundId       String
+  userId        String
+  cardNumber    Int
+  score         Int?
+  updatedAt     DateTime @updatedAt
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  round       Round       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, userId, cardNumber])
+  @@index([userId])
+  @@index([roundId])
+  @@index([competitionId])
 }
 
 model AmmunitionStockInput {

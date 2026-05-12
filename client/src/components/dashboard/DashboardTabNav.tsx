@@ -1,6 +1,6 @@
 import React from 'react';
 
-type Tab = 'operations' | 'ammunition' | 'settings';
+type Tab = 'operations' | 'ammunition' | 'match-secretary' | 'settings';
 
 interface Props {
   activeTab: Tab;
@@ -49,6 +49,14 @@ export default function DashboardTabNav({ activeTab, onChange }: Props) {
         onMouseLeave={e => handleMouseLeave('ammunition', e)}
       >
         Ammunition Sales
+      </button>
+      <button
+        onClick={() => onChange('match-secretary')}
+        style={tabStyle('match-secretary')}
+        onMouseEnter={e => handleMouseEnter('match-secretary', e)}
+        onMouseLeave={e => handleMouseLeave('match-secretary', e)}
+      >
+        Match Secretary
       </button>
       <button
         onClick={() => onChange('settings')}

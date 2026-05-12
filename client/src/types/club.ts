@@ -152,3 +152,90 @@ export interface EditingRoleState {
   userId: string;
   role: MembershipRoleType;
 }
+
+// ---------------------------------------------------------------------------
+// Scoring / Match Secretary types
+// ---------------------------------------------------------------------------
+
+export interface Season {
+  id: string;
+  clubId: string;
+  name: string;
+  isArchived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { competitions: number };
+}
+
+export interface Round {
+  id: string;
+  competitionId: string;
+  roundNumber: number;
+  dueDate: string;
+}
+
+export interface Competition {
+  id: string;
+  clubId: string;
+  seasonId: string;
+  name: string;
+  organiser: string | null;
+  roundCount: number;
+  cardsPerRound: number;
+  maxScorePerCard: number;
+  createdAt: string;
+  updatedAt: string;
+  rounds: Round[];
+  _count?: { entries: number };
+}
+
+export interface CompetitionEntry {
+  id: string;
+  competitionId: string;
+  userId: string;
+  user: { id: string; name: string; email: string };
+}
+
+export interface ScoreCell {
+  id: string;
+  userId: string;
+  cardNumber: number;
+  score: number | null;
+}
+
+export interface SheetRound {
+  id: string;
+  roundNumber: number;
+  dueDate: string;
+  scores: ScoreCell[];
+}
+
+export interface ScoreSheet {
+  competition: {
+    id: string;
+    name: string;
+    organiser: string | null;
+    roundCount: number;
+    cardsPerRound: number;
+    maxScorePerCard: number;
+  };
+  members: { id: string; name: string; email: string }[];
+  rounds: SheetRound[];
+}
+
+export interface DueCard {
+  scoreId: string;
+  competitionId: string;
+  competitionName: string;
+  maxScorePerCard: number;
+  roundId: string;
+  roundNumber: number;
+  dueDate: string;
+  cardNumber: number;
+}
+
+export interface ScoringAverages {
+  allTimeAverage: number | null;
+  last10Average: number | null;
+  totalCardsShot: number;
+}

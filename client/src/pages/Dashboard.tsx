@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { DueCard, ScoringAverages } from '../types/club';
 
 interface Club { id: string; name: string; }
 interface VisitLog { id: string; clubId: string; purpose: string; timeIn: string; timeOut: string | null; club: Club; }
@@ -29,6 +30,10 @@ export default function Dashboard() {
   const [joinClubId, setJoinClubId] = useState('');
   const [joinMsg, setJoinMsg] = useState('');
 
+  // Scoring
+  const [dueCards, setDueCards] = useState<DueCard[]>([]);
+  const [avgsByClub, setAvgsByClub] = useState<Record<string, ScoringAverages & { clubName: string }>>({});
+
   useEffect(() => {
     Promise.all([
       api.get<Club[]>('/api/clubs'),
@@ -41,6 +46,26 @@ export default function Dashboard() {
         setVisits(v);
         setActiveVisit(av);
         setAmmunitionPurchases(purchases);
+
+        // Load scoring data per club in background (non-blocking)
+        c.forEach(club => {
+          api.get<DueCard[]>(`/api/clubs/${club.id}/scoring/mine/due`)
+            .then(cards => setDueCards(prev => {
+              const otherClubs = prev.filter(d => d.competitionId && true);
+              return [...otherClubs.filter(d => {
+                // keep cards from other clubs
+                return cards.every(nc => nc.scoreId !== d.scoreId);
+              }), ...cards];
+            }))
+            .catch(() => { /* silently ignore if club has no scoring */ });
+
+          api.get<ScoringAverages>(`/api/clubs/${club.id}/scoring/mine/averages`)
+            .then(avgs => setAvgsByClub(prev => ({
+              ...prev,
+              [club.id]: { ...avgs, clubName: club.name },
+            })))
+            .catch(() => { /* silently ignore */ });
+        });
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading data'))
       .finally(() => setLoading(false));
@@ -73,6 +98,29 @@ export default function Dashboard() {
   const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
   const recentVisits = visits.filter(v => new Date(v.timeIn) > monthAgo).length;
 
+  // Aggregate averages across all clubs that have scores
+  const clubsWithScores = Object.values(avgsByClub).filter(a => a.totalCardsShot > 0);
+  const overallAllTimeAvg = clubsWithScores.length > 0
+    ? clubsWithScores.reduce((acc, a) => acc + (a.allTimeAverage ?? 0), 0) / clubsWithScores.length
+    : null;
+  const overallLast10Avg = clubsWithScores.length > 0
+    ? clubsWithScores.reduce((acc, a) => acc + (a.last10Average ?? 0), 0) / clubsWithScores.length
+    : null;
+
+  // Sort due cards by dueDate ascending; group for display
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const sortedDueCards = [...dueCards].sort(
+    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+  );
+
+  // Group due cards by date string
+  const dueDateGroups: Record<string, DueCard[]> = {};
+  for (const card of sortedDueCards) {
+    const dateKey = new Date(card.dueDate).toLocaleDateString();
+    if (!dueDateGroups[dateKey]) dueDateGroups[dateKey] = [];
+    dueDateGroups[dateKey].push(card);
+  }
+
   if (loading) return <div>Loading…</div>;
 
   return (
@@ -93,6 +141,18 @@ export default function Dashboard() {
           <div className="value">{recentVisits}</div>
           <div className="label">Visits This Month</div>
         </div>
+        {overallAllTimeAvg !== null && (
+          <div className="stat-card">
+            <div className="value">{overallAllTimeAvg.toFixed(1)}</div>
+            <div className="label">All-Time Score Avg</div>
+          </div>
+        )}
+        {overallLast10Avg !== null && (
+          <div className="stat-card">
+            <div className="value">{overallLast10Avg.toFixed(1)}</div>
+            <div className="label">Last 10 Cards Avg</div>
+          </div>
+        )}
       </div>
 
       {activeVisit && (
@@ -103,6 +163,42 @@ export default function Dashboard() {
           </div>
           <button className="btn btn-danger btn-sm" onClick={signOut}>Sign Out</button>
         </div>
+      )}
+
+      {sortedDueCards.length > 0 && (
+        <section>
+          <h2>Upcoming Score Cards</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Competition</th>
+                <th>Round</th>
+                <th>Card</th>
+                <th>Due Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedDueCards.map(card => {
+                const due = new Date(card.dueDate);
+                const isOverdue = due < now && due >= sevenDaysAgo;
+                return (
+                  <tr
+                    key={card.scoreId}
+                    style={isOverdue ? { background: '#fdecea', color: '#c0392b' } : undefined}
+                  >
+                    <td>{card.competitionName}</td>
+                    <td>Round {card.roundNumber}</td>
+                    <td>Card {card.cardNumber}</td>
+                    <td style={{ fontWeight: isOverdue ? 600 : undefined }}>
+                      {due.toLocaleDateString()}
+                      {isOverdue && <span style={{ marginLeft: '0.4rem', fontSize: '0.8rem' }}>Overdue</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
       )}
 
       <section>
