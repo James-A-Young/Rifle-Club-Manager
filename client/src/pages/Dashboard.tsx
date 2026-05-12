@@ -5,6 +5,16 @@ import { useAuth } from '../auth/AuthContext';
 
 interface Club { id: string; name: string; }
 interface VisitLog { id: string; clubId: string; purpose: string; timeIn: string; timeOut: string | null; club: Club; }
+interface AmmunitionPurchase {
+  id: string;
+  buyerFirstName: string;
+  buyerLastName: string;
+  quantity: number;
+  totalPricePence: number;
+  createdAt: string;
+  club: Club;
+  ammunitionType: { id: string; name: string };
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -12,6 +22,7 @@ export default function Dashboard() {
   const [visits, setVisits] = useState<VisitLog[]>([]);
   const [activeVisit, setActiveVisit] = useState<VisitLog | null>(null);
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [ammunitionPurchases, setAmmunitionPurchases] = useState<AmmunitionPurchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showJoin, setShowJoin] = useState(false);
@@ -23,11 +34,13 @@ export default function Dashboard() {
       api.get<Club[]>('/api/clubs'),
       api.get<VisitLog[]>('/api/visits/mine'),
       api.get<VisitLog | null>('/api/visits/active'),
+      api.get<AmmunitionPurchase[]>('/api/ammunition/mine'),
     ])
-      .then(([c, v, av]) => {
+      .then(([c, v, av, purchases]) => {
         setClubs(c);
         setVisits(v);
         setActiveVisit(av);
+        setAmmunitionPurchases(purchases);
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading data'))
       .finally(() => setLoading(false));
@@ -164,6 +177,35 @@ export default function Dashboard() {
             ))}
             {visits.length === 0 && (
               <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No visits yet</td></tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>Ammunition Purchased</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Club</th>
+              <th>Type</th>
+              <th>Quantity</th>
+              <th>Total</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ammunitionPurchases.slice(0, 10).map(row => (
+              <tr key={row.id}>
+                <td>{row.club.name}</td>
+                <td>{row.ammunitionType.name}</td>
+                <td>{row.quantity}</td>
+                <td>£{(row.totalPricePence / 100).toFixed(2)}</td>
+                <td>{new Date(row.createdAt).toLocaleString()}</td>
+              </tr>
+            ))}
+            {ammunitionPurchases.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No ammunition purchases recorded</td></tr>
             )}
           </tbody>
         </table>
