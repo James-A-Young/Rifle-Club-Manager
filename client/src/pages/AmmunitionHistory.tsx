@@ -80,14 +80,16 @@ export default function AmmunitionHistory() {
 
   useEffect(() => {
     if (!id) return;
-    api.get<Club>(`/api/clubs/${id}`).then(setClub).catch(() => {});
+    api.get<Club>(`/api/clubs/${id}`)
+      .then(setClub)
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load club'));
     api
       .get<{ types: AmmunitionType[]; safes: AmmunitionSafe[] }>(`/api/ammunition/club/${id}/settings`)
       .then(data => {
         setTypes(data.types);
         setSafes(data.safes);
       })
-      .catch(() => {});
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load ammunition settings'));
   }, [id]);
 
   async function loadSales() {
@@ -133,17 +135,17 @@ export default function AmmunitionHistory() {
   }
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || activeTab !== 'sales') return;
     void loadSales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesQueryParams, id]);
+  }, [salesQueryParams, id, activeTab]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || activeTab !== 'movements') return;
     setMovementsNextCursor(null);
     void loadMovements(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movementsQueryParams, id]);
+  }, [movementsQueryParams, id, activeTab]);
 
   async function exportSalesCsv() {
     if (!id) return;

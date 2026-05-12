@@ -290,7 +290,10 @@ export default function AmmunitionSalesSection(props: Props) {
               type="number"
               min={1}
               value={props.transferQuantity}
-              onChange={e => props.onTransferQuantityChange(Number(e.target.value || '0'))}
+              onChange={e => {
+                const parsed = parseInt(e.target.value, 10);
+                props.onTransferQuantityChange(Number.isFinite(parsed) && parsed >= 1 ? parsed : props.transferQuantity);
+              }}
             />
           </div>
           <button className="btn btn-primary" type="button" onClick={props.onSubmitTransfer}>Transfer</button>

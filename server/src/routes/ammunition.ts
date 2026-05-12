@@ -610,7 +610,7 @@ router.get('/club/:clubId/stock/inputs', async (req: AuthRequest, res: Response)
 
   let finalWhere = where;
   if (cursor) {
-    const cursorRow = await prisma.ammunitionStockInput.findUnique({ where: { id: cursor }, select: { createdAt: true } });
+    const cursorRow = await prisma.ammunitionStockInput.findFirst({ where: { id: cursor, clubId }, select: { createdAt: true } });
     if (cursorRow) {
       finalWhere = {
         AND: [
