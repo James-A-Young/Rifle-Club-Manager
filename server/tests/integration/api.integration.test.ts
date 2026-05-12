@@ -639,6 +639,142 @@ describe('club settings routes', () => {
   });
 });
 
+describe('ammunition routes', () => {
+  async function createAmmoTypeAndSafe(clubId: string, admin: { id: string; email: string }) {
+    const typeRes = await request(app)
+      .post(`/api/ammunition/club/${clubId}/types`)
+      .set(authHeader(admin))
+      .send({ name: '.22LR', pricePence: 35 });
+    expect(typeRes.status).toBe(201);
+
+    const safeRes = await request(app)
+      .post(`/api/ammunition/club/${clubId}/safes`)
+      .set(authHeader(admin))
+      .send({ name: 'Main Safe' });
+    expect(safeRes.status).toBe(201);
+
+    return {
+      typeId: typeRes.body.id as string,
+      safeId: safeRes.body.id as string,
+    };
+  }
+
+  it('requires admin access for ammunition settings', async () => {
+    const { club } = await createClubWithAdmin();
+    const member = await createUser();
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        status: MembershipStatus.APPROVED,
+        role: MembershipRole.MEMBER,
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/ammunition/club/${club.id}/settings`)
+      .set(authHeader(member));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('records sale and decrements stock', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const buyer = await createUser({ email: `${unique('ammo-buyer')}@test.com` });
+    await prisma.clubMembership.create({
+      data: {
+        userId: buyer.id,
+        clubId: club.id,
+        status: MembershipStatus.APPROVED,
+        role: MembershipRole.MEMBER,
+      },
+    });
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    const stockInputRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 100 });
+    expect(stockInputRes.status).toBe(201);
+
+    const saleRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/sales`)
+      .set(authHeader(admin))
+      .send({
+        buyerFirstName: 'Ammo',
+        buyerLastName: 'Buyer',
+        buyerUserId: buyer.id,
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 30,
+      });
+    expect(saleRes.status).toBe(201);
+    expect(saleRes.body.totalPricePence).toBe(1050);
+    expect(saleRes.body.soldByUserId).toBe(admin.id);
+
+    const stock = await prisma.ammunitionStock.findUnique({
+      where: {
+        ammunitionTypeId_ammunitionSafeId: {
+          ammunitionTypeId: typeId,
+          ammunitionSafeId: safeId,
+        },
+      },
+    });
+    expect(stock?.quantity).toBe(70);
+  });
+
+  it('returns insufficient stock error when sale exceeds stock', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    const stockInputRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 5 });
+    expect(stockInputRes.status).toBe(201);
+
+    const saleRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/sales`)
+      .set(authHeader(admin))
+      .send({
+        buyerFirstName: 'Guest',
+        buyerLastName: 'Visitor',
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 6,
+      });
+    expect(saleRes.status).toBe(400);
+    expect(saleRes.body.error).toContain('Insufficient stock');
+  });
+
+  it('validates buyer membership for member-linked sales', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const outsider = await createUser({ email: `${unique('ammo-outsider')}@test.com` });
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    const stockInputRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 20 });
+    expect(stockInputRes.status).toBe(201);
+
+    const saleRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/sales`)
+      .set(authHeader(admin))
+      .send({
+        buyerFirstName: 'Outside',
+        buyerLastName: 'Member',
+        buyerUserId: outsider.id,
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 5,
+      });
+
+    expect(saleRes.status).toBe(400);
+    expect(saleRes.body.error).toContain('not an approved member');
+  });
+});
+
 describe('membership pass routes', () => {
   it('generates membership pass for user', async () => {
     const { club, admin } = await createClubWithAdmin();

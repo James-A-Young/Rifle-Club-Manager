@@ -68,7 +68,7 @@ const createSaleSchema = z.object({
   quantity: z.number().int().positive(),
 });
 
-function buildSalesWhere(clubId: string, req: AuthRequest) {
+function buildSalesWhere(clubId: string, req: AuthRequest): Prisma.AmmunitionSaleWhereInput {
   const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : undefined;
   const buyerUserId = typeof req.query.buyerUserId === 'string' ? req.query.buyerUserId : undefined;
   const sellerUserId = typeof req.query.sellerUserId === 'string' ? req.query.sellerUserId : undefined;
@@ -118,6 +118,32 @@ function buildSalesWhere(clubId: string, req: AuthRequest) {
   }
 
   return { AND: and };
+}
+
+function applySalesExportCursor(
+  where: Prisma.AmmunitionSaleWhereInput,
+  cursor: { createdAt: Date; id: string } | null
+): Prisma.AmmunitionSaleWhereInput {
+  if (!cursor) {
+    return where;
+  }
+
+  return {
+    AND: [
+      where,
+      {
+        OR: [
+          { createdAt: { lt: cursor.createdAt } },
+          {
+            AND: [
+              { createdAt: cursor.createdAt },
+              { id: { lt: cursor.id } },
+            ],
+          },
+        ],
+      },
+    ],
+  };
 }
 
 router.get('/club/:clubId/settings', async (req: AuthRequest, res: Response) => {
@@ -459,26 +485,22 @@ router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
         throw new Error('INVALID_REFERENCE');
       }
 
-      const stock = await tx.ammunitionStock.findUnique({
+      const updatedStock = await tx.ammunitionStock.updateMany({
         where: {
-          ammunitionTypeId_ammunitionSafeId: {
-            ammunitionTypeId: parsed.data.ammunitionTypeId,
-            ammunitionSafeId: parsed.data.ammunitionSafeId,
-          },
+          clubId,
+          ammunitionTypeId: parsed.data.ammunitionTypeId,
+          ammunitionSafeId: parsed.data.ammunitionSafeId,
+          quantity: { gte: parsed.data.quantity },
         },
-      });
-      if (!stock || stock.quantity < parsed.data.quantity) {
-        throw new Error('INSUFFICIENT_STOCK');
-      }
-
-      await tx.ammunitionStock.update({
-        where: { id: stock.id },
         data: {
           quantity: {
             decrement: parsed.data.quantity,
           },
         },
       });
+      if (updatedStock.count !== 1) {
+        throw new Error('INSUFFICIENT_STOCK');
+      }
 
       return tx.ammunitionSale.create({
         data: {
@@ -568,13 +590,13 @@ router.get('/club/:clubId/sales/export.csv', async (req: AuthRequest, res: Respo
     'total_price_pence',
   ].join(',') + '\n');
 
-  let skip = 0;
+  let cursor: { createdAt: Date; id: string } | null = null;
   while (true) {
+    const pagedWhere = applySalesExportCursor(where, cursor);
     const rows = await prisma.ammunitionSale.findMany({
-      where,
-      skip,
+      where: pagedWhere,
       take: CSV_BATCH_SIZE,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: {
         soldBy: { select: { name: true } },
         ammunitionType: { select: { name: true } },
@@ -606,7 +628,8 @@ router.get('/club/:clubId/sales/export.csv', async (req: AuthRequest, res: Respo
     if (rows.length < CSV_BATCH_SIZE) {
       break;
     }
-    skip += CSV_BATCH_SIZE;
+    const lastRow = rows[rows.length - 1];
+    cursor = { createdAt: lastRow.createdAt, id: lastRow.id };
   }
 
   res.end();

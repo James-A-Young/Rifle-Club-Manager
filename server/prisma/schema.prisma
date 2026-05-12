@@ -45,8 +45,8 @@ model User {
   memberships     ClubMembership[]
   visitLogs       VisitLog[]
   firearms        Firearm[]
-  ammunitionSalesTo      AmmunitionSale[] @relation("AmmunitionSaleBuyer")
-  ammunitionSalesBy      AmmunitionSale[] @relation("AmmunitionSaleSeller")
+  ammunitionSalesAsBuyer  AmmunitionSale[] @relation("AmmunitionSaleBuyer")
+  ammunitionSalesAsSeller AmmunitionSale[] @relation("AmmunitionSaleSeller")
   ammunitionStockInputs  AmmunitionStockInput[]
   createdInvites  ClubInvite[] @relation("InviteCreatedBy")
   redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")

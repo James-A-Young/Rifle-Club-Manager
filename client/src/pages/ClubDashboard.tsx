@@ -479,9 +479,13 @@ export default function ClubDashboard() {
     setSaleBuyerUserId(value);
     const match = members.find(m => m.userId === value);
     if (match) {
-      const [first = '', ...rest] = match.user.name.split(' ');
-      setSaleBuyerFirstName(first);
-      setSaleBuyerLastName(rest.join(' '));
+      const nameParts = match.user.name.trim().split(/\s+/).filter(Boolean);
+      if (nameParts.length >= 2) {
+        setSaleBuyerFirstName(nameParts.slice(0, -1).join(' '));
+        setSaleBuyerLastName(nameParts[nameParts.length - 1]);
+      } else {
+        setSaleBuyerFirstName(match.user.name.trim());
+      }
     }
   }
 
