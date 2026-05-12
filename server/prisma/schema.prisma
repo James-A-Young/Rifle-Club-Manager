@@ -45,6 +45,9 @@ model User {
   memberships     ClubMembership[]
   visitLogs       VisitLog[]
   firearms        Firearm[]
+  ammunitionSalesTo      AmmunitionSale[] @relation("AmmunitionSaleBuyer")
+  ammunitionSalesBy      AmmunitionSale[] @relation("AmmunitionSaleSeller")
+  ammunitionStockInputs  AmmunitionStockInput[]
   createdInvites  ClubInvite[] @relation("InviteCreatedBy")
   redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
   membershipPasses MembershipPass[]
@@ -67,6 +70,10 @@ model Club {
   visitLogs        VisitLog[]
   signInLinks      SignInLink[]
   firearms         Firearm[]
+  ammunitionTypes       AmmunitionType[]
+  ammunitionSafes       AmmunitionSafe[]
+  ammunitionSales       AmmunitionSale[]
+  ammunitionStockInputs AmmunitionStockInput[]
   invites          ClubInvite[]
   settings         ClubSettings?
   passTemplate     PassTemplate?
@@ -200,5 +207,108 @@ model MembershipPass {
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
   @@unique([userId, clubId])
+  @@index([clubId, createdAt])
+}
+
+model AmmunitionType {
+  id                String   @id @default(cuid())
+  clubId            String
+  name              String
+  currentPricePence Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  club         Club                          @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  priceHistory AmmunitionTypePriceHistory[]
+  stocks       AmmunitionStock[]
+  sales        AmmunitionSale[]
+  stockInputs  AmmunitionStockInput[]
+
+  @@unique([clubId, name])
+  @@index([clubId, createdAt])
+}
+
+model AmmunitionTypePriceHistory {
+  id               String   @id @default(cuid())
+  ammunitionTypeId String
+  pricePence       Int
+  createdAt        DateTime @default(now())
+
+  ammunitionType AmmunitionType @relation(fields: [ammunitionTypeId], references: [id], onDelete: Cascade)
+
+  @@index([ammunitionTypeId, createdAt])
+}
+
+model AmmunitionSafe {
+  id        String   @id @default(cuid())
+  clubId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club        Club               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  stocks      AmmunitionStock[]
+  sales       AmmunitionSale[]
+  stockInputs AmmunitionStockInput[]
+
+  @@unique([clubId, name])
+  @@index([clubId, createdAt])
+}
+
+model AmmunitionStock {
+  id               String   @id @default(cuid())
+  clubId           String
+  ammunitionTypeId String
+  ammunitionSafeId String
+  quantity         Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  club           Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  ammunitionType AmmunitionType @relation(fields: [ammunitionTypeId], references: [id], onDelete: Cascade)
+  ammunitionSafe AmmunitionSafe @relation(fields: [ammunitionSafeId], references: [id], onDelete: Cascade)
+
+  @@unique([ammunitionTypeId, ammunitionSafeId])
+  @@index([clubId])
+}
+
+model AmmunitionSale {
+  id                String   @id @default(cuid())
+  clubId            String
+  buyerFirstName    String
+  buyerLastName     String
+  buyerUserId       String?
+  soldByUserId      String
+  ammunitionTypeId  String
+  ammunitionSafeId  String
+  quantity          Int
+  unitPricePence    Int
+  totalPricePence   Int
+  createdAt         DateTime @default(now())
+
+  club           Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  buyer          User?          @relation("AmmunitionSaleBuyer", fields: [buyerUserId], references: [id], onDelete: SetNull)
+  soldBy         User           @relation("AmmunitionSaleSeller", fields: [soldByUserId], references: [id], onDelete: Restrict)
+  ammunitionType AmmunitionType @relation(fields: [ammunitionTypeId], references: [id], onDelete: Restrict)
+  ammunitionSafe AmmunitionSafe @relation(fields: [ammunitionSafeId], references: [id], onDelete: Restrict)
+
+  @@index([clubId, createdAt])
+  @@index([clubId, buyerUserId, createdAt])
+  @@index([clubId, soldByUserId, createdAt])
+}
+
+model AmmunitionStockInput {
+  id               String   @id @default(cuid())
+  clubId           String
+  ammunitionTypeId String
+  ammunitionSafeId String
+  quantity         Int
+  inputByUserId    String
+  createdAt        DateTime @default(now())
+
+  club           Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  ammunitionType AmmunitionType @relation(fields: [ammunitionTypeId], references: [id], onDelete: Restrict)
+  ammunitionSafe AmmunitionSafe @relation(fields: [ammunitionSafeId], references: [id], onDelete: Restrict)
+  inputBy        User           @relation(fields: [inputByUserId], references: [id], onDelete: Restrict)
+
   @@index([clubId, createdAt])
 }

@@ -73,6 +73,70 @@ export interface ClubSettings {
   memberCardSignInEnabled: boolean;
 }
 
+export interface AmmunitionTypePriceHistory {
+  id: string;
+  pricePence: number;
+  createdAt: string;
+}
+
+export interface AmmunitionType {
+  id: string;
+  name: string;
+  currentPricePence: number;
+  priceHistory: AmmunitionTypePriceHistory[];
+}
+
+export interface AmmunitionSafe {
+  id: string;
+  name: string;
+}
+
+export interface AmmunitionStock {
+  id: string;
+  ammunitionTypeId: string;
+  ammunitionSafeId: string;
+  quantity: number;
+}
+
+export interface AmmunitionSale {
+  id: string;
+  buyerFirstName: string;
+  buyerLastName: string;
+  buyerUserId: string | null;
+  soldByUserId: string;
+  quantity: number;
+  unitPricePence: number;
+  totalPricePence: number;
+  createdAt: string;
+  buyer?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  soldBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  ammunitionType: {
+    id: string;
+    name: string;
+  };
+  ammunitionSafe: {
+    id: string;
+    name: string;
+  };
+}
+
+export interface AmmunitionStockInput {
+  id: string;
+  quantity: number;
+  createdAt: string;
+  ammunitionType: { id: string; name: string };
+  ammunitionSafe: { id: string; name: string };
+  inputBy: { id: string; name: string; email: string };
+}
+
 export interface ClubFormData {
   name: string;
   homeOfficeRef: string;

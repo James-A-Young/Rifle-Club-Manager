@@ -13,6 +13,11 @@ import {
   ClubFormData,
   MembershipRoleType,
   EditingRoleState,
+  AmmunitionType,
+  AmmunitionSafe,
+  AmmunitionSale,
+  AmmunitionStock,
+  AmmunitionStockInput,
 } from '../types/club';
 import DashboardTabNav from '../components/dashboard/DashboardTabNav';
 import ClubProfileSection from '../components/dashboard/ClubProfileSection';
@@ -22,6 +27,7 @@ import ArmorySection from '../components/dashboard/ArmorySection';
 import MembersSection from '../components/dashboard/MembersSection';
 import InvitesSection from '../components/dashboard/InvitesSection';
 import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
+import AmmunitionSalesSection from '../components/dashboard/AmmunitionSalesSection';
 
 interface ActiveVisitor {
   id: string;
@@ -32,6 +38,11 @@ interface ActiveVisitor {
   purpose: string;
   timeIn: string;
   firearm: string | null;
+}
+
+interface AmmunitionSettingsResponse {
+  types: AmmunitionType[];
+  safes: AmmunitionSafe[];
 }
 
 export default function ClubDashboard() {
@@ -49,7 +60,7 @@ export default function ClubDashboard() {
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeTab, setActiveTab] = useState<'operations' | 'settings'>('operations');
+  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'settings'>('operations');
 
   // Club profile edit
   const [editingClubProfile, setEditingClubProfile] = useState(false);
@@ -94,6 +105,29 @@ export default function ClubDashboard() {
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
   });
+  const [ammunitionTypes, setAmmunitionTypes] = useState<AmmunitionType[]>([]);
+  const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
+  const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
+  const [ammunitionSales, setAmmunitionSales] = useState<AmmunitionSale[]>([]);
+  const [stockInputs, setStockInputs] = useState<AmmunitionStockInput[]>([]);
+  const [showStockInputs, setShowStockInputs] = useState(false);
+  const [newAmmunitionTypeName, setNewAmmunitionTypeName] = useState('');
+  const [newAmmunitionTypePricePence, setNewAmmunitionTypePricePence] = useState(0);
+  const [newAmmunitionSafeName, setNewAmmunitionSafeName] = useState('');
+  const [saleBuyerUserId, setSaleBuyerUserId] = useState('');
+  const [saleBuyerFirstName, setSaleBuyerFirstName] = useState('');
+  const [saleBuyerLastName, setSaleBuyerLastName] = useState('');
+  const [saleTypeId, setSaleTypeId] = useState('');
+  const [saleSafeId, setSaleSafeId] = useState('');
+  const [saleQuantity, setSaleQuantity] = useState(1);
+  const [ledgerBuyerSearch, setLedgerBuyerSearch] = useState('');
+  const [ledgerSellerSearch, setLedgerSellerSearch] = useState('');
+  const [ledgerTypeId, setLedgerTypeId] = useState('');
+  const [ledgerFromDate, setLedgerFromDate] = useState('');
+  const [ledgerToDate, setLedgerToDate] = useState('');
+  const [stockInputTypeId, setStockInputTypeId] = useState('');
+  const [stockInputSafeId, setStockInputSafeId] = useState('');
+  const [stockInputQuantity, setStockInputQuantity] = useState(1);
 
   const REFRESH_VISITS_INTERVAL_MS = 5_000;
 
@@ -136,6 +170,45 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
   }, [id, isAdmin]);
 
+  async function loadAmmunitionSettings() {
+    if (!id || !isAdmin) return;
+    const settingsData = await api.get<AmmunitionSettingsResponse>(`/api/ammunition/club/${id}/settings`);
+    setAmmunitionTypes(settingsData.types);
+    setAmmunitionSafes(settingsData.safes);
+  }
+
+  async function loadAmmunitionStock() {
+    if (!id || !isAdmin) return;
+    const data = await api.get<{ stock: AmmunitionStock[] }>(`/api/ammunition/club/${id}/stock`);
+    setAmmunitionStock(data.stock);
+  }
+
+  async function loadAmmunitionSales() {
+    if (!id || !isAdmin) return;
+    const params = new URLSearchParams();
+    params.set('pageSize', '100');
+    if (ledgerBuyerSearch.trim()) params.set('buyerSearch', ledgerBuyerSearch.trim());
+    if (ledgerSellerSearch.trim()) params.set('sellerSearch', ledgerSellerSearch.trim());
+    if (ledgerTypeId) params.set('typeId', ledgerTypeId);
+    if (ledgerFromDate) params.set('from', new Date(`${ledgerFromDate}T00:00:00.000Z`).toISOString());
+    if (ledgerToDate) params.set('to', new Date(`${ledgerToDate}T23:59:59.999Z`).toISOString());
+    const rows = await api.get<AmmunitionSale[]>(`/api/ammunition/club/${id}/sales?${params.toString()}`);
+    setAmmunitionSales(rows);
+  }
+
+  async function loadStockInputs() {
+    if (!id || !isAdmin) return;
+    const rows = await api.get<AmmunitionStockInput[]>(`/api/ammunition/club/${id}/stock/inputs?pageSize=100`);
+    setStockInputs(rows);
+  }
+
+  useEffect(() => {
+    if (!id || !isAdmin) return;
+    Promise.all([loadAmmunitionSettings(), loadAmmunitionStock(), loadAmmunitionSales()])
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading ammunition data'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isAdmin]);
+
   useEffect(() => {
     if (!id || !isAdmin) return;
 
@@ -158,6 +231,10 @@ export default function ClubDashboard() {
   }, [id, isAdmin]);
 
   const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
+  const saleTotalPence = useMemo(() => {
+    const type = ammunitionTypes.find(t => t.id === saleTypeId);
+    return type ? type.currentPricePence * Math.max(0, saleQuantity) : 0;
+  }, [ammunitionTypes, saleTypeId, saleQuantity]);
 
   function addDiscipline() {
     const value = disciplineInput.trim();
@@ -345,6 +422,138 @@ export default function ClubDashboard() {
     }
   }
 
+  async function createAmmunitionType() {
+    if (!id || !newAmmunitionTypeName.trim()) return;
+    try {
+      await api.post(`/api/ammunition/club/${id}/types`, {
+        name: newAmmunitionTypeName.trim(),
+        pricePence: newAmmunitionTypePricePence,
+      });
+      setNewAmmunitionTypeName('');
+      setNewAmmunitionTypePricePence(0);
+      await loadAmmunitionSettings();
+      await loadAmmunitionStock();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error creating ammunition type');
+    }
+  }
+
+  async function updateAmmunitionTypePrice(typeId: string, pricePence: number) {
+    if (!id) return;
+    try {
+      await api.patch(`/api/ammunition/club/${id}/types/${typeId}`, { pricePence });
+      await loadAmmunitionSettings();
+      await loadAmmunitionSales();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating ammunition type');
+    }
+  }
+
+  async function createAmmunitionSafe() {
+    if (!id || !newAmmunitionSafeName.trim()) return;
+    try {
+      await api.post(`/api/ammunition/club/${id}/safes`, { name: newAmmunitionSafeName.trim() });
+      setNewAmmunitionSafeName('');
+      await loadAmmunitionSettings();
+      await loadAmmunitionStock();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error creating ammunition safe');
+    }
+  }
+
+  function handleSaleBuyerUserIdChange(value: string) {
+    setSaleBuyerUserId(value);
+    const match = members.find(m => m.userId === value);
+    if (match) {
+      const [first = '', ...rest] = match.user.name.split(' ');
+      setSaleBuyerFirstName(first);
+      setSaleBuyerLastName(rest.join(' '));
+    }
+  }
+
+  async function confirmAmmunitionSale() {
+    if (!id || !saleTypeId || !saleSafeId || saleQuantity <= 0 || !saleBuyerFirstName.trim() || !saleBuyerLastName.trim()) {
+      setError('Please complete all sale fields');
+      return;
+    }
+    try {
+      await api.post(`/api/ammunition/club/${id}/sales`, {
+        buyerFirstName: saleBuyerFirstName.trim(),
+        buyerLastName: saleBuyerLastName.trim(),
+        buyerUserId: saleBuyerUserId || null,
+        ammunitionTypeId: saleTypeId,
+        ammunitionSafeId: saleSafeId,
+        quantity: saleQuantity,
+      });
+      setSaleQuantity(1);
+      await Promise.all([loadAmmunitionSales(), loadAmmunitionStock()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error recording sale');
+    }
+  }
+
+  async function submitStockInput() {
+    if (!id || !stockInputTypeId || !stockInputSafeId || stockInputQuantity <= 0) {
+      setError('Please complete stock input details');
+      return;
+    }
+    try {
+      await api.post(`/api/ammunition/club/${id}/stock/input`, {
+        ammunitionTypeId: stockInputTypeId,
+        ammunitionSafeId: stockInputSafeId,
+        quantity: stockInputQuantity,
+      });
+      setStockInputQuantity(1);
+      await Promise.all([loadAmmunitionStock(), loadStockInputs()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error inputting stock');
+    }
+  }
+
+  async function exportAmmunitionLedgerCsv() {
+    if (!id) return;
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      if (ledgerBuyerSearch.trim()) params.set('buyerSearch', ledgerBuyerSearch.trim());
+      if (ledgerSellerSearch.trim()) params.set('sellerSearch', ledgerSellerSearch.trim());
+      if (ledgerTypeId) params.set('typeId', ledgerTypeId);
+      if (ledgerFromDate) params.set('from', new Date(`${ledgerFromDate}T00:00:00.000Z`).toISOString());
+      if (ledgerToDate) params.set('to', new Date(`${ledgerToDate}T23:59:59.999Z`).toISOString());
+      const response = await fetch(`/api/ammunition/club/${id}/sales/export.csv?${params.toString()}`, {
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error((body as { error?: string }).error ?? response.statusText);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `club-${id}-ammunition-sales.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error exporting ledger');
+    }
+  }
+
+  async function toggleStockInputs() {
+    const nextValue = !showStockInputs;
+    setShowStockInputs(nextValue);
+    if (nextValue) {
+      try {
+        await loadStockInputs();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Error loading stock input history');
+      }
+    }
+  }
+
   if (!club) return <div>Loading…</div>;
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
@@ -412,6 +621,17 @@ export default function ClubDashboard() {
               onToggleEdit={() => setEditingSettings(v => !v)}
               onSave={saveSettings}
               onFormChange={partial => setSettingsForm(prev => ({ ...prev, ...partial }))}
+              ammunitionTypes={ammunitionTypes}
+              ammunitionSafes={ammunitionSafes}
+              newAmmunitionTypeName={newAmmunitionTypeName}
+              newAmmunitionTypePricePence={newAmmunitionTypePricePence}
+              newAmmunitionSafeName={newAmmunitionSafeName}
+              onNewAmmunitionTypeNameChange={setNewAmmunitionTypeName}
+              onNewAmmunitionTypePricePenceChange={setNewAmmunitionTypePricePence}
+              onNewAmmunitionSafeNameChange={setNewAmmunitionSafeName}
+              onCreateAmmunitionType={createAmmunitionType}
+              onCreateAmmunitionSafe={createAmmunitionSafe}
+              onUpdateAmmunitionTypePrice={updateAmmunitionTypePrice}
             />
           )}
 
@@ -477,6 +697,58 @@ export default function ClubDashboard() {
               onCreate={createInvite}
               onCopyUrl={copyInviteUrl}
               onSendEmail={sendInviteEmail}
+            />
+          )}
+        </>
+      )}
+
+      {activeTab === 'ammunition' && (
+        <>
+          {!isAdmin ? (
+            <div className="alert alert-info">Only club admins can access ammunition sales.</div>
+          ) : (
+            <AmmunitionSalesSection
+              members={members}
+              types={ammunitionTypes}
+              safes={ammunitionSafes}
+              stock={ammunitionStock}
+              sales={ammunitionSales}
+              stockInputs={stockInputs}
+              showStockInputs={showStockInputs}
+              saleBuyerUserId={saleBuyerUserId}
+              saleBuyerFirstName={saleBuyerFirstName}
+              saleBuyerLastName={saleBuyerLastName}
+              saleTypeId={saleTypeId}
+              saleSafeId={saleSafeId}
+              saleQuantity={saleQuantity}
+              saleTotalPence={saleTotalPence}
+              ledgerBuyerSearch={ledgerBuyerSearch}
+              ledgerSellerSearch={ledgerSellerSearch}
+              ledgerTypeId={ledgerTypeId}
+              ledgerFromDate={ledgerFromDate}
+              ledgerToDate={ledgerToDate}
+              stockInputTypeId={stockInputTypeId}
+              stockInputSafeId={stockInputSafeId}
+              stockInputQuantity={stockInputQuantity}
+              onSaleBuyerUserIdChange={handleSaleBuyerUserIdChange}
+              onSaleBuyerFirstNameChange={setSaleBuyerFirstName}
+              onSaleBuyerLastNameChange={setSaleBuyerLastName}
+              onSaleTypeIdChange={setSaleTypeId}
+              onSaleSafeIdChange={setSaleSafeId}
+              onSaleQuantityChange={setSaleQuantity}
+              onConfirmSale={confirmAmmunitionSale}
+              onLedgerBuyerSearchChange={setLedgerBuyerSearch}
+              onLedgerSellerSearchChange={setLedgerSellerSearch}
+              onLedgerTypeIdChange={setLedgerTypeId}
+              onLedgerFromDateChange={setLedgerFromDate}
+              onLedgerToDateChange={setLedgerToDate}
+              onRefreshLedger={loadAmmunitionSales}
+              onExportLedgerCsv={exportAmmunitionLedgerCsv}
+              onStockInputTypeIdChange={setStockInputTypeId}
+              onStockInputSafeIdChange={setStockInputSafeId}
+              onStockInputQuantityChange={setStockInputQuantity}
+              onSubmitStockInput={submitStockInput}
+              onToggleStockInputs={toggleStockInputs}
             />
           )}
         </>
