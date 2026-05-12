@@ -485,6 +485,7 @@ export default function ClubDashboard() {
         setSaleBuyerLastName(nameParts[nameParts.length - 1]);
       } else {
         setSaleBuyerFirstName(match.user.name.trim());
+        setSaleBuyerLastName('');
       }
     }
   }
