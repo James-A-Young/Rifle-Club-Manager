@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
 import ClubDashboard from './pages/ClubDashboard';
 import ClubHistory from './pages/ClubHistory';
+import AmmunitionHistory from './pages/AmmunitionHistory';
 import ClubMemberProfile from './pages/ClubMemberProfile';
 import InviteAccept from './pages/InviteAccept';
 import SignIn from './pages/SignIn';
@@ -78,6 +79,7 @@ function AppRoutes() {
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
           <Route path="/clubs/:id/history" element={<ProtectedRoute><ClubHistory /></ProtectedRoute>} />
+          <Route path="/clubs/:id/ammunition-history" element={<ProtectedRoute><AmmunitionHistory /></ProtectedRoute>} />
           <Route path="/clubs/:id/members/:userId" element={<ProtectedRoute><ClubMemberProfile /></ProtectedRoute>} />
           <Route path="/invites/:token/accept" element={<ProtectedRoute><InviteAccept /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

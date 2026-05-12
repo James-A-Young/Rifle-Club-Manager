@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { normalizeDisciplines } from '../shared/clubUtils';
@@ -17,7 +17,6 @@ import {
   AmmunitionSafe,
   AmmunitionSale,
   AmmunitionStock,
-  AmmunitionStockInput,
 } from '../types/club';
 import DashboardTabNav from '../components/dashboard/DashboardTabNav';
 import ClubProfileSection from '../components/dashboard/ClubProfileSection';
@@ -62,6 +61,7 @@ function toLocalDayBoundaryIso(date: string, boundary: 'start' | 'end'): string 
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // Data state
   const [club, setClub] = useState<Club | null>(null);
@@ -123,8 +123,6 @@ export default function ClubDashboard() {
   const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
   const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
   const [ammunitionSales, setAmmunitionSales] = useState<AmmunitionSale[]>([]);
-  const [stockInputs, setStockInputs] = useState<AmmunitionStockInput[]>([]);
-  const [showStockInputs, setShowStockInputs] = useState(false);
   const [newAmmunitionTypeName, setNewAmmunitionTypeName] = useState('');
   const [newAmmunitionTypePricePence, setNewAmmunitionTypePricePence] = useState(0);
   const [newAmmunitionSafeName, setNewAmmunitionSafeName] = useState('');
@@ -142,6 +140,10 @@ export default function ClubDashboard() {
   const [stockInputTypeId, setStockInputTypeId] = useState('');
   const [stockInputSafeId, setStockInputSafeId] = useState('');
   const [stockInputQuantity, setStockInputQuantity] = useState(1);
+  const [transferTypeId, setTransferTypeId] = useState('');
+  const [transferFromSafeId, setTransferFromSafeId] = useState('');
+  const [transferToSafeId, setTransferToSafeId] = useState('');
+  const [transferQuantity, setTransferQuantity] = useState(1);
 
   const REFRESH_VISITS_INTERVAL_MS = 5_000;
 
@@ -208,12 +210,6 @@ export default function ClubDashboard() {
     if (ledgerToDate) params.set('to', toLocalDayBoundaryIso(ledgerToDate, 'end'));
     const rows = await api.get<AmmunitionSale[]>(`/api/ammunition/club/${id}/sales?${params.toString()}`);
     setAmmunitionSales(rows);
-  }
-
-  async function loadStockInputs() {
-    if (!id || !isAdmin) return;
-    const rows = await api.get<AmmunitionStockInput[]>(`/api/ammunition/club/${id}/stock/inputs?pageSize=100`);
-    setStockInputs(rows);
   }
 
   useEffect(() => {
@@ -523,9 +519,48 @@ export default function ClubDashboard() {
         quantity: stockInputQuantity,
       });
       setStockInputQuantity(1);
-      await Promise.all([loadAmmunitionStock(), loadStockInputs()]);
+      await loadAmmunitionStock();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error inputting stock');
+    }
+  }
+
+  async function submitStockTransfer() {
+    if (!id || !transferTypeId || !transferFromSafeId || !transferToSafeId || transferQuantity <= 0) {
+      setError('Please complete all transfer fields');
+      return;
+    }
+    try {
+      await api.post(`/api/ammunition/club/${id}/stock/transfer`, {
+        ammunitionTypeId: transferTypeId,
+        fromSafeId: transferFromSafeId,
+        toSafeId: transferToSafeId,
+        quantity: transferQuantity,
+      });
+      setTransferQuantity(1);
+      await loadAmmunitionStock();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error transferring stock');
+    }
+  }
+
+  async function renameSafe(safeId: string, newName: string) {
+    if (!id) return;
+    try {
+      await api.patch(`/api/ammunition/club/${id}/safes/${safeId}`, { name: newName });
+      await Promise.all([loadAmmunitionSettings(), loadAmmunitionStock()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error renaming safe');
+    }
+  }
+
+  async function deleteSafe(safeId: string) {
+    if (!id) return;
+    try {
+      await api.delete(`/api/ammunition/club/${id}/safes/${safeId}`);
+      await Promise.all([loadAmmunitionSettings(), loadAmmunitionStock()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error deleting safe');
     }
   }
 
@@ -561,18 +596,6 @@ export default function ClubDashboard() {
     }
   }
 
-  async function toggleStockInputs() {
-    const nextValue = !showStockInputs;
-    setShowStockInputs(nextValue);
-    if (nextValue) {
-      try {
-        await loadStockInputs();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Error loading stock input history');
-      }
-    }
-  }
-
   if (!club) return <div>Loading…</div>;
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
@@ -599,7 +622,12 @@ export default function ClubDashboard() {
           <Link to={`/clubs/profile/${id}`} className="btn btn-secondary btn-sm">Public Profile</Link>
           {isAdmin && (
             <Link to={`/clubs/${id}/history`} className="btn btn-secondary btn-sm">
-              View Sign-In History
+              Sign-In History
+            </Link>
+          )}
+          {isAdmin && (
+            <Link to={`/clubs/${id}/ammunition-history`} className="btn btn-secondary btn-sm">
+              Ammunition History
             </Link>
           )}
         </div>
@@ -651,6 +679,8 @@ export default function ClubDashboard() {
               onCreateAmmunitionType={createAmmunitionType}
               onCreateAmmunitionSafe={createAmmunitionSafe}
               onUpdateAmmunitionTypePrice={updateAmmunitionTypePrice}
+              onRenameSafe={renameSafe}
+              onDeleteSafe={deleteSafe}
             />
           )}
 
@@ -732,8 +762,6 @@ export default function ClubDashboard() {
               safes={ammunitionSafes}
               stock={ammunitionStock}
               sales={ammunitionSales}
-              stockInputs={stockInputs}
-              showStockInputs={showStockInputs}
               saleBuyerUserId={saleBuyerUserId}
               saleBuyerFirstName={saleBuyerFirstName}
               saleBuyerLastName={saleBuyerLastName}
@@ -749,6 +777,10 @@ export default function ClubDashboard() {
               stockInputTypeId={stockInputTypeId}
               stockInputSafeId={stockInputSafeId}
               stockInputQuantity={stockInputQuantity}
+              transferTypeId={transferTypeId}
+              transferFromSafeId={transferFromSafeId}
+              transferToSafeId={transferToSafeId}
+              transferQuantity={transferQuantity}
               onSaleBuyerUserIdChange={handleSaleBuyerUserIdChange}
               onSaleBuyerFirstNameChange={setSaleBuyerFirstName}
               onSaleBuyerLastNameChange={setSaleBuyerLastName}
@@ -767,7 +799,12 @@ export default function ClubDashboard() {
               onStockInputSafeIdChange={setStockInputSafeId}
               onStockInputQuantityChange={setStockInputQuantity}
               onSubmitStockInput={submitStockInput}
-              onToggleStockInputs={toggleStockInputs}
+              onTransferTypeIdChange={setTransferTypeId}
+              onTransferFromSafeIdChange={setTransferFromSafeId}
+              onTransferToSafeIdChange={setTransferToSafeId}
+              onTransferQuantityChange={setTransferQuantity}
+              onSubmitTransfer={submitStockTransfer}
+              onViewHistory={() => navigate(`/clubs/${id}/ammunition-history`)}
             />
           )}
         </>

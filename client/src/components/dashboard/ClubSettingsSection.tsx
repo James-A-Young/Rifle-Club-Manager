@@ -20,6 +20,8 @@ interface Props {
   onCreateAmmunitionType: () => void;
   onCreateAmmunitionSafe: () => void;
   onUpdateAmmunitionTypePrice: (typeId: string, pricePence: number) => void;
+  onRenameSafe: (safeId: string, newName: string) => void;
+  onDeleteSafe: (safeId: string) => void;
 }
 
 export default function ClubSettingsSection({
@@ -41,6 +43,8 @@ export default function ClubSettingsSection({
   onCreateAmmunitionType,
   onCreateAmmunitionSafe,
   onUpdateAmmunitionTypePrice,
+  onRenameSafe,
+  onDeleteSafe,
 }: Props) {
   return (
     <section>
@@ -257,14 +261,50 @@ export default function ClubSettingsSection({
             Add Safe
           </button>
         </div>
-        <ul>
-          {ammunitionSafes.map(safe => (
-            <li key={safe.id}>{safe.name}</li>
-          ))}
-          {ammunitionSafes.length === 0 && (
-            <li style={{ color: 'var(--gray-600)' }}>No safes configured</li>
-          )}
-        </ul>
+        <table>
+          <thead>
+            <tr>
+              <th>Safe Name</th>
+              <th style={{ width: '1%', whiteSpace: 'nowrap' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ammunitionSafes.map(safe => (
+              <tr key={safe.id}>
+                <td>{safe.name}</td>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    style={{ marginRight: '0.5rem' }}
+                    onClick={() => {
+                      const name = window.prompt('Rename safe:', safe.name);
+                      if (!name || !name.trim() || name.trim() === safe.name) return;
+                      onRenameSafe(safe.id, name.trim());
+                    }}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    type="button"
+                    onClick={() => {
+                      if (!window.confirm(`Delete safe "${safe.name}"? This cannot be undone. Safes with existing sales or movement records cannot be deleted.`)) return;
+                      onDeleteSafe(safe.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {ammunitionSafes.length === 0 && (
+              <tr>
+                <td colSpan={2} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No safes configured</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </section>
     </section>
   );

@@ -1,4 +1,4 @@
-import { Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock, AmmunitionStockInput } from '../../types/club';
+import { Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
 
 interface Props {
   members: Member[];
@@ -6,8 +6,6 @@ interface Props {
   safes: AmmunitionSafe[];
   stock: AmmunitionStock[];
   sales: AmmunitionSale[];
-  stockInputs: AmmunitionStockInput[];
-  showStockInputs: boolean;
   saleBuyerUserId: string;
   saleBuyerFirstName: string;
   saleBuyerLastName: string;
@@ -23,6 +21,10 @@ interface Props {
   stockInputTypeId: string;
   stockInputSafeId: string;
   stockInputQuantity: number;
+  transferTypeId: string;
+  transferFromSafeId: string;
+  transferToSafeId: string;
+  transferQuantity: number;
   onSaleBuyerUserIdChange: (value: string) => void;
   onSaleBuyerFirstNameChange: (value: string) => void;
   onSaleBuyerLastNameChange: (value: string) => void;
@@ -41,7 +43,12 @@ interface Props {
   onStockInputSafeIdChange: (value: string) => void;
   onStockInputQuantityChange: (value: number) => void;
   onSubmitStockInput: () => void;
-  onToggleStockInputs: () => void;
+  onTransferTypeIdChange: (value: string) => void;
+  onTransferFromSafeIdChange: (value: string) => void;
+  onTransferToSafeIdChange: (value: string) => void;
+  onTransferQuantityChange: (value: number) => void;
+  onSubmitTransfer: () => void;
+  onViewHistory: () => void;
 }
 
 function getStockQuantity(stock: AmmunitionStock[], typeId: string, safeId: string): number {
@@ -118,8 +125,11 @@ export default function AmmunitionSalesSection(props: Props) {
 
       <section>
         <div className="page-header">
-          <h2>Ammunition Sales Ledger</h2>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={props.onExportLedgerCsv}>Download CSV</button>
+          <h2>Recent Sales</h2>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={props.onExportLedgerCsv}>Download CSV</button>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={props.onViewHistory}>View Full History</button>
+          </div>
         </div>
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -189,8 +199,8 @@ export default function AmmunitionSalesSection(props: Props) {
       <section>
         <div className="page-header">
           <h2>Stock Management</h2>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={props.onToggleStockInputs}>
-            {props.showStockInputs ? 'Hide Input History' : 'View Input History'}
+          <button className="btn btn-secondary btn-sm" type="button" onClick={props.onViewHistory}>
+            View Movements History
           </button>
         </div>
         <table>
@@ -249,40 +259,42 @@ export default function AmmunitionSalesSection(props: Props) {
           <button className="btn btn-primary" type="button" onClick={props.onSubmitStockInput}>Input Stock</button>
         </div>
 
-        {props.showStockInputs && (
-          <div style={{ marginTop: '1rem' }}>
-            <h3>Stock Input History</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Safe</th>
-                  <th>Quantity</th>
-                  <th>Input By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {props.stockInputs.map(row => (
-                  <tr key={row.id}>
-                    <td>{new Date(row.createdAt).toLocaleString()}</td>
-                    <td>{row.ammunitionType.name}</td>
-                    <td>{row.ammunitionSafe.name}</td>
-                    <td>{row.quantity}</td>
-                    <td>{row.inputBy.name}</td>
-                  </tr>
-                ))}
-                {props.stockInputs.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
-                      No stock input history
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        <h3 style={{ marginTop: '1.5rem' }}>Transfer Stock Between Safes</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 2fr 1fr auto', gap: '0.75rem', alignItems: 'end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Type</label>
+            <select value={props.transferTypeId} onChange={e => props.onTransferTypeIdChange(e.target.value)}>
+              <option value="">Select type</option>
+              {props.types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </select>
           </div>
-        )}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>From Safe</label>
+            <select value={props.transferFromSafeId} onChange={e => props.onTransferFromSafeIdChange(e.target.value)}>
+              <option value="">Select safe</option>
+              {props.safes.map(safe => <option key={safe.id} value={safe.id}>{safe.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>To Safe</label>
+            <select value={props.transferToSafeId} onChange={e => props.onTransferToSafeIdChange(e.target.value)}>
+              <option value="">Select safe</option>
+              {props.safes.filter(s => s.id !== props.transferFromSafeId).map(safe => (
+                <option key={safe.id} value={safe.id}>{safe.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Quantity</label>
+            <input
+              type="number"
+              min={1}
+              value={props.transferQuantity}
+              onChange={e => props.onTransferQuantityChange(Number(e.target.value || '0'))}
+            />
+          </div>
+          <button className="btn btn-primary" type="button" onClick={props.onSubmitTransfer}>Transfer</button>
+        </div>
       </section>
     </>
   );

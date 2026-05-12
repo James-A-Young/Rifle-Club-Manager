@@ -303,6 +303,7 @@ model AmmunitionStockInput {
   ammunitionTypeId String
   ammunitionSafeId String
   quantity         Int
+  note             String?
   inputByUserId    String
   createdAt        DateTime @default(now())
 
