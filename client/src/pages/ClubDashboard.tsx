@@ -45,6 +45,20 @@ interface AmmunitionSettingsResponse {
   safes: AmmunitionSafe[];
 }
 
+function toLocalDayBoundaryIso(date: string, boundary: 'start' | 'end'): string {
+  const [yearRaw, monthRaw, dayRaw] = date.split('-');
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!year || !month || !day) {
+    return '';
+  }
+  const localDate = boundary === 'start'
+    ? new Date(year, month - 1, day, 0, 0, 0, 0)
+    : new Date(year, month - 1, day, 23, 59, 59, 999);
+  return localDate.toISOString();
+}
+
 export default function ClubDashboard() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -190,8 +204,8 @@ export default function ClubDashboard() {
     if (ledgerBuyerSearch.trim()) params.set('buyerSearch', ledgerBuyerSearch.trim());
     if (ledgerSellerSearch.trim()) params.set('sellerSearch', ledgerSellerSearch.trim());
     if (ledgerTypeId) params.set('typeId', ledgerTypeId);
-    if (ledgerFromDate) params.set('from', new Date(`${ledgerFromDate}T00:00:00.000Z`).toISOString());
-    if (ledgerToDate) params.set('to', new Date(`${ledgerToDate}T23:59:59.999Z`).toISOString());
+    if (ledgerFromDate) params.set('from', toLocalDayBoundaryIso(ledgerFromDate, 'start'));
+    if (ledgerToDate) params.set('to', toLocalDayBoundaryIso(ledgerToDate, 'end'));
     const rows = await api.get<AmmunitionSale[]>(`/api/ammunition/club/${id}/sales?${params.toString()}`);
     setAmmunitionSales(rows);
   }
@@ -518,8 +532,8 @@ export default function ClubDashboard() {
       if (ledgerBuyerSearch.trim()) params.set('buyerSearch', ledgerBuyerSearch.trim());
       if (ledgerSellerSearch.trim()) params.set('sellerSearch', ledgerSellerSearch.trim());
       if (ledgerTypeId) params.set('typeId', ledgerTypeId);
-      if (ledgerFromDate) params.set('from', new Date(`${ledgerFromDate}T00:00:00.000Z`).toISOString());
-      if (ledgerToDate) params.set('to', new Date(`${ledgerToDate}T23:59:59.999Z`).toISOString());
+      if (ledgerFromDate) params.set('from', toLocalDayBoundaryIso(ledgerFromDate, 'start'));
+      if (ledgerToDate) params.set('to', toLocalDayBoundaryIso(ledgerToDate, 'end'));
       const response = await fetch(`/api/ammunition/club/${id}/sales/export.csv?${params.toString()}`, {
         credentials: 'include',
         headers: token ? { Authorization: `Bearer ${token}` } : {},

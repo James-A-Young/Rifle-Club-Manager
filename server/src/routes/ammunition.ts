@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { MembershipRole, MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
@@ -13,7 +13,7 @@ const CSV_BATCH_SIZE = 1000;
 
 router.use(requireAuth);
 
-function csvCell(value: unknown): string {
+function escapeCsvCell(value: unknown): string {
   const normalized = value === null || value === undefined ? '' : String(value);
   return `"${normalized.replace(/"/g, '""')}"`;
 }
@@ -189,8 +189,12 @@ router.post('/club/:clubId/types', async (req: AuthRequest, res: Response) => {
     });
 
     res.status(201).json(created);
-  } catch {
-    res.status(409).json({ error: 'Ammunition type with this name already exists' });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'Ammunition type with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to create ammunition type' });
   }
 });
 
@@ -252,8 +256,12 @@ router.patch('/club/:clubId/types/:typeId', async (req: AuthRequest, res: Respon
     });
 
     res.json(updated);
-  } catch {
-    res.status(409).json({ error: 'Ammunition type with this name already exists' });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'Ammunition type with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to update ammunition type' });
   }
 });
 
@@ -279,8 +287,12 @@ router.post('/club/:clubId/safes', async (req: AuthRequest, res: Response) => {
       },
     });
     res.status(201).json(safe);
-  } catch {
-    res.status(409).json({ error: 'Safe with this name already exists' });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'Safe with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to create safe' });
   }
 });
 
@@ -576,18 +588,18 @@ router.get('/club/:clubId/sales/export.csv', async (req: AuthRequest, res: Respo
 
     for (const row of rows) {
       res.write([
-        csvCell(row.id),
-        csvCell(row.createdAt.toISOString()),
-        csvCell(row.buyerFirstName),
-        csvCell(row.buyerLastName),
-        csvCell(row.buyerUserId ?? ''),
-        csvCell(row.soldByUserId),
-        csvCell(row.soldBy.name),
-        csvCell(row.ammunitionType.name),
-        csvCell(row.ammunitionSafe.name),
-        csvCell(row.quantity),
-        csvCell(row.unitPricePence),
-        csvCell(row.totalPricePence),
+        escapeCsvCell(row.id),
+        escapeCsvCell(row.createdAt.toISOString()),
+        escapeCsvCell(row.buyerFirstName),
+        escapeCsvCell(row.buyerLastName),
+        escapeCsvCell(row.buyerUserId ?? ''),
+        escapeCsvCell(row.soldByUserId),
+        escapeCsvCell(row.soldBy.name),
+        escapeCsvCell(row.ammunitionType.name),
+        escapeCsvCell(row.ammunitionSafe.name),
+        escapeCsvCell(row.quantity),
+        escapeCsvCell(row.unitPricePence),
+        escapeCsvCell(row.totalPricePence),
       ].join(',') + '\n');
     }
 
