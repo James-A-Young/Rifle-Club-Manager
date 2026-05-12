@@ -292,7 +292,9 @@ export default function AmmunitionSalesSection(props: Props) {
               value={props.transferQuantity}
               onChange={e => {
                 const parsed = parseInt(e.target.value, 10);
-                props.onTransferQuantityChange(Number.isFinite(parsed) && parsed >= 1 ? parsed : props.transferQuantity);
+                if (Number.isFinite(parsed)) {
+                  props.onTransferQuantityChange(parsed);
+                }
               }}
             />
           </div>

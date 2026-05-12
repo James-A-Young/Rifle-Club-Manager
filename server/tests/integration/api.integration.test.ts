@@ -1018,8 +1018,10 @@ describe('ammunition routes', () => {
       .set(authHeader(admin2));
 
     expect(res.status).toBe(200);
-    // Should still return club2's own data without being limited by the foreign cursor
-    expect(res.body.rows.every((r: { clubId: string }) => r.clubId === undefined || true)).toBe(true);
+    // The foreign cursor from club1 is scoped to club1 so it is not found for club2 and ignored.
+    // club2 should still return its own 1 input record unaffected.
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.rows[0].ammunitionSafe.name).toBe('Main Safe');
   });
 
   it('exports stock inputs as CSV', async () => {
