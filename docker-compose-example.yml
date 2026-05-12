@@ -1,0 +1,42 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shootingmatch
+      POSTGRES_PASSWORD: shootingmatch
+      POSTGRES_DB: shootingmatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shootingmatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrator:
+    image: iammind/rifle-club-manager-migrator:sha-409a645
+    environment:
+      DATABASE_URL: postgresql://shootingmatch:shootingmatch@db:5432/shootingmatch
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    image: iammind/rifle-club-manager:sha-409a645
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://shootingmatch:shootingmatch@db:5432/shootingmatch
+      JWT_SECRET: change-me-in-production-12345678910
+      NODE_ENV: production
+      CLIENT_ORIGIN: http://localhost:3000
+      PORT: 3000
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
