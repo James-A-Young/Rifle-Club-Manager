@@ -205,6 +205,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
                         value={localValues[cell.id] ?? ''}
                         onChange={e => handleChange(cell.id, e.target.value)}
                         onBlur={e => handleBlur(cell.id, e.target.value)}
+                        aria-label={`Score for ${member.name} round ${col.roundNumber} card ${col.cardNumber}`}
+                        aria-invalid={cellStatus[cell.id] === 'error'}
                         style={{
                           width: 52,
                           padding: '0.2rem 0.3rem',

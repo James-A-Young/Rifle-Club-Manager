@@ -48,9 +48,12 @@ const updateSeasonSchema = z.object({
 });
 
 const roundDueDateSchema = z.object({
-  dueDate: z.string().refine(v => !Number.isNaN(new Date(v).getTime()), {
-    message: 'Invalid date',
-  }),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, 'Date must be in YYYY-MM-DD or ISO format')
+    .refine(v => {
+      const d = new Date(v);
+      return !Number.isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100
+        && (v.length === 10 ? (d.getMonth() + 1) === Number(v.slice(5, 7)) && d.getDate() === Number(v.slice(8, 10)) : true);
+    }, { message: 'Invalid date value' }),
 });
 
 const createCompetitionSchema = z.object({
@@ -71,9 +74,12 @@ const updateCompetitionSchema = z.object({
   organiser: z.string().trim().optional().nullable(),
   rounds: z.array(z.object({
     roundNumber: z.number().int().min(1),
-    dueDate: z.string().refine(v => !Number.isNaN(new Date(v).getTime()), {
-      message: 'Invalid date',
-    }),
+    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, 'Date must be in YYYY-MM-DD or ISO format')
+      .refine(v => {
+        const d = new Date(v);
+        return !Number.isNaN(d.getTime()) && d.getFullYear() >= 2000 && d.getFullYear() <= 2100
+          && (v.length === 10 ? (d.getMonth() + 1) === Number(v.slice(5, 7)) && d.getDate() === Number(v.slice(8, 10)) : true);
+      }, { message: 'Invalid date value' }),
   })).optional(),
 });
 

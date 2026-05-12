@@ -51,11 +51,9 @@ export default function Dashboard() {
         c.forEach(club => {
           api.get<DueCard[]>(`/api/clubs/${club.id}/scoring/mine/due`)
             .then(cards => setDueCards(prev => {
-              const otherClubs = prev.filter(d => d.competitionId && true);
-              return [...otherClubs.filter(d => {
-                // keep cards from other clubs
-                return cards.every(nc => nc.scoreId !== d.scoreId);
-              }), ...cards];
+              // Keep cards from all other clubs, then append the freshly-loaded ones for this club
+              const newScoreIds = new Set(cards.map(nc => nc.scoreId));
+              return [...prev.filter(d => !newScoreIds.has(d.scoreId)), ...cards];
             }))
             .catch(() => { /* silently ignore if club has no scoring */ });
 
@@ -98,13 +96,15 @@ export default function Dashboard() {
   const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
   const recentVisits = visits.filter(v => new Date(v.timeIn) > monthAgo).length;
 
-  // Aggregate averages across all clubs that have scores
+  // Aggregate averages across all clubs that have scores; exclude null averages
   const clubsWithScores = Object.values(avgsByClub).filter(a => a.totalCardsShot > 0);
-  const overallAllTimeAvg = clubsWithScores.length > 0
-    ? clubsWithScores.reduce((acc, a) => acc + (a.allTimeAverage ?? 0), 0) / clubsWithScores.length
+  const clubsWithAllTime = clubsWithScores.filter(a => a.allTimeAverage !== null);
+  const overallAllTimeAvg = clubsWithAllTime.length > 0
+    ? clubsWithAllTime.reduce((acc, a) => acc + (a.allTimeAverage as number), 0) / clubsWithAllTime.length
     : null;
-  const overallLast10Avg = clubsWithScores.length > 0
-    ? clubsWithScores.reduce((acc, a) => acc + (a.last10Average ?? 0), 0) / clubsWithScores.length
+  const clubsWithLast10 = clubsWithScores.filter(a => a.last10Average !== null);
+  const overallLast10Avg = clubsWithLast10.length > 0
+    ? clubsWithLast10.reduce((acc, a) => acc + (a.last10Average as number), 0) / clubsWithLast10.length
     : null;
 
   // Sort due cards by dueDate ascending; group for display
