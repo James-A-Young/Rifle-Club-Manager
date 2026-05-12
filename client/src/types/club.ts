@@ -131,6 +131,7 @@ export interface AmmunitionSale {
 export interface AmmunitionStockInput {
   id: string;
   quantity: number;
+  note?: string | null;
   createdAt: string;
   ammunitionType: { id: string; name: string };
   ammunitionSafe: { id: string; name: string };

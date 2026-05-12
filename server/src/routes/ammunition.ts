@@ -53,6 +53,17 @@ const createSafeSchema = z.object({
   name: z.string().trim().min(1),
 });
 
+const updateSafeSchema = z.object({
+  name: z.string().trim().min(1),
+});
+
+const transferStockSchema = z.object({
+  ammunitionTypeId: z.string().min(1),
+  fromSafeId: z.string().min(1),
+  toSafeId: z.string().min(1),
+  quantity: z.number().int().positive(),
+});
+
 const stockInputSchema = z.object({
   ammunitionTypeId: z.string().min(1),
   ammunitionSafeId: z.string().min(1),
@@ -322,6 +333,69 @@ router.post('/club/:clubId/safes', async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.patch('/club/:clubId/safes/:safeId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const safeId = req.params.safeId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = updateSafeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const existing = await prisma.ammunitionSafe.findFirst({ where: { id: safeId, clubId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Safe not found' });
+    return;
+  }
+
+  try {
+    const updated = await prisma.ammunitionSafe.update({
+      where: { id: safeId },
+      data: { name: parsed.data.name },
+    });
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      res.status(409).json({ error: 'Safe with this name already exists' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to rename safe' });
+  }
+});
+
+router.delete('/club/:clubId/safes/:safeId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const safeId = req.params.safeId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const existing = await prisma.ammunitionSafe.findFirst({ where: { id: safeId, clubId } });
+  if (!existing) {
+    res.status(404).json({ error: 'Safe not found' });
+    return;
+  }
+
+  try {
+    await prisma.ammunitionSafe.delete({ where: { id: safeId } });
+    res.status(204).send();
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      res.status(409).json({ error: 'Cannot delete safe: it has associated sales or stock movement records' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to delete safe' });
+  }
+});
+
 router.get('/club/:clubId/stock', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -417,6 +491,100 @@ router.post('/club/:clubId/stock/input', async (req: AuthRequest, res: Response)
   res.status(201).json({ success: true });
 });
 
+router.post('/club/:clubId/stock/transfer', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = transferStockSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  if (parsed.data.fromSafeId === parsed.data.toSafeId) {
+    res.status(400).json({ error: 'Source and destination safes must be different' });
+    return;
+  }
+
+  const [type, fromSafe, toSafe] = await Promise.all([
+    prisma.ammunitionType.findFirst({ where: { id: parsed.data.ammunitionTypeId, clubId }, select: { id: true, name: true } }),
+    prisma.ammunitionSafe.findFirst({ where: { id: parsed.data.fromSafeId, clubId }, select: { id: true, name: true } }),
+    prisma.ammunitionSafe.findFirst({ where: { id: parsed.data.toSafeId, clubId }, select: { id: true, name: true } }),
+  ]);
+
+  if (!type || !fromSafe || !toSafe) {
+    res.status(400).json({ error: 'Invalid type or safe for this club' });
+    return;
+  }
+
+  try {
+    await prisma.$transaction(async tx => {
+      const updated = await tx.ammunitionStock.updateMany({
+        where: {
+          clubId,
+          ammunitionTypeId: parsed.data.ammunitionTypeId,
+          ammunitionSafeId: parsed.data.fromSafeId,
+          quantity: { gte: parsed.data.quantity },
+        },
+        data: { quantity: { decrement: parsed.data.quantity } },
+      });
+      if (updated.count !== 1) {
+        throw new Error('INSUFFICIENT_STOCK');
+      }
+
+      await tx.ammunitionStock.upsert({
+        where: {
+          ammunitionTypeId_ammunitionSafeId: {
+            ammunitionTypeId: parsed.data.ammunitionTypeId,
+            ammunitionSafeId: parsed.data.toSafeId,
+          },
+        },
+        update: { quantity: { increment: parsed.data.quantity } },
+        create: {
+          clubId,
+          ammunitionTypeId: parsed.data.ammunitionTypeId,
+          ammunitionSafeId: parsed.data.toSafeId,
+          quantity: parsed.data.quantity,
+        },
+      });
+
+      await tx.ammunitionStockInput.create({
+        data: {
+          clubId,
+          ammunitionTypeId: parsed.data.ammunitionTypeId,
+          ammunitionSafeId: parsed.data.fromSafeId,
+          quantity: -parsed.data.quantity,
+          note: `Transfer to ${toSafe.name}`,
+          inputByUserId: req.user!.id,
+        },
+      });
+
+      await tx.ammunitionStockInput.create({
+        data: {
+          clubId,
+          ammunitionTypeId: parsed.data.ammunitionTypeId,
+          ammunitionSafeId: parsed.data.toSafeId,
+          quantity: parsed.data.quantity,
+          note: `Transfer from ${fromSafe.name}`,
+          inputByUserId: req.user!.id,
+        },
+      });
+    });
+
+    res.status(201).json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'INSUFFICIENT_STOCK') {
+      res.status(400).json({ error: 'Insufficient stock in source safe' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to transfer stock' });
+  }
+});
+
 router.get('/club/:clubId/stock/inputs', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -426,10 +594,42 @@ router.get('/club/:clubId/stock/inputs', async (req: AuthRequest, res: Response)
   }
 
   const pageSize = parsePageSize(req.query.pageSize);
+  const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+  const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : undefined;
+  const safeId = typeof req.query.safeId === 'string' ? req.query.safeId : undefined;
+  const from = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
+  const to = typeof req.query.to === 'string' ? new Date(req.query.to) : undefined;
+
+  const and: Record<string, unknown>[] = [{ clubId }];
+  if (typeId) and.push({ ammunitionTypeId: typeId });
+  if (safeId) and.push({ ammunitionSafeId: safeId });
+  if (from && !Number.isNaN(from.getTime())) and.push({ createdAt: { gte: from } });
+  if (to && !Number.isNaN(to.getTime())) and.push({ createdAt: { lte: to } });
+
+  const where: Prisma.AmmunitionStockInputWhereInput = { AND: and };
+
+  let finalWhere = where;
+  if (cursor) {
+    const cursorRow = await prisma.ammunitionStockInput.findFirst({ where: { id: cursor, clubId }, select: { createdAt: true } });
+    if (cursorRow) {
+      finalWhere = {
+        AND: [
+          where,
+          {
+            OR: [
+              { createdAt: { lt: cursorRow.createdAt } },
+              { AND: [{ createdAt: cursorRow.createdAt }, { id: { lt: cursor } }] },
+            ],
+          },
+        ],
+      };
+    }
+  }
+
   const rows = await prisma.ammunitionStockInput.findMany({
-    where: { clubId },
-    take: pageSize,
-    orderBy: { createdAt: 'desc' },
+    where: finalWhere,
+    take: pageSize + 1,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     include: {
       ammunitionType: { select: { id: true, name: true } },
       ammunitionSafe: { select: { id: true, name: true } },
@@ -437,7 +637,85 @@ router.get('/club/:clubId/stock/inputs', async (req: AuthRequest, res: Response)
     },
   });
 
-  res.json(rows);
+  const hasMore = rows.length > pageSize;
+  const data = hasMore ? rows.slice(0, pageSize) : rows;
+  const nextCursor = hasMore ? data[data.length - 1].id : null;
+
+  res.json({ rows: data, nextCursor });
+});
+
+router.get('/club/:clubId/stock/inputs/export.csv', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : undefined;
+  const safeId = typeof req.query.safeId === 'string' ? req.query.safeId : undefined;
+  const from = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
+  const to = typeof req.query.to === 'string' ? new Date(req.query.to) : undefined;
+
+  const and: Record<string, unknown>[] = [{ clubId }];
+  if (typeId) and.push({ ammunitionTypeId: typeId });
+  if (safeId) and.push({ ammunitionSafeId: safeId });
+  if (from && !Number.isNaN(from.getTime())) and.push({ createdAt: { gte: from } });
+  if (to && !Number.isNaN(to.getTime())) and.push({ createdAt: { lte: to } });
+
+  const where: Prisma.AmmunitionStockInputWhereInput = { AND: and };
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-stock-movements.csv"`);
+  res.write(['movement_id', 'recorded_at', 'ammunition_type', 'safe_name', 'quantity', 'note', 'recorded_by'].join(',') + '\n');
+
+  let exportCursor: { createdAt: Date; id: string } | null = null;
+  while (true) {
+    const pagedWhere: Prisma.AmmunitionStockInputWhereInput = exportCursor
+      ? {
+          AND: [
+            where,
+            {
+              OR: [
+                { createdAt: { lt: exportCursor.createdAt } },
+                { AND: [{ createdAt: exportCursor.createdAt }, { id: { lt: exportCursor.id } }] },
+              ],
+            },
+          ],
+        }
+      : where;
+
+    const rows = await prisma.ammunitionStockInput.findMany({
+      where: pagedWhere,
+      take: CSV_BATCH_SIZE,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        ammunitionType: { select: { name: true } },
+        ammunitionSafe: { select: { name: true } },
+        inputBy: { select: { name: true } },
+      },
+    });
+
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      res.write([
+        escapeCsvCell(row.id),
+        escapeCsvCell(row.createdAt.toISOString()),
+        escapeCsvCell(row.ammunitionType.name),
+        escapeCsvCell(row.ammunitionSafe.name),
+        escapeCsvCell(row.quantity),
+        escapeCsvCell(row.note ?? ''),
+        escapeCsvCell(row.inputBy.name),
+      ].join(',') + '\n');
+    }
+
+    if (rows.length < CSV_BATCH_SIZE) break;
+    const lastRow = rows[rows.length - 1];
+    exportCursor = { createdAt: lastRow.createdAt, id: lastRow.id };
+  }
+
+  res.end();
 });
 
 router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {

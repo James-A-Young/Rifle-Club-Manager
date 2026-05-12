@@ -773,6 +773,275 @@ describe('ammunition routes', () => {
     expect(saleRes.status).toBe(400);
     expect(saleRes.body.error).toContain('not an approved member');
   });
+
+  it('renames a safe', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    const renameRes = await request(app)
+      .patch(`/api/ammunition/club/${club.id}/safes/${safeId}`)
+      .set(authHeader(admin))
+      .send({ name: 'Renamed Safe' });
+
+    expect(renameRes.status).toBe(200);
+    expect(renameRes.body.name).toBe('Renamed Safe');
+  });
+
+  it('returns 409 when renaming to an existing safe name', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    // Create a second safe
+    const safeRes2 = await request(app)
+      .post(`/api/ammunition/club/${club.id}/safes`)
+      .set(authHeader(admin))
+      .send({ name: 'Second Safe' });
+    expect(safeRes2.status).toBe(201);
+
+    // Try to rename it to 'Main Safe' which already exists
+    const renameRes = await request(app)
+      .patch(`/api/ammunition/club/${club.id}/safes/${safeRes2.body.id}`)
+      .set(authHeader(admin))
+      .send({ name: 'Main Safe' });
+
+    expect(renameRes.status).toBe(409);
+  });
+
+  it('deletes a safe with no stock or sales', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const safeRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/safes`)
+      .set(authHeader(admin))
+      .send({ name: 'Empty Safe' });
+    expect(safeRes.status).toBe(201);
+
+    const deleteRes = await request(app)
+      .delete(`/api/ammunition/club/${club.id}/safes/${safeRes.body.id}`)
+      .set(authHeader(admin));
+
+    expect(deleteRes.status).toBe(204);
+  });
+
+  it('returns 409 when deleting a safe with existing sales', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    // Input stock then record a sale
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 10 });
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/sales`)
+      .set(authHeader(admin))
+      .send({
+        buyerFirstName: 'Test',
+        buyerLastName: 'Buyer',
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 1,
+      });
+
+    const deleteRes = await request(app)
+      .delete(`/api/ammunition/club/${club.id}/safes/${safeId}`)
+      .set(authHeader(admin));
+
+    expect(deleteRes.status).toBe(409);
+  });
+
+  it('transfers stock between safes and records movements', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId: fromSafeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    // Create destination safe
+    const toSafeRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/safes`)
+      .set(authHeader(admin))
+      .send({ name: 'Second Safe' });
+    expect(toSafeRes.status).toBe(201);
+    const toSafeId = toSafeRes.body.id as string;
+
+    // Input stock to source
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: fromSafeId, quantity: 50 });
+
+    // Transfer 20 rounds
+    const transferRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/transfer`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, fromSafeId, toSafeId, quantity: 20 });
+
+    expect(transferRes.status).toBe(201);
+
+    // Check stock levels
+    const fromStock = await prisma.ammunitionStock.findUnique({
+      where: { ammunitionTypeId_ammunitionSafeId: { ammunitionTypeId: typeId, ammunitionSafeId: fromSafeId } },
+    });
+    const toStock = await prisma.ammunitionStock.findUnique({
+      where: { ammunitionTypeId_ammunitionSafeId: { ammunitionTypeId: typeId, ammunitionSafeId: toSafeId } },
+    });
+    expect(fromStock?.quantity).toBe(30);
+    expect(toStock?.quantity).toBe(20);
+
+    // Check movement records were created
+    const movements = await prisma.ammunitionStockInput.findMany({
+      where: { clubId: club.id, note: { not: null } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(movements).toHaveLength(2);
+    expect(movements.some(m => m.quantity === -20 && m.note?.includes('Second Safe'))).toBe(true);
+    expect(movements.some(m => m.quantity === 20 && m.note?.includes('Main Safe'))).toBe(true);
+  });
+
+  it('returns insufficient stock error when transferring more than available', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId: fromSafeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    const toSafeRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/safes`)
+      .set(authHeader(admin))
+      .send({ name: 'Second Safe' });
+    expect(toSafeRes.status).toBe(201);
+    const toSafeId = toSafeRes.body.id as string;
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: fromSafeId, quantity: 5 });
+
+    const transferRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/transfer`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, fromSafeId, toSafeId, quantity: 10 });
+
+    expect(transferRes.status).toBe(400);
+    expect(transferRes.body.error).toContain('Insufficient stock');
+  });
+
+  it('filters stock inputs by typeId and safeId', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    // Create a second type
+    const type2Res = await request(app)
+      .post(`/api/ammunition/club/${club.id}/types`)
+      .set(authHeader(admin))
+      .send({ name: '9mm', pricePence: 50 });
+    expect(type2Res.status).toBe(201);
+    const typeId2 = type2Res.body.id as string;
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 10 });
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId2, ammunitionSafeId: safeId, quantity: 20 });
+
+    const res = await request(app)
+      .get(`/api/ammunition/club/${club.id}/stock/inputs?typeId=${typeId}`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.rows[0].ammunitionType.id).toBe(typeId);
+    expect(res.body.nextCursor).toBeNull();
+  });
+
+  it('paginates stock inputs with cursor', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    // Create 3 inputs
+    for (let i = 0; i < 3; i++) {
+      await request(app)
+        .post(`/api/ammunition/club/${club.id}/stock/input`)
+        .set(authHeader(admin))
+        .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: i + 1 });
+    }
+
+    // Fetch first page of 2
+    const page1 = await request(app)
+      .get(`/api/ammunition/club/${club.id}/stock/inputs?pageSize=2`)
+      .set(authHeader(admin));
+
+    expect(page1.status).toBe(200);
+    expect(page1.body.rows).toHaveLength(2);
+    expect(page1.body.nextCursor).toBeTruthy();
+
+    // Fetch second page using cursor
+    const page2 = await request(app)
+      .get(`/api/ammunition/club/${club.id}/stock/inputs?pageSize=2&cursor=${page1.body.nextCursor}`)
+      .set(authHeader(admin));
+
+    expect(page2.status).toBe(200);
+    expect(page2.body.rows).toHaveLength(1);
+    expect(page2.body.nextCursor).toBeNull();
+
+    // Ensure no overlap
+    const ids1 = page1.body.rows.map((r: { id: string }) => r.id);
+    const ids2 = page2.body.rows.map((r: { id: string }) => r.id);
+    expect(ids1.some((id: string) => ids2.includes(id))).toBe(false);
+  });
+
+  it('rejects cursor from a different club', async () => {
+    const { club: club1, admin: admin1 } = await createClubWithAdmin();
+    const { club: club2, admin: admin2 } = await createClubWithAdmin();
+    const { typeId: typeId1, safeId: safeId1 } = await createAmmoTypeAndSafe(club1.id, admin1);
+    const { typeId: typeId2, safeId: safeId2 } = await createAmmoTypeAndSafe(club2.id, admin2);
+
+    await request(app)
+      .post(`/api/ammunition/club/${club1.id}/stock/input`)
+      .set(authHeader(admin1))
+      .send({ ammunitionTypeId: typeId1, ammunitionSafeId: safeId1, quantity: 10 });
+
+    // Get a valid cursor from club1
+    const page1 = await request(app)
+      .get(`/api/ammunition/club/${club1.id}/stock/inputs?pageSize=1`)
+      .set(authHeader(admin1));
+    const cursor = page1.body.nextCursor ?? page1.body.rows[0]?.id;
+
+    // Input something in club2
+    await request(app)
+      .post(`/api/ammunition/club/${club2.id}/stock/input`)
+      .set(authHeader(admin2))
+      .send({ ammunitionTypeId: typeId2, ammunitionSafeId: safeId2, quantity: 5 });
+
+    // Use club1's cursor in club2's request — cursor should be ignored/not leak data
+    const res = await request(app)
+      .get(`/api/ammunition/club/${club2.id}/stock/inputs?pageSize=10&cursor=${cursor}`)
+      .set(authHeader(admin2));
+
+    expect(res.status).toBe(200);
+    // The foreign cursor from club1 is scoped to club1 so it is not found for club2 and ignored.
+    // club2 should still return its own 1 input record unaffected.
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.rows[0].ammunitionSafe.name).toBe('Main Safe');
+  });
+
+  it('exports stock inputs as CSV', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 42 });
+
+    const res = await request(app)
+      .get(`/api/ammunition/club/${club.id}/stock/inputs/export.csv`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.text).toContain('.22LR');
+    expect(res.text).toContain('42');
+  });
 });
 
 describe('membership pass routes', () => {
