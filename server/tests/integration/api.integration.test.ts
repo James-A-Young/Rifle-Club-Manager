@@ -13,6 +13,10 @@ const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
 const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2)}`;
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 async function createUser(overrides: Partial<{
   name: string;
   email: string;
@@ -96,7 +100,6 @@ async function registerViaInvite(clubId: string, createdByUserId: string, opts: 
 
 describe('auth routes', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
     if (ORIGINAL_TURNSTILE_SECRET_KEY) {
       process.env.TURNSTILE_SECRET_KEY = ORIGINAL_TURNSTILE_SECRET_KEY;
     } else {

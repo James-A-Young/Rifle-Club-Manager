@@ -21,6 +21,16 @@ import { emailService, sanitizeUserAgent } from '../services/email';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+type ResetTokenFailureReason = 'not_found' | 'expired' | 'used';
+
+class ResetTokenStateError extends Error {
+  readonly reason: ResetTokenFailureReason;
+
+  constructor(reason: ResetTokenFailureReason) {
+    super(reason);
+    this.reason = reason;
+  }
+}
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -386,60 +396,79 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
   const { token, password } = parsed.data;
   const userAgent = sanitizeUserAgent(req.get('user-agent'));
+  const existingToken = await prisma.passwordResetToken.findUnique({
+    where: { token },
+    include: { user: { select: { id: true, email: true } } },
+  });
+
+  if (!existingToken) {
+    auditAuthPasswordResetTokenInvalid(req.ip, 'not_found');
+    res.status(400).json({ error: 'Invalid or expired reset token' });
+    return;
+  }
+  if (existingToken.usedAt) {
+    auditAuthPasswordResetTokenInvalid(req.ip, 'used');
+    res.status(400).json({ error: 'Invalid or expired reset token' });
+    return;
+  }
+  if (existingToken.expiresAt < new Date()) {
+    auditAuthPasswordResetTokenInvalid(req.ip, 'expired');
+    res.status(400).json({ error: 'Invalid or expired reset token' });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
 
   try {
     const updatedUser = await prisma.$transaction(async tx => {
-      const resetToken = await tx.passwordResetToken.findUnique({
-        where: { token },
-        include: { user: { select: { id: true, email: true } } },
-      });
-
-      if (!resetToken) {
-        throw new Error('TOKEN_NOT_FOUND');
-      }
-      if (resetToken.usedAt) {
-        throw new Error('TOKEN_USED');
-      }
-      if (resetToken.expiresAt < new Date()) {
-        throw new Error('TOKEN_EXPIRED');
-      }
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      await tx.user.update({
-        where: { id: resetToken.userId },
-        data: { passwordHash },
-      });
-
+      const usedAt = new Date();
       const markUsed = await tx.passwordResetToken.updateMany({
         where: {
-          id: resetToken.id,
+          id: existingToken.id,
           usedAt: null,
+          expiresAt: { gte: usedAt },
         },
         data: {
-          usedAt: new Date(),
+          usedAt,
           usedByIp: req.ip,
           usedByUserAgent: userAgent,
         },
       });
       if (markUsed.count !== 1) {
-        throw new Error('TOKEN_USED');
+        const latestState = await tx.passwordResetToken.findUnique({
+          where: { id: existingToken.id },
+          select: { usedAt: true, expiresAt: true },
+        });
+        if (!latestState) {
+          throw new ResetTokenStateError('not_found');
+        }
+        if (latestState.usedAt) {
+          throw new ResetTokenStateError('used');
+        }
+        if (latestState.expiresAt < new Date()) {
+          throw new ResetTokenStateError('expired');
+        }
+        throw new ResetTokenStateError('used');
       }
 
-      return resetToken.user;
+      await tx.user.update({
+        where: { id: existingToken.userId },
+        data: { passwordHash },
+      });
+
+      return existingToken.user;
     });
 
     auditAuthPasswordResetSuccess(req.ip, updatedUser.id, updatedUser.email, userAgent);
     res.json({ success: true, message: 'Password reset successful.' });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'TOKEN_NOT_FOUND';
-    if (reason === 'TOKEN_EXPIRED') {
-      auditAuthPasswordResetTokenInvalid(req.ip, 'expired');
-    } else if (reason === 'TOKEN_USED') {
-      auditAuthPasswordResetTokenInvalid(req.ip, 'used');
-    } else {
-      auditAuthPasswordResetTokenInvalid(req.ip, 'not_found');
+    if (error instanceof ResetTokenStateError) {
+      auditAuthPasswordResetTokenInvalid(req.ip, error.reason);
+      res.status(400).json({ error: 'Invalid or expired reset token' });
+      return;
     }
-    res.status(400).json({ error: 'Invalid or expired reset token' });
+    console.error('Password reset failed unexpectedly:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
