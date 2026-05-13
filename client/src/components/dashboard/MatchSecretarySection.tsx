@@ -86,9 +86,13 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
   }
 
   async function createCompetition(data: CompetitionFormData) {
-    const comp = await api.post<Competition>(`/api/clubs/${clubId}/scoring/competitions`, data);
-    setCompetitions(prev => [...prev, comp]);
-    setShowCompetitionForm(false);
+    try {
+      const comp = await api.post<Competition>(`/api/clubs/${clubId}/scoring/competitions`, data);
+      setCompetitions(prev => [...prev, comp]);
+      setShowCompetitionForm(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error creating competition');
+    }
   }
 
   async function deleteCompetition(compId: string) {

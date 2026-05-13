@@ -118,6 +118,21 @@ describe('seasons', () => {
 
     expect(deleteRes.status).toBe(204);
   });
+
+  it('returns 409 on duplicate season name within same club', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Same Name' });
+
+    const dupRes = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Same Name' });
+
+    expect(dupRes.status).toBe(409);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -174,6 +189,35 @@ describe('competitions', () => {
       });
 
     expect(res.status).toBe(400);
+  });
+
+  it('returns 409 on duplicate competition name within same season', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Dup Season' });
+
+    const payload = {
+      seasonId: season.id,
+      name: 'Same Comp',
+      roundCount: 1,
+      cardsPerRound: 1,
+      maxScorePerCard: 50,
+      rounds: [{ dueDate: '2024-11-01' }],
+    };
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send(payload);
+
+    const dupRes = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send(payload);
+
+    expect(dupRes.status).toBe(409);
   });
 });
 
@@ -359,6 +403,42 @@ describe('score autosave', () => {
     expect(clearRes.status).toBe(200);
     expect(clearRes.body.score).toBeNull();
   });
+
+  it('rejects score exceeding competition maxScorePerCard', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Max Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Max Comp',
+        roundCount: 1,
+        cardsPerRound: 1,
+        maxScorePerCard: 50,
+        rounds: [{ dueDate: '2024-11-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const stub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${stub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 51 }); // exceeds maxScorePerCard of 50
+
+    expect(res.status).toBe(400);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -474,6 +554,42 @@ describe('member due cards', () => {
         roundCount: 1,
         cardsPerRound: 1,
         rounds: [{ dueDate: oldDue }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const dueRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/due`)
+      .set(authHeader(member));
+
+    expect(dueRes.status).toBe(200);
+    expect(dueRes.body).toHaveLength(0);
+  });
+
+  it('excludes cards due more than 7 days in the future', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Far Future Season' });
+
+    // Due 14 days from now — outside the +7d upper bound
+    const farFutureDue = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Far Future Comp',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: farFutureDue }],
       });
 
     await request(app)

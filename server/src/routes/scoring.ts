@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipRole, MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 
 const router = Router();
@@ -62,6 +62,7 @@ const createCompetitionSchema = z.object({
   organiser: z.string().trim().optional().nullable(),
   roundCount: z.number().int().min(1).max(52),
   cardsPerRound: z.number().int().min(1).max(20),
+  maxScorePerCard: z.number().int().min(1).max(1000).default(50),
   rounds: z.array(roundDueDateSchema),
 }).refine(d => d.rounds.length === d.roundCount, {
   message: 'rounds array length must match roundCount',
@@ -117,7 +118,11 @@ router.post('/clubs/:clubId/scoring/seasons', async (req: AuthRequest, res: Resp
 
   const season = await prisma.season.create({
     data: { clubId, name: parsed.data.name },
+  }).catch((e: unknown) => {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return null;
+    throw e;
   });
+  if (!season) { res.status(409).json({ error: 'A season with that name already exists in this club' }); return; }
   res.status(201).json(season);
 });
 
@@ -191,31 +196,41 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
   });
   if (!season) { res.status(400).json({ error: 'Season not found in this club' }); return; }
 
-  const competition = await prisma.$transaction(async tx => {
-    const comp = await tx.competition.create({
-      data: {
-        clubId,
-        seasonId: parsed.data.seasonId,
-        name: parsed.data.name,
-        organiser: parsed.data.organiser ?? null,
-        roundCount: parsed.data.roundCount,
-        cardsPerRound: parsed.data.cardsPerRound,
-      },
-    });
+  let competition;
+  try {
+    competition = await prisma.$transaction(async tx => {
+      const comp = await tx.competition.create({
+        data: {
+          clubId,
+          seasonId: parsed.data.seasonId,
+          name: parsed.data.name,
+          organiser: parsed.data.organiser ?? null,
+          roundCount: parsed.data.roundCount,
+          cardsPerRound: parsed.data.cardsPerRound,
+          maxScorePerCard: parsed.data.maxScorePerCard,
+        },
+      });
 
-    await tx.round.createMany({
-      data: parsed.data.rounds.map((r, i) => ({
-        competitionId: comp.id,
-        roundNumber: i + 1,
-        dueDate: new Date(r.dueDate),
-      })),
-    });
+      await tx.round.createMany({
+        data: parsed.data.rounds.map((r, i) => ({
+          competitionId: comp.id,
+          roundNumber: i + 1,
+          dueDate: new Date(r.dueDate),
+        })),
+      });
 
-    return tx.competition.findUnique({
-      where: { id: comp.id },
-      include: { rounds: { orderBy: { roundNumber: 'asc' } } },
+      return tx.competition.findUnique({
+        where: { id: comp.id },
+        include: { rounds: { orderBy: { roundNumber: 'asc' } } },
+      });
     });
-  });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      res.status(409).json({ error: 'A competition with that name already exists in this season' });
+      return;
+    }
+    throw e;
+  }
 
   res.status(201).json(competition);
 });
@@ -459,9 +474,20 @@ router.patch('/clubs/:clubId/scoring/scores/:scoreId', async (req: AuthRequest, 
 
   const existing = await prisma.score.findFirst({
     where: { id: scoreId, competition: { clubId } },
-    select: { id: true },
+    select: { id: true, competitionId: true },
   });
   if (!existing) { res.status(404).json({ error: 'Score not found' }); return; }
+
+  if (parsed.data.score !== null) {
+    const comp = await prisma.competition.findUnique({
+      where: { id: existing.competitionId },
+      select: { maxScorePerCard: true },
+    });
+    if (comp && parsed.data.score > comp.maxScorePerCard) {
+      res.status(400).json({ error: `Score exceeds maximum of ${comp.maxScorePerCard}` });
+      return;
+    }
+  }
 
   const updated = await prisma.score.update({
     where: { id: scoreId },
@@ -490,23 +516,36 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
     orderBy: { user: { name: 'asc' } },
   });
 
-  const scoreWhere = {
-    competition: {
-      clubId,
-      ...(seasonId && { seasonId }),
-      ...(competitionId && { id: competitionId }),
+  const memberUserIds = memberships.map(m => m.userId);
+
+  // Fetch all scores for all members in one query, ordered by updatedAt desc (needed for last-10)
+  const allScoreRows = await prisma.score.findMany({
+    where: {
+      userId: { in: memberUserIds },
+      competition: {
+        clubId,
+        ...(seasonId && { seasonId }),
+        ...(competitionId && { id: competitionId }),
+      },
+      score: { not: null },
     },
-    score: { not: null as null },
-  };
+    select: { score: true, userId: true, updatedAt: true },
+    orderBy: { updatedAt: 'desc' },
+  });
 
-  const results = await Promise.all(memberships.map(async m => {
-    const allScores = await prisma.score.findMany({
-      where: { ...scoreWhere, userId: m.userId },
-      select: { score: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-    });
+  // Group scores by userId (already desc by updatedAt, preserving order for last-10)
+  const scoresByUser = new Map<string, number[]>();
+  for (const row of allScoreRows) {
+    const arr = scoresByUser.get(row.userId);
+    if (arr) {
+      arr.push(row.score as number);
+    } else {
+      scoresByUser.set(row.userId, [row.score as number]);
+    }
+  }
 
-    const values = allScores.map(s => s.score as number);
+  const results = memberships.map(m => {
+    const values = scoresByUser.get(m.userId) ?? [];
     const allTimeAvg = values.length > 0
       ? values.reduce((a, b) => a + b, 0) / values.length
       : null;
@@ -525,7 +564,7 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
       last10Average: last10Avg !== null ? Math.round(last10Avg * 100) / 100 : null,
       bestScore,
     };
-  }));
+  });
 
   if (req.query.format === 'csv') {
     const headers = ['Name', 'Email', 'Total Cards Shot', 'All-Time Average', 'Last 10 Average', 'Best Score'];
@@ -559,18 +598,19 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
   const isMember = await ensureMemberOfClub(userId, clubId);
   if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
 
-  // Cards due: score IS NULL AND round.dueDate > (now - 7 days)
-  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Cards due: score IS NULL, dueDate within [-7d, +7d] window from today
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
   const scores = await prisma.score.findMany({
     where: {
       userId,
       score: null,
       competition: { clubId },
-      round: { dueDate: { gte: cutoff } },
+      round: { dueDate: { gte: sevenDaysAgo, lte: sevenDaysFromNow } },
     },
     include: {
-      competition: { select: { id: true, name: true } },
+      competition: { select: { id: true, name: true, maxScorePerCard: true } },
       round: { select: { id: true, roundNumber: true, dueDate: true } },
     },
     orderBy: { round: { dueDate: 'asc' } },
@@ -580,6 +620,7 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     scoreId: s.id,
     competitionId: s.competitionId,
     competitionName: s.competition.name,
+    maxScorePerCard: s.competition.maxScorePerCard,
     roundId: s.roundId,
     roundNumber: s.round.roundNumber,
     dueDate: s.round.dueDate,

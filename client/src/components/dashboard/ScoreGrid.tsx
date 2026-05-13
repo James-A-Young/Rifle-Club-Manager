@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { ScoreSheet } from '../../types/club';
 
@@ -24,6 +24,19 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
   });
 
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const statusTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Clear all pending debounce timers
+      Object.values(debounceTimers.current).forEach(clearTimeout);
+      // Clear all pending status-reset timers
+      Object.values(statusTimers.current).forEach(clearTimeout);
+    };
+  }, []);
 
   const save = useCallback(async (scoreId: string, raw: string) => {
     const trimmed = raw.trim();
@@ -34,13 +47,19 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
     setCellStatus(prev => ({ ...prev, [scoreId]: 'saving' }));
     try {
       await api.patch(`/api/clubs/${clubId}/scoring/scores/${scoreId}`, { score: value });
+      if (!mountedRef.current) return;
       setCellStatus(prev => ({ ...prev, [scoreId]: 'saved' }));
       onScoreUpdated(scoreId, value);
-      setTimeout(() => setCellStatus(prev => {
-        if (prev[scoreId] === 'saved') return { ...prev, [scoreId]: 'idle' };
-        return prev;
-      }), 1500);
+      const t = setTimeout(() => {
+        if (!mountedRef.current) return;
+        setCellStatus(prev => {
+          if (prev[scoreId] === 'saved') return { ...prev, [scoreId]: 'idle' };
+          return prev;
+        });
+      }, 1500);
+      statusTimers.current[scoreId] = t;
     } catch {
+      if (!mountedRef.current) return;
       setCellStatus(prev => ({ ...prev, [scoreId]: 'error' }));
     }
   }, [clubId, onScoreUpdated]);

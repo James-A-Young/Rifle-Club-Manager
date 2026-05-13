@@ -30,8 +30,8 @@ export default function Dashboard() {
   const [joinClubId, setJoinClubId] = useState('');
   const [joinMsg, setJoinMsg] = useState('');
 
-  // Scoring
-  const [dueCards, setDueCards] = useState<DueCard[]>([]);
+  // Scoring — keyed by clubId so stale cards are replaced on each load
+  const [dueCardsByClub, setDueCardsByClub] = useState<Record<string, DueCard[]>>({});
   const [avgsByClub, setAvgsByClub] = useState<Record<string, ScoringAverages & { clubName: string }>>({});
 
   useEffect(() => {
@@ -50,11 +50,7 @@ export default function Dashboard() {
         // Load scoring data per club in background (non-blocking)
         c.forEach(club => {
           api.get<DueCard[]>(`/api/clubs/${club.id}/scoring/mine/due`)
-            .then(cards => setDueCards(prev => {
-              // Keep cards from all other clubs, then append the freshly-loaded ones for this club
-              const newScoreIds = new Set(cards.map(nc => nc.scoreId));
-              return [...prev.filter(d => !newScoreIds.has(d.scoreId)), ...cards];
-            }))
+            .then(cards => setDueCardsByClub(prev => ({ ...prev, [club.id]: cards })))
             .catch(() => { /* silently ignore if club has no scoring */ });
 
           api.get<ScoringAverages>(`/api/clubs/${club.id}/scoring/mine/averages`)
@@ -107,19 +103,11 @@ export default function Dashboard() {
     ? clubsWithLast10.reduce((acc, a) => acc + (a.last10Average as number), 0) / clubsWithLast10.length
     : null;
 
-  // Sort due cards by dueDate ascending; group for display
+  // Flatten all due cards from all clubs and sort by dueDate ascending
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const sortedDueCards = [...dueCards].sort(
-    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-  );
-
-  // Group due cards by date string
-  const dueDateGroups: Record<string, DueCard[]> = {};
-  for (const card of sortedDueCards) {
-    const dateKey = new Date(card.dueDate).toLocaleDateString();
-    if (!dueDateGroups[dateKey]) dueDateGroups[dateKey] = [];
-    dueDateGroups[dateKey].push(card);
-  }
+  const sortedDueCards = Object.values(dueCardsByClub)
+    .flat()
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   if (loading) return <div>Loading…</div>;
 

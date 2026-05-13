@@ -641,7 +641,7 @@ export default function ClubDashboard() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <DashboardTabNav activeTab={activeTab} onChange={setActiveTab} />
+      <DashboardTabNav activeTab={activeTab} isAdmin={isAdmin} onChange={setActiveTab} />
 
       {activeTab === 'settings' && (
         <>
