@@ -31,6 +31,14 @@ Public registration without a valid invite token is blocked. To add a new member
 3. The invited person registers at `/register?inviteToken=<token>` using the email the invite was sent to.
 4. The resulting membership is **Pending** until an admin approves it.
 
+When Resend is configured, invite emails are sent by the backend automatically when an invite is created.
+
+### Password Reset
+
+- Users can request a one-time password reset link from `/forgot-password`.
+- Links are single-use, time-limited, and delivered by email when Resend is configured.
+- Reset completion is handled at `/reset-password`.
+
 ### First-Deploy Bootstrap
 
 When the database has **zero users**, a one-time bootstrap flow is available at `/setup`:
@@ -113,6 +121,9 @@ PORT=3000
 CLIENT_ORIGIN=http://localhost:5173
 TURNSTILE_SECRET_KEY=
 VITE_TURNSTILE_SITE_KEY=
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+APP_ORIGIN=http://localhost:5173
 ```
 
 ### Optional: Google Wallet Membership Cards
@@ -159,6 +170,21 @@ Behavior:
 - If `TURNSTILE_SECRET_KEY` is set, `POST /api/auth/register` requires a valid Turnstile token
 - If `VITE_TURNSTILE_SITE_KEY` is set, the register page renders the Turnstile widget
 - Leave both empty to disable captcha in local/dev environments
+
+### Optional: Resend Email Delivery (Invites + Password Reset)
+
+To enable server-side invite delivery and password reset emails:
+
+```env
+RESEND_API_KEY=<resend_api_key>
+RESEND_FROM_EMAIL=<verified_sender@yourdomain.com>
+APP_ORIGIN=https://app.example.com
+```
+
+Behavior:
+- `APP_ORIGIN` is used to generate invite-accept and password-reset links
+- If `APP_ORIGIN` is omitted, the server falls back to `CLIENT_ORIGIN`
+- If Resend variables are not set, app features remain functional but emails are not sent
 
 Important: the server code does not automatically load `.env` by itself, so for local development load these vars into your shell before running server commands.
 

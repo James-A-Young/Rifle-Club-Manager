@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Bootstrap from './pages/Bootstrap';
 import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
@@ -75,6 +77,8 @@ function AppRoutes() {
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterRoute />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/setup" element={<Bootstrap />} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />

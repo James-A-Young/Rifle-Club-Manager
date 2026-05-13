@@ -110,8 +110,9 @@ export default function InvitesSection({
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => onSendEmail(invite)}
+                    disabled={Boolean(invite.redeemedAt) || new Date(invite.expiresAt) < new Date()}
                   >
-                    Send Email
+                    Resend Email
                   </button>
                 </div>
               </td>

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { MembershipRole, MembershipStatus } from '@prisma/client';
@@ -10,11 +11,16 @@ import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
 import {
   auditAuthLoginFailed,
   auditAuthLoginSuccess,
+  auditAuthPasswordResetRequested,
+  auditAuthPasswordResetSuccess,
+  auditAuthPasswordResetTokenInvalid,
   auditAuthRegisterSuccess,
 } from '../middleware/auditLog';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
+import { emailService, sanitizeUserAgent } from '../services/email';
 
 const router = Router();
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -39,6 +45,15 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
 });
 
 const bootstrapSchema = z.object({
@@ -309,6 +324,123 @@ router.post('/login', async (req: Request, res: Response) => {
     token,
     user: { id: user.id, name: user.name, email: user.email },
   });
+});
+
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, email: true, name: true },
+  });
+
+  if (!user) {
+    res.json({ success: true, message: 'If the account exists, a password reset email has been sent.' });
+    return;
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
+
+  await prisma.$transaction(async tx => {
+    await tx.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: {
+        usedAt: new Date(),
+        usedByIp: req.ip,
+        usedByUserAgent: 'superseded',
+      },
+    });
+
+    await tx.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt,
+      },
+    });
+  });
+
+  const emailSent = await emailService.sendPasswordResetEmail({
+    to: user.email,
+    name: user.name,
+    resetToken: token,
+    expiresInMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
+  });
+
+  auditAuthPasswordResetRequested(req.ip, user.id, user.email, emailSent);
+  res.json({ success: true, message: 'If the account exists, a password reset email has been sent.' });
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const { token, password } = parsed.data;
+  const userAgent = sanitizeUserAgent(req.get('user-agent'));
+
+  try {
+    const updatedUser = await prisma.$transaction(async tx => {
+      const resetToken = await tx.passwordResetToken.findUnique({
+        where: { token },
+        include: { user: { select: { id: true, email: true } } },
+      });
+
+      if (!resetToken) {
+        throw new Error('TOKEN_NOT_FOUND');
+      }
+      if (resetToken.usedAt) {
+        throw new Error('TOKEN_USED');
+      }
+      if (resetToken.expiresAt < new Date()) {
+        throw new Error('TOKEN_EXPIRED');
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      await tx.user.update({
+        where: { id: resetToken.userId },
+        data: { passwordHash },
+      });
+
+      const markUsed = await tx.passwordResetToken.updateMany({
+        where: {
+          id: resetToken.id,
+          usedAt: null,
+        },
+        data: {
+          usedAt: new Date(),
+          usedByIp: req.ip,
+          usedByUserAgent: userAgent,
+        },
+      });
+      if (markUsed.count !== 1) {
+        throw new Error('TOKEN_USED');
+      }
+
+      return resetToken.user;
+    });
+
+    auditAuthPasswordResetSuccess(req.ip, updatedUser.id, updatedUser.email, userAgent);
+    res.json({ success: true, message: 'Password reset successful.' });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'TOKEN_NOT_FOUND';
+    if (reason === 'TOKEN_EXPIRED') {
+      auditAuthPasswordResetTokenInvalid(req.ip, 'expired');
+    } else if (reason === 'TOKEN_USED') {
+      auditAuthPasswordResetTokenInvalid(req.ip, 'used');
+    } else {
+      auditAuthPasswordResetTokenInvalid(req.ip, 'not_found');
+    }
+    res.status(400).json({ error: 'Invalid or expired reset token' });
+  }
 });
 
 // Logout endpoint — clears the auth cookie server-side.
