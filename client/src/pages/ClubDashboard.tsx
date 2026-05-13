@@ -27,6 +27,7 @@ import MembersSection from '../components/dashboard/MembersSection';
 import InvitesSection from '../components/dashboard/InvitesSection';
 import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
 import AmmunitionSalesSection from '../components/dashboard/AmmunitionSalesSection';
+import MatchSecretarySection from '../components/dashboard/MatchSecretarySection';
 
 interface ActiveVisitor {
   id: string;
@@ -74,7 +75,7 @@ export default function ClubDashboard() {
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
-  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'settings'>('operations');
+  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings'>('operations');
 
   // Club profile edit
   const [editingClubProfile, setEditingClubProfile] = useState(false);
@@ -630,12 +631,17 @@ export default function ClubDashboard() {
               Ammunition History
             </Link>
           )}
+          {isAdmin && (
+            <Link to={`/clubs/${id}/scores-report`} className="btn btn-secondary btn-sm">
+              Scores Report
+            </Link>
+          )}
         </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <DashboardTabNav activeTab={activeTab} onChange={setActiveTab} />
+      <DashboardTabNav activeTab={activeTab} isAdmin={isAdmin} onChange={setActiveTab} />
 
       {activeTab === 'settings' && (
         <>
@@ -806,6 +812,16 @@ export default function ClubDashboard() {
               onSubmitTransfer={submitStockTransfer}
               onViewHistory={() => navigate(`/clubs/${id}/ammunition-history`)}
             />
+          )}
+        </>
+      )}
+
+      {activeTab === 'match-secretary' && (
+        <>
+          {!isAdmin ? (
+            <div className="alert alert-info">Only club admins can access match secretary features.</div>
+          ) : (
+            <MatchSecretarySection clubId={id ?? ''} members={members} />
           )}
         </>
       )}

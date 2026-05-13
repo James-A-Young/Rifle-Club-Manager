@@ -1,13 +1,14 @@
 import React from 'react';
 
-type Tab = 'operations' | 'ammunition' | 'settings';
+type Tab = 'operations' | 'ammunition' | 'match-secretary' | 'settings';
 
 interface Props {
   activeTab: Tab;
+  isAdmin: boolean;
   onChange: (tab: Tab) => void;
 }
 
-export default function DashboardTabNav({ activeTab, onChange }: Props) {
+export default function DashboardTabNav({ activeTab, isAdmin, onChange }: Props) {
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: '0.75rem 1.5rem',
     border: 'none',
@@ -50,6 +51,16 @@ export default function DashboardTabNav({ activeTab, onChange }: Props) {
       >
         Ammunition Sales
       </button>
+      {isAdmin && (
+        <button
+          onClick={() => onChange('match-secretary')}
+          style={tabStyle('match-secretary')}
+          onMouseEnter={e => handleMouseEnter('match-secretary', e)}
+          onMouseLeave={e => handleMouseLeave('match-secretary', e)}
+        >
+          Match Secretary
+        </button>
+      )}
       <button
         onClick={() => onChange('settings')}
         style={tabStyle('settings')}
