@@ -44,7 +44,7 @@ interface ClubMembership {
 }
 
 const ISSUE_INTERVAL_MS = 45_000;
-const REFRESH_VISITS_INTERVAL_MS = 5_000;
+const REFRESH_VISITS_INTERVAL_MS = 120_000;
 
 export default function KioskSignIn() {
   const { token } = useParams<{ token: string }>();

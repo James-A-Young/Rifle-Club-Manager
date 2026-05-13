@@ -146,7 +146,7 @@ export default function ClubDashboard() {
   const [transferToSafeId, setTransferToSafeId] = useState('');
   const [transferQuantity, setTransferQuantity] = useState(1);
 
-  const REFRESH_VISITS_INTERVAL_MS = 5_000;
+  const REFRESH_VISITS_INTERVAL_MS = 120_000;
 
   useEffect(() => {
     if (!id) return;
