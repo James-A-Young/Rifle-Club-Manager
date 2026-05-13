@@ -500,6 +500,69 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
 
   const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
   const competitionId = typeof req.query.competitionId === 'string' ? req.query.competitionId : undefined;
+  const format = typeof req.query.format === 'string' ? req.query.format : undefined;
+
+  // Raw score export for a single season
+  if (format === 'raw-csv') {
+    if (!seasonId) {
+      res.status(400).json({ error: 'seasonId is required for raw CSV export' });
+      return;
+    }
+
+    const season = await prisma.season.findFirst({
+      where: { id: seasonId, clubId },
+      select: { id: true, name: true },
+    });
+    if (!season) { res.status(404).json({ error: 'Season not found' }); return; }
+
+    const scoreRows = await prisma.score.findMany({
+      where: {
+        competition: {
+          clubId,
+          seasonId,
+          ...(competitionId && { id: competitionId }),
+        },
+      },
+      select: {
+        cardNumber: true,
+        score: true,
+        updatedAt: true,
+        competition: { select: { name: true } },
+        round: { select: { roundNumber: true, dueDate: true } },
+        user: { select: { name: true, email: true } },
+      },
+    });
+
+    const sorted = [...scoreRows].sort((a, b) => {
+      const byCompetition = a.competition.name.localeCompare(b.competition.name);
+      if (byCompetition !== 0) return byCompetition;
+      const byRound = a.round.roundNumber - b.round.roundNumber;
+      if (byRound !== 0) return byRound;
+      const byCard = a.cardNumber - b.cardNumber;
+      if (byCard !== 0) return byCard;
+      return a.user.name.localeCompare(b.user.name);
+    });
+
+    const headers = ['Season', 'Competition', 'Round', 'Due Date', 'Card Number', 'Member Name', 'Member Email', 'Score', 'Updated At'];
+    const rows = sorted.map(r => [
+      escapeCsvCell(season.name),
+      escapeCsvCell(r.competition.name),
+      escapeCsvCell(r.round.roundNumber),
+      escapeCsvCell(r.round.dueDate.toISOString()),
+      escapeCsvCell(r.cardNumber),
+      escapeCsvCell(r.user.name),
+      escapeCsvCell(r.user.email),
+      escapeCsvCell(r.score ?? ''),
+      escapeCsvCell(r.updatedAt.toISOString()),
+    ].join(','));
+
+    const safeSeason = season.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'season';
+    const csv = [headers.map(h => escapeCsvCell(h)).join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="raw-scores-${safeSeason}.csv"`);
+    res.send(csv);
+    return;
+  }
 
   // Get all approved members of the club
   const memberships = await prisma.clubMembership.findMany({
@@ -558,7 +621,7 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
     };
   });
 
-  if (req.query.format === 'csv') {
+  if (format === 'csv') {
     const headers = ['Name', 'Email', 'Total Cards Shot', 'All-Time Average', 'Last 10 Average', 'Best Score'];
     const rows = results.map(r => [
       escapeCsvCell(r.name),

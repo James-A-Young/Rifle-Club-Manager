@@ -452,6 +452,64 @@ describe('averages report', () => {
     expect(memberRow.allTimeAverage).toBe(48);
     expect(memberRow.totalCardsShot).toBe(2);
   });
+
+  it('exports raw season scores as CSV', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Raw Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Raw Comp',
+        roundCount: 1,
+        cardsPerRound: 2,
+        rounds: [{ dueDate: '2024-11-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const stubs = await prisma.score.findMany({
+      where: { competitionId: comp.id, userId: member.id },
+      orderBy: { cardNumber: 'asc' },
+    });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${stubs[0].id}`)
+      .set(authHeader(admin))
+      .send({ score: 46 });
+
+    const csvRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/report?format=raw-csv&seasonId=${season.id}`)
+      .set(authHeader(admin));
+
+    expect(csvRes.status).toBe(200);
+    expect(String(csvRes.headers['content-type'])).toContain('text/csv');
+    expect(String(csvRes.headers['content-disposition'])).toContain('raw-scores-raw-season.csv');
+    expect(csvRes.text).toContain('"Season","Competition","Round","Due Date","Card Number","Member Name","Member Email","Score","Updated At"');
+    expect(csvRes.text).toContain('"Raw Season","Raw Comp","1"');
+    expect(csvRes.text).toContain('"46"');
+  });
+
+  it('rejects raw CSV export without seasonId', async () => {
+    const { admin, club } = await createClubWithAdmin();
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/report?format=raw-csv`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('seasonId is required');
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -26,6 +26,7 @@ export default function ScoresReport() {
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingRaw, setExportingRaw] = useState(false);
   const [error, setError] = useState('');
 
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
@@ -96,6 +97,34 @@ export default function ScoresReport() {
     }
   }
 
+  async function exportRawSeasonCsv() {
+    if (!id || !selectedSeasonId) return;
+    setExportingRaw(true);
+    try {
+      const params = new URLSearchParams({ format: 'raw-csv', seasonId: selectedSeasonId });
+      if (selectedCompetitionId) params.set('competitionId', selectedCompetitionId);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/clubs/${id}/scoring/report?${params.toString()}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Raw export failed');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'raw-scores-season.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Raw export error');
+    } finally {
+      setExportingRaw(false);
+    }
+  }
+
   const filteredRows = useMemo(() => {
     if (!search.trim()) return rows;
     const q = search.toLowerCase();
@@ -112,6 +141,14 @@ export default function ScoresReport() {
           <Link to={`/clubs/${id}`} className="btn btn-secondary btn-sm">← Back to Dashboard</Link>
           <button className="btn btn-primary btn-sm" onClick={exportCsv} disabled={exporting || loading}>
             {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={exportRawSeasonCsv}
+            disabled={exportingRaw || loading || !selectedSeasonId}
+            title={!selectedSeasonId ? 'Select a season to export raw scores' : undefined}
+          >
+            {exportingRaw ? 'Exporting…' : 'Export Raw Season CSV'}
           </button>
         </div>
       </div>
