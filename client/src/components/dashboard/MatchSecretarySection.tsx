@@ -4,6 +4,8 @@ import { Season, Competition, CompetitionEntry, ScoreSheet, Member } from '../..
 import ScoreGrid from './ScoreGrid';
 import CompetitionForm, { CompetitionFormData } from './CompetitionForm';
 
+const SHOW_ARCHIVED_STORAGE_KEY = 'matchSecretary.showArchivedSeasons';
+
 interface Props {
   clubId: string;
   members: Member[];
@@ -20,6 +22,10 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
   const [showSeasonForm, setShowSeasonForm] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
   const [creatingSeason, setCreatingSeason] = useState(false);
+  const [showArchivedSeasons, setShowArchivedSeasons] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(SHOW_ARCHIVED_STORAGE_KEY) === 'true';
+  });
 
   // Competition form state
   const [showCompetitionForm, setShowCompetitionForm] = useState(false);
@@ -68,6 +74,23 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
       loadCompetitions(selectedSeasonId);
     }
   }, [selectedSeasonId, loadCompetitions]);
+
+  useEffect(() => {
+    const visible = showArchivedSeasons ? seasons : seasons.filter(s => !s.isArchived);
+    if (visible.length === 0) {
+      if (selectedSeasonId) setSelectedSeasonId('');
+      return;
+    }
+    const isSelectedVisible = visible.some(s => s.id === selectedSeasonId);
+    if (!isSelectedVisible) {
+      setSelectedSeasonId(visible[0].id);
+    }
+  }, [seasons, selectedSeasonId, showArchivedSeasons]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SHOW_ARCHIVED_STORAGE_KEY, String(showArchivedSeasons));
+  }, [showArchivedSeasons]);
 
   async function createSeason() {
     if (!newSeasonName.trim()) return;
@@ -189,6 +212,7 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
     }
   }
 
+  const visibleSeasons = showArchivedSeasons ? seasons : seasons.filter(s => !s.isArchived);
   const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
 
   return (
@@ -231,13 +255,27 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
               value={selectedSeasonId}
               onChange={e => setSelectedSeasonId(e.target.value)}
               style={{ width: 'auto', minWidth: 200 }}
+              disabled={visibleSeasons.length === 0}
             >
-              {seasons.map(s => (
+              {visibleSeasons.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name}{s.isArchived ? ' (archived)' : ''}
                 </option>
               ))}
             </select>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginBottom: 0, fontSize: '0.9rem' }}>
+              <input
+                type="checkbox"
+                checked={showArchivedSeasons}
+                onChange={e => setShowArchivedSeasons(e.target.checked)}
+              />
+              Show archived
+            </label>
+            {visibleSeasons.length === 0 && (
+              <span style={{ color: 'var(--gray-600)', fontSize: '0.875rem' }}>
+                No active seasons.
+              </span>
+            )}
             {selectedSeason && (
               <button
                 className="btn btn-secondary btn-sm"
