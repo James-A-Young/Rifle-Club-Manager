@@ -62,7 +62,6 @@ const createCompetitionSchema = z.object({
   organiser: z.string().trim().optional().nullable(),
   roundCount: z.number().int().min(1).max(52),
   cardsPerRound: z.number().int().min(1).max(20),
-  maxScorePerCard: z.number().int().min(1).max(1000).default(50),
   rounds: z.array(roundDueDateSchema),
 }).refine(d => d.rounds.length === d.roundCount, {
   message: 'rounds array length must match roundCount',
@@ -212,7 +211,6 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
           organiser: parsed.data.organiser ?? null,
           roundCount: parsed.data.roundCount,
           cardsPerRound: parsed.data.cardsPerRound,
-          maxScorePerCard: parsed.data.maxScorePerCard,
         },
       });
 
@@ -483,17 +481,6 @@ router.patch('/clubs/:clubId/scoring/scores/:scoreId', async (req: AuthRequest, 
   });
   if (!existing) { res.status(404).json({ error: 'Score not found' }); return; }
 
-  if (parsed.data.score !== null) {
-    const comp = await prisma.competition.findUnique({
-      where: { id: existing.competitionId },
-      select: { maxScorePerCard: true },
-    });
-    if (comp && parsed.data.score > comp.maxScorePerCard) {
-      res.status(400).json({ error: `Score exceeds maximum of ${comp.maxScorePerCard}` });
-      return;
-    }
-  }
-
   const updated = await prisma.score.update({
     where: { id: scoreId },
     data: { score: parsed.data.score },
@@ -615,7 +602,7 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
       round: { dueDate: { gte: sevenDaysAgo, lte: sevenDaysFromNow } },
     },
     include: {
-      competition: { select: { id: true, name: true, maxScorePerCard: true } },
+      competition: { select: { id: true, name: true} },
       round: { select: { id: true, roundNumber: true, dueDate: true } },
     },
     orderBy: { round: { dueDate: 'asc' } },
@@ -625,7 +612,6 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     scoreId: s.id,
     competitionId: s.competitionId,
     competitionName: s.competition.name,
-    maxScorePerCard: s.competition.maxScorePerCard,
     roundId: s.roundId,
     roundNumber: s.round.roundNumber,
     dueDate: s.round.dueDate,

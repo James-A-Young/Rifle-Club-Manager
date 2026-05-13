@@ -203,7 +203,6 @@ describe('competitions', () => {
       name: 'Same Comp',
       roundCount: 1,
       cardsPerRound: 1,
-      maxScorePerCard: 50,
       rounds: [{ dueDate: '2024-11-01' }],
     };
 
@@ -402,42 +401,6 @@ describe('score autosave', () => {
 
     expect(clearRes.status).toBe(200);
     expect(clearRes.body.score).toBeNull();
-  });
-
-  it('rejects score exceeding competition maxScorePerCard', async () => {
-    const { admin, club } = await createClubWithAdmin();
-    const member = await addApprovedMember(club.id);
-
-    const { body: season } = await request(app)
-      .post(`/api/clubs/${club.id}/scoring/seasons`)
-      .set(authHeader(admin))
-      .send({ name: 'Max Season' });
-
-    const { body: comp } = await request(app)
-      .post(`/api/clubs/${club.id}/scoring/competitions`)
-      .set(authHeader(admin))
-      .send({
-        seasonId: season.id,
-        name: 'Max Comp',
-        roundCount: 1,
-        cardsPerRound: 1,
-        maxScorePerCard: 50,
-        rounds: [{ dueDate: '2024-11-01' }],
-      });
-
-    await request(app)
-      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
-      .set(authHeader(admin))
-      .send({ userIds: [member.id] });
-
-    const stub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
-
-    const res = await request(app)
-      .patch(`/api/clubs/${club.id}/scoring/scores/${stub!.id}`)
-      .set(authHeader(admin))
-      .send({ score: 51 }); // exceeds maxScorePerCard of 50
-
-    expect(res.status).toBe(400);
   });
 });
 
