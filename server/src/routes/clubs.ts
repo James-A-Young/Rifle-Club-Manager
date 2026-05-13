@@ -10,6 +10,7 @@ import {
   auditMemberStatusChange,
   auditMemberRoleChange,
 } from '../middleware/auditLog';
+import { emailService } from '../services/email';
 
 const router = Router();
 
@@ -345,7 +346,76 @@ router.post('/:id/invites', async (req: AuthRequest, res: Response) => {
     },
   });
 
-  res.status(201).json(invite);
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { name: true },
+  });
+  const emailSent = await emailService.sendInviteEmail({
+    to: invite.email,
+    clubName: club?.name ?? 'our club',
+    role: invite.role,
+    inviteToken: invite.token,
+  });
+
+  res.status(201).json({ ...invite, emailSent });
+});
+
+router.post('/:id/invites/:inviteId/send', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const inviteId = req.params.inviteId as string;
+
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const invite = await prisma.clubInvite.findFirst({
+    where: {
+      id: inviteId,
+      clubId,
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      token: true,
+      redeemedAt: true,
+      expiresAt: true,
+    },
+  });
+
+  if (!invite) {
+    res.status(404).json({ error: 'Invite not found' });
+    return;
+  }
+  if (invite.redeemedAt) {
+    res.status(409).json({ error: 'Invite already redeemed' });
+    return;
+  }
+  if (invite.expiresAt < new Date()) {
+    res.status(410).json({ error: 'Invite expired' });
+    return;
+  }
+
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { name: true },
+  });
+  const emailSent = await emailService.sendInviteEmail({
+    to: invite.email,
+    clubName: club?.name ?? 'our club',
+    role: invite.role,
+    inviteToken: invite.token,
+  });
+
+  res.json({
+    success: true,
+    emailSent,
+    message: emailSent
+      ? 'Invite email sent.'
+      : 'Invite was found, but email sending is disabled or failed.',
+  });
 });
 
 router.get('/:id/invites', async (req: AuthRequest, res: Response) => {

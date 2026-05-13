@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { MembershipRole, MembershipStatus } from '@prisma/client';
@@ -10,11 +11,26 @@ import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
 import {
   auditAuthLoginFailed,
   auditAuthLoginSuccess,
+  auditAuthPasswordResetRequested,
+  auditAuthPasswordResetSuccess,
+  auditAuthPasswordResetTokenInvalid,
   auditAuthRegisterSuccess,
 } from '../middleware/auditLog';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
+import { emailService, sanitizeUserAgent } from '../services/email';
 
 const router = Router();
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+type ResetTokenFailureReason = 'not_found' | 'expired' | 'used';
+
+class ResetTokenStateError extends Error {
+  readonly reason: ResetTokenFailureReason;
+
+  constructor(reason: ResetTokenFailureReason) {
+    super(reason);
+    this.reason = reason;
+  }
+}
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -39,6 +55,15 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
 });
 
 const bootstrapSchema = z.object({
@@ -309,6 +334,140 @@ router.post('/login', async (req: Request, res: Response) => {
     token,
     user: { id: user.id, name: user.name, email: user.email },
   });
+});
+
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, email: true, name: true },
+  });
+
+  if (!user) {
+    res.json({ success: true, message: 'If the account exists, a password reset email has been sent.' });
+    return;
+  }
+
+  const token = `pwreset_${crypto.randomBytes(32).toString('hex')}`;
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
+
+  await prisma.$transaction(async tx => {
+    await tx.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: {
+        usedAt: new Date(),
+        usedByIp: req.ip,
+        usedByUserAgent: 'superseded',
+      },
+    });
+
+    await tx.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt,
+      },
+    });
+  });
+
+  const emailSent = await emailService.sendPasswordResetEmail({
+    to: user.email,
+    name: user.name,
+    resetToken: token,
+    expiresInMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES,
+  });
+
+  auditAuthPasswordResetRequested(req.ip, user.id, user.email, emailSent);
+  res.json({ success: true, message: 'If the account exists, a password reset email has been sent.' });
+});
+
+router.post('/reset-password', async (req: Request, res: Response) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const { token, password } = parsed.data;
+  const userAgent = sanitizeUserAgent(req.get('user-agent'));
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  try {
+    const updatedUser = await prisma.$transaction(async tx => {
+      const existingToken = await tx.passwordResetToken.findUnique({
+        where: { token },
+        include: { user: { select: { id: true, email: true } } },
+      });
+      if (!existingToken) {
+        throw new ResetTokenStateError('not_found');
+      }
+      if (existingToken.usedAt) {
+        throw new ResetTokenStateError('used');
+      }
+      if (existingToken.expiresAt < new Date()) {
+        throw new ResetTokenStateError('expired');
+      }
+
+      const usedAt = new Date();
+      const markUsed = await tx.passwordResetToken.updateMany({
+        where: {
+          id: existingToken.id,
+          usedAt: null,
+          expiresAt: { gte: usedAt },
+        },
+        data: {
+          usedAt,
+          usedByIp: req.ip,
+          usedByUserAgent: userAgent,
+        },
+      });
+      if (markUsed.count !== 1) {
+        const latestState = await tx.passwordResetToken.findUnique({
+          where: { id: existingToken.id },
+          select: { usedAt: true, expiresAt: true },
+        });
+        if (!latestState) {
+          throw new ResetTokenStateError('not_found');
+        }
+        if (latestState.usedAt) {
+          throw new ResetTokenStateError('used');
+        }
+        if (latestState.expiresAt < usedAt) {
+          throw new ResetTokenStateError('expired');
+        }
+        console.error('Password reset token entered inconsistent state during consumption', {
+          resetTokenId: existingToken.id,
+          usedAt: latestState.usedAt,
+          expiresAt: latestState.expiresAt,
+        });
+        throw new Error('TOKEN_STATE_INCONSISTENT');
+      }
+
+      await tx.user.update({
+        where: { id: existingToken.userId },
+        data: { passwordHash },
+      });
+
+      return existingToken.user;
+    });
+
+    auditAuthPasswordResetSuccess(req.ip, updatedUser.id, updatedUser.email, userAgent);
+    res.json({ success: true, message: 'Password reset successful.' });
+  } catch (error) {
+    if (error instanceof ResetTokenStateError) {
+      auditAuthPasswordResetTokenInvalid(req.ip, error.reason);
+      res.status(400).json({ error: 'Invalid or expired reset token' });
+      return;
+    }
+    console.error('Password reset failed unexpectedly:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 // Logout endpoint — clears the auth cookie server-side.

@@ -61,6 +61,7 @@ export interface ClubInvite {
   expiresAt: string;
   redeemedAt: string | null;
   createdAt: string;
+  emailSent?: boolean;
 }
 
 export interface ClubSettings {

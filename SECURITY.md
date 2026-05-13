@@ -113,6 +113,9 @@ Structured JSON security events are emitted to stdout by `server/src/middleware/
 | `SECURITY_AUTH_LOGIN_FAILED` | Wrong password or unknown email |
 | `SECURITY_AUTH_LOGIN_SUCCESS` | Successful login |
 | `SECURITY_AUTH_REGISTER_SUCCESS` | New registration |
+| `SECURITY_AUTH_PASSWORD_RESET_REQUESTED` | Password reset request accepted (generic response path) |
+| `SECURITY_AUTH_PASSWORD_RESET_TOKEN_INVALID` | Invalid / expired / used password reset token submitted |
+| `SECURITY_AUTH_PASSWORD_RESET_SUCCESS` | Password successfully reset via one-time token |
 | `SECURITY_FIREARM_DELETE_DENIED` | IDOR attempt on firearm deletion |
 | `SECURITY_FIREARM_LINK_DENIED` | Out-of-scope firearm supplied at sign-in |
 | `SECURITY_MEMBER_STATUS_CHANGE` | Admin approves/rejects a member |
@@ -139,6 +142,9 @@ All GitHub Actions steps are pinned to **full commit SHAs** (not mutable version
 | `CLIENT_ORIGIN` | ✅ Yes | Exact origin of the React SPA (e.g. `https://app.example.com`) |
 | `TURNSTILE_SECRET_KEY` | Conditional | Required to enforce captcha verification on signup |
 | `VITE_TURNSTILE_SITE_KEY` | Conditional | Client site key for rendering Turnstile widget on register page |
+| `RESEND_API_KEY` | Conditional | Required to send invite and password-reset emails |
+| `RESEND_FROM_EMAIL` | Conditional | Verified sender address for Resend |
+| `APP_ORIGIN` | Conditional | Public SPA origin used for invite/reset email links |
 | `NODE_ENV` | ✅ Yes | Set to `production` in production |
 | `PORT` | No | Defaults to `3000` |
 | `GOOGLE_WALLET_ISSUER_ID` | Conditional | Required only if pass issuing is enabled |

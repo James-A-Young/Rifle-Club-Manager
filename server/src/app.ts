@@ -86,12 +86,14 @@ export function createApp() {
     windowMs: 15 * 60 * 1000,
     max: 300,
     message: { error: 'Too many requests, please try again later.' },
+    skip: () => process.env.NODE_ENV === 'test',
   });
 
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 15,
     message: { error: 'Too many requests, please try again later.' },
+    skip: () => process.env.NODE_ENV === 'test',
   });
 
   app.use(globalLimiter);

@@ -58,6 +58,39 @@ export function auditAuthRegisterSuccess(ip: string | undefined, userId: string,
   write('INFO', 'SECURITY_AUTH_REGISTER_SUCCESS', { ip, userId, email });
 }
 
+/** Record a password reset request (generic successful response path). */
+export function auditAuthPasswordResetRequested(
+  ip: string | undefined,
+  userId: string,
+  email: string,
+  emailSent: boolean,
+): void {
+  write('INFO', 'SECURITY_AUTH_PASSWORD_RESET_REQUESTED', {
+    ip,
+    userId,
+    email,
+    emailSent,
+  });
+}
+
+/** Record failed password reset token usage attempts. */
+export function auditAuthPasswordResetTokenInvalid(
+  ip: string | undefined,
+  reason: 'not_found' | 'expired' | 'used',
+): void {
+  write('WARN', 'SECURITY_AUTH_PASSWORD_RESET_TOKEN_INVALID', { ip, reason });
+}
+
+/** Record successful password reset completion. */
+export function auditAuthPasswordResetSuccess(
+  ip: string | undefined,
+  userId: string,
+  email: string,
+  userAgent?: string | null,
+): void {
+  write('INFO', 'SECURITY_AUTH_PASSWORD_RESET_SUCCESS', { ip, userId, email, userAgent });
+}
+
 /** Record rejection of an invalid / expired JWT. */
 export function auditAuthTokenInvalid(ip: string | undefined, reason: string): void {
   write('WARN', 'SECURITY_AUTH_TOKEN_INVALID', { ip, reason });

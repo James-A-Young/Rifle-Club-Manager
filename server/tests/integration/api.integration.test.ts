@@ -7,10 +7,15 @@ import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
+import { emailService } from '../../src/services/email';
 
 const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
 const unique = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2)}`;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function createUser(overrides: Partial<{
   name: string;
@@ -95,7 +100,6 @@ async function registerViaInvite(clubId: string, createdByUserId: string, opts: 
 
 describe('auth routes', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
     if (ORIGINAL_TURNSTILE_SECRET_KEY) {
       process.env.TURNSTILE_SECRET_KEY = ORIGINAL_TURNSTILE_SECRET_KEY;
     } else {
@@ -236,6 +240,101 @@ describe('auth routes', () => {
       .send({ email, password: 'wrong' });
 
     expect(res.status).toBe(401);
+  });
+
+  it('forgot-password returns success and sends email for existing user', async () => {
+    const user = await createUser({ email: `${unique('forgot-existing')}@test.com` });
+    const emailSpy = vi.spyOn(emailService, 'sendPasswordResetEmail').mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: user.email });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    const token = await prisma.passwordResetToken.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(token).toBeTruthy();
+    expect(token?.usedAt).toBeNull();
+  });
+
+  it('forgot-password returns success and does not send email for non-existing user', async () => {
+    const emailSpy = vi.spyOn(emailService, 'sendPasswordResetEmail').mockResolvedValue(true);
+
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: `${unique('forgot-missing')}@test.com` });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(emailSpy).not.toHaveBeenCalled();
+  });
+
+  it('reset-password consumes token once and updates password hash', async () => {
+    const user = await createUser({ email: `${unique('reset-success')}@test.com` });
+    const token = `pwreset-${Math.random().toString(36).slice(2)}`;
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/auth/reset-password')
+      .set('User-Agent', 'VitestAgent/1.0')
+      .send({ token, password: 'NewPassword123!' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const dbToken = await prisma.passwordResetToken.findUnique({ where: { token } });
+    expect(dbToken?.usedAt).toBeTruthy();
+    expect(dbToken?.usedByUserAgent).toBe('VitestAgent/1.0');
+    expect(dbToken?.usedByIp).toBeTruthy();
+
+    const updatedUser = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(updatedUser).toBeTruthy();
+    expect(updatedUser?.passwordHash).not.toBe(user.passwordHash);
+    expect(await bcrypt.compare('NewPassword123!', updatedUser!.passwordHash)).toBe(true);
+
+    const reuse = await request(app)
+      .post('/api/auth/reset-password')
+      .set('User-Agent', 'VitestAgent/1.0')
+      .send({ token, password: 'AnotherPassword123!' });
+    expect(reuse.status).toBe(400);
+    expect(reuse.body.error).toBe('Invalid or expired reset token');
+  });
+
+  it('reset-password rejects expired and invalid tokens and emits invalid-token audit log', async () => {
+    const user = await createUser({ email: `${unique('reset-expired')}@test.com` });
+    const expiredToken = `pwreset-expired-${Math.random().toString(36).slice(2)}`;
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        token: expiredToken,
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const expiredRes = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: expiredToken, password: 'NewPassword123!' });
+    expect(expiredRes.status).toBe(400);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('SECURITY_AUTH_PASSWORD_RESET_TOKEN_INVALID'));
+
+    const invalidRes = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'does-not-exist', password: 'NewPassword123!' });
+    expect(invalidRes.status).toBe(400);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('SECURITY_AUTH_PASSWORD_RESET_TOKEN_INVALID'));
   });
 });
 
@@ -1311,6 +1410,7 @@ describe('invite-only registration', () => {
 describe('probationary member', () => {
   it('admin can create invite with PROBATIONARY_MEMBER role', async () => {
     const { club, admin } = await createClubWithAdmin();
+    const emailSpy = vi.spyOn(emailService, 'sendInviteEmail').mockResolvedValue(true);
 
     const res = await request(app)
       .post(`/api/clubs/${club.id}/invites`)
@@ -1323,6 +1423,8 @@ describe('probationary member', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.role).toBe('PROBATIONARY_MEMBER');
+    expect(res.body.emailSent).toBe(true);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
   });
 
   it('admin can change member role to PROBATIONARY_MEMBER', async () => {
@@ -1383,6 +1485,32 @@ describe('probationary member', () => {
       .send({ role: 'PROBATIONARY_MEMBER' });
 
     expect(res.status).toBe(409);
+  });
+
+  it('admin can resend invite email from dashboard endpoint', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const sendSpy = vi.spyOn(emailService, 'sendInviteEmail').mockResolvedValue(true);
+
+    const invite = await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email: `${unique('invite-resend')}@test.com`,
+        role: MembershipRole.MEMBER,
+        token: `invite-resend-${Math.random().toString(36).slice(2)}`,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdByUserId: admin.id,
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/invites/${invite.id}/send`)
+      .set(authHeader(admin))
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.emailSent).toBe(true);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
   });
 });
 

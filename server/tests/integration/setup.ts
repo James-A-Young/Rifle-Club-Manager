@@ -28,6 +28,7 @@ const tables = [
   'AmmunitionType',
   'VisitLog',
   'SignInLink',
+  'PasswordResetToken',
   'ClubInvite',
   'ClubMembership',
   'Firearm',

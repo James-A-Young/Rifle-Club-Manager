@@ -339,6 +339,7 @@ export default function ClubDashboard() {
   async function createInvite() {
     if (!id || !inviteEmail.trim()) return;
     try {
+      setError('');
       const invite = await api.post<ClubInvite>(`/api/clubs/${id}/invites`, {
         email: inviteEmail.trim().toLowerCase(),
         role: inviteRole,
@@ -346,6 +347,9 @@ export default function ClubDashboard() {
       });
       setInvites(prev => [invite, ...prev]);
       setInviteEmail('');
+      if (invite.emailSent === false) {
+        setError('Invite created, but email sending is disabled or failed.');
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error creating invite');
     }
@@ -359,13 +363,20 @@ export default function ClubDashboard() {
     void navigator.clipboard.writeText(getInviteUrl(token));
   }
 
-  function sendInviteEmail(invite: ClubInvite) {
-    const inviteUrl = getInviteUrl(invite.token);
-    const subject = encodeURIComponent(`Invitation to join ${club?.name ?? 'the club'}`);
-    const body = encodeURIComponent(
-      `Hello,\n\nYou have been invited to join ${club?.name ?? 'our club'} as ${invite.role}.\n\nUse this link to accept your invite:\n${inviteUrl}\n\nIf you already have an account, sign in and accept directly. If not, register using the same email address this invite was sent to.\n\nThanks.`
-    );
-    window.location.href = `mailto:${encodeURIComponent(invite.email)}?subject=${subject}&body=${body}`;
+  async function resendInviteEmail(invite: ClubInvite) {
+    if (!id) return;
+    try {
+      setError('');
+      const response = await api.post<{ success: boolean; emailSent: boolean; message?: string }>(
+        `/api/clubs/${id}/invites/${invite.id}/send`,
+        {},
+      );
+      if (!response.emailSent) {
+        setError(response.message ?? 'Invite was found, but email could not be sent.');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error sending invite email');
+    }
   }
 
   async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
@@ -751,7 +762,7 @@ export default function ClubDashboard() {
               onExpiresChange={setInviteExpiresInDays}
               onCreate={createInvite}
               onCopyUrl={copyInviteUrl}
-              onSendEmail={sendInviteEmail}
+              onSendEmail={resendInviteEmail}
             />
           )}
         </>
