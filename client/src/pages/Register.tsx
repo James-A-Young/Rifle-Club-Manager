@@ -8,6 +8,15 @@ interface RegisterResponse {
   user: { id: string; name: string; email: string };
 }
 
+interface InvitePreview {
+  token: string;
+  expiresAt: string;
+  club: {
+    id: string;
+    name: string;
+  };
+}
+
 let turnstileScriptLoadPromise: Promise<void> | null = null;
 const TURNSTILE_SCRIPT_SELECTOR = 'script[data-turnstile="true"]';
 
@@ -73,9 +82,36 @@ export default function Register() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [inviteClubName, setInviteClubName] = useState('');
+  const [invitePreviewLoading, setInvitePreviewLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviteClubName('');
+      setInvitePreviewLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setInvitePreviewLoading(true);
+    setInviteClubName('');
+
+    api.get<InvitePreview>(`/api/clubs/invite-preview/${encodeURIComponent(inviteToken)}`, controller.signal)
+      .then(preview => {
+        setInviteClubName(preview.club.name);
+      })
+      .catch(() => {
+        // Keep fallback invite copy without blocking registration.
+      })
+      .finally(() => {
+        setInvitePreviewLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [inviteToken]);
 
   useEffect(() => {
     if (!turnstileSiteKey || !turnstileContainerRef.current) {
@@ -157,6 +193,8 @@ export default function Register() {
     }
   }
 
+  const inviteClubLabel = inviteClubName || 'this club';
+
   return (
     <div className="auth-page">
       <div className="card">
@@ -167,7 +205,8 @@ export default function Register() {
           </div>
         ) : (
           <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-            You are registering with a club invite. Use the invited email address to complete registration.
+            Welcome! You have been invited to join {inviteClubLabel}. Please register if you do not have an account, or sign in if you already do.
+            {invitePreviewLoading && ' Loading invite details...'}
           </div>
         )}
         <form onSubmit={handleSubmit}>

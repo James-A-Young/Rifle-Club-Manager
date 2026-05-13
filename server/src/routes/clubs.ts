@@ -18,6 +18,10 @@ const publicClubProfileParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+const invitePreviewParamsSchema = z.object({
+  token: z.string().min(1),
+});
+
 router.get('/profile/:id', async (req, res: Response) => {
   const params = publicClubProfileParamsSchema.safeParse(req.params);
   if (!params.success) {
@@ -47,6 +51,38 @@ router.get('/profile/:id', async (req, res: Response) => {
   }
 
   res.json(club);
+});
+
+router.get('/invite-preview/:token', async (req, res: Response) => {
+  const params = invitePreviewParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+
+  const invite = await prisma.clubInvite.findUnique({
+    where: { token: params.data.token },
+    include: { club: { select: { id: true, name: true } } },
+  });
+
+  if (!invite) {
+    res.status(404).json({ error: 'Invite not found' });
+    return;
+  }
+  if (invite.redeemedAt) {
+    res.status(409).json({ error: 'Invite already redeemed' });
+    return;
+  }
+  if (invite.expiresAt < new Date()) {
+    res.status(410).json({ error: 'Invite expired' });
+    return;
+  }
+
+  res.json({
+    token: invite.token,
+    expiresAt: invite.expiresAt,
+    club: invite.club,
+  });
 });
 
 router.use(requireAuth);
