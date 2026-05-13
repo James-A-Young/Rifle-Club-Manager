@@ -15,6 +15,8 @@ import ammunitionRouter from './routes/ammunition';
 import scoringRouter from './routes/scoring';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
+import { fr } from 'zod/v4/locales';
+import { connect } from 'http2';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -68,6 +70,7 @@ export function createApp() {
     contentSecurityPolicy: {
       directives: {
         scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+        frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
       },
     },
   }));
