@@ -64,7 +64,13 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 export function createApp() {
   const app = express();
 
-  app.use(helmet());
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+      },
+    },
+  }));
 
   const corsOrigin = process.env.CLIENT_ORIGIN;
   // credentials: true is required so the browser sends/receives the auth
