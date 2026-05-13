@@ -13,7 +13,7 @@ function warnOnce(message: string): void {
 }
 
 function getAppOrigin(): string {
-  const configured = process.env.APP_ORIGIN ?? process.env.CLIENT_ORIGIN ?? DEFAULT_APP_ORIGIN;
+  const configured = process.env.CLIENT_ORIGIN ?? DEFAULT_APP_ORIGIN;
   return configured.replace(/\/+$/, '');
 }
 

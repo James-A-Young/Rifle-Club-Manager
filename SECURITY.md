@@ -144,7 +144,6 @@ All GitHub Actions steps are pinned to **full commit SHAs** (not mutable version
 | `VITE_TURNSTILE_SITE_KEY` | Conditional | Client site key for rendering Turnstile widget on register page |
 | `RESEND_API_KEY` | Conditional | Required to send invite and password-reset emails |
 | `RESEND_FROM_EMAIL` | Conditional | Verified sender address for Resend |
-| `APP_ORIGIN` | Conditional | Public SPA origin used for invite/reset email links |
 | `NODE_ENV` | ✅ Yes | Set to `production` in production |
 | `PORT` | No | Defaults to `3000` |
 | `GOOGLE_WALLET_ISSUER_ID` | Conditional | Required only if pass issuing is enabled |

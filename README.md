@@ -123,7 +123,6 @@ TURNSTILE_SECRET_KEY=
 VITE_TURNSTILE_SITE_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
-APP_ORIGIN=http://localhost:5173
 ```
 
 ### Optional: Google Wallet Membership Cards
@@ -178,13 +177,7 @@ To enable server-side invite delivery and password reset emails:
 ```env
 RESEND_API_KEY=<resend_api_key>
 RESEND_FROM_EMAIL=<verified_sender@yourdomain.com>
-APP_ORIGIN=https://app.example.com
 ```
-
-Behavior:
-- `APP_ORIGIN` is used to generate invite-accept and password-reset links
-- If `APP_ORIGIN` is omitted, the server falls back to `CLIENT_ORIGIN`
-- If Resend variables are not set, app features remain functional but emails are not sent
 
 Important: the server code does not automatically load `.env` by itself, so for local development load these vars into your shell before running server commands.
 
