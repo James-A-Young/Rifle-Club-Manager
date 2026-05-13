@@ -25,6 +25,7 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
 
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const statusTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const abortControllers = useRef<Record<string, AbortController>>({});
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -35,6 +36,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
       Object.values(debounceTimers.current).forEach(clearTimeout);
       // Clear all pending status-reset timers
       Object.values(statusTimers.current).forEach(clearTimeout);
+      // Abort all in-flight save requests
+      Object.values(abortControllers.current).forEach(ctrl => ctrl.abort());
     };
   }, []);
 
@@ -44,9 +47,14 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
 
     if (trimmed !== '' && (Number.isNaN(value) || !Number.isFinite(value))) return;
 
+    // Abort any previous in-flight request for this cell
+    abortControllers.current[scoreId]?.abort();
+    const controller = new AbortController();
+    abortControllers.current[scoreId] = controller;
+
     setCellStatus(prev => ({ ...prev, [scoreId]: 'saving' }));
     try {
-      await api.patch(`/api/clubs/${clubId}/scoring/scores/${scoreId}`, { score: value });
+      await api.patch(`/api/clubs/${clubId}/scoring/scores/${scoreId}`, { score: value }, controller.signal);
       if (!mountedRef.current) return;
       setCellStatus(prev => ({ ...prev, [scoreId]: 'saved' }));
       onScoreUpdated(scoreId, value);
@@ -58,7 +66,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
         });
       }, 1500);
       statusTimers.current[scoreId] = t;
-    } catch {
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') return; // request cancelled — ignore
       if (!mountedRef.current) return;
       setCellStatus(prev => ({ ...prev, [scoreId]: 'error' }));
     }

@@ -116,13 +116,18 @@ router.post('/clubs/:clubId/scoring/seasons', async (req: AuthRequest, res: Resp
   const parsed = createSeasonSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
 
-  const season = await prisma.season.create({
-    data: { clubId, name: parsed.data.name },
-  }).catch((e: unknown) => {
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return null;
+  let season;
+  try {
+    season = await prisma.season.create({
+      data: { clubId, name: parsed.data.name },
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      res.status(409).json({ error: 'A season with that name already exists in this club' });
+      return;
+    }
     throw e;
-  });
-  if (!season) { res.status(409).json({ error: 'A season with that name already exists in this club' }); return; }
+  }
   res.status(201).json(season);
 });
 
