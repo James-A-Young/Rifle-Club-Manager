@@ -324,7 +324,6 @@ model Competition {
   organiser       String?
   roundCount      Int
   cardsPerRound   Int
-  maxScorePerCard Int      @default(50)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
