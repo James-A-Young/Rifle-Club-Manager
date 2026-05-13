@@ -201,7 +201,6 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
                       <input
                         type="number"
                         min={0}
-                        max={competition.maxScorePerCard}
                         value={localValues[cell.id] ?? ''}
                         onChange={e => handleChange(cell.id, e.target.value)}
                         onBlur={e => handleBlur(cell.id, e.target.value)}

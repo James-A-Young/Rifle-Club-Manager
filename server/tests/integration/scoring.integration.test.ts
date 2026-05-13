@@ -141,7 +141,6 @@ describe('competitions', () => {
         organiser: 'NSRA',
         roundCount: 3,
         cardsPerRound: 2,
-        maxScorePerCard: 50,
         rounds: [
           { dueDate: '2024-11-01' },
           { dueDate: '2024-12-01' },
@@ -171,7 +170,6 @@ describe('competitions', () => {
         name: 'Bad',
         roundCount: 3,
         cardsPerRound: 2,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }], // only 1, not 3
       });
 
@@ -198,7 +196,6 @@ describe('enrolment', () => {
         name: 'E Comp',
         roundCount: 2,
         cardsPerRound: 2,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }, { dueDate: '2024-12-01' }],
       });
 
@@ -303,7 +300,6 @@ describe('score autosave', () => {
         name: 'C',
         roundCount: 1,
         cardsPerRound: 1,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }],
       });
 
@@ -340,7 +336,6 @@ describe('score autosave', () => {
         name: 'C2',
         roundCount: 1,
         cardsPerRound: 1,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }],
       });
 
@@ -388,7 +383,6 @@ describe('averages report', () => {
         name: 'Avg Comp',
         roundCount: 1,
         cardsPerRound: 2,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }],
       });
 
@@ -442,7 +436,6 @@ describe('member due cards', () => {
         name: 'Due Comp',
         roundCount: 1,
         cardsPerRound: 1,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: futureDue }],
       });
 
@@ -480,7 +473,6 @@ describe('member due cards', () => {
         name: 'Old Comp',
         roundCount: 1,
         cardsPerRound: 1,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: oldDue }],
       });
 
@@ -520,7 +512,6 @@ describe('member averages', () => {
         name: 'Avg2 Comp',
         roundCount: 1,
         cardsPerRound: 4,
-        maxScorePerCard: 50,
         rounds: [{ dueDate: '2024-11-01' }],
       });
 

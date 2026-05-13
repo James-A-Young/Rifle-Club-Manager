@@ -206,7 +206,7 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
               <input
                 value={newSeasonName}
                 onChange={e => setNewSeasonName(e.target.value)}
-                placeholder="e.g. 2024/25 NSRA Postal"
+                placeholder="e.g. 2024/25"
               />
             </div>
             <button className="btn btn-primary btn-sm" onClick={createSeason} disabled={creatingSeason || !newSeasonName.trim()}>
@@ -298,7 +298,7 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
                       <strong>{comp.name}</strong>
                       {comp.organiser && <span style={{ color: 'var(--gray-600)', marginLeft: '0.5rem', fontSize: '0.875rem' }}>{comp.organiser}</span>}
                       <span style={{ color: 'var(--gray-600)', marginLeft: '0.75rem', fontSize: '0.8rem' }}>
-                        {comp.roundCount} rounds × {comp.cardsPerRound} cards · max {comp.maxScorePerCard}
+                        {comp.roundCount} rounds × {comp.cardsPerRound} cards
                         {comp._count !== undefined && ` · ${comp._count.entries} members`}
                       </span>
                     </div>

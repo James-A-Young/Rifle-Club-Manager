@@ -10,7 +10,6 @@ export interface CompetitionFormData {
   organiser: string;
   roundCount: number;
   cardsPerRound: number;
-  maxScorePerCard: number;
   rounds: RoundInput[];
 }
 
@@ -25,7 +24,6 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
   const [organiser, setOrganiser] = useState('');
   const [roundCount, setRoundCount] = useState(6);
   const [cardsPerRound, setCardsPerRound] = useState(2);
-  const [maxScorePerCard, setMaxScorePerCard] = useState(50);
   const [rounds, setRounds] = useState<RoundInput[]>(() =>
     Array.from({ length: 6 }, () => ({ dueDate: '' }))
   );
@@ -61,7 +59,6 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
         organiser: organiser.trim(),
         roundCount,
         cardsPerRound,
-        maxScorePerCard,
         rounds,
       });
     } catch (err) {
@@ -102,16 +99,6 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
             max={20}
             value={cardsPerRound}
             onChange={e => setCardsPerRound(Math.max(1, Number(e.target.value)))}
-          />
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Max Score per Card</label>
-          <input
-            type="number"
-            min={1}
-            max={1000}
-            value={maxScorePerCard}
-            onChange={e => setMaxScorePerCard(Math.max(1, Number(e.target.value)))}
           />
         </div>
       </div>

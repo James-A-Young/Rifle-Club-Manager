@@ -182,7 +182,6 @@ export interface Competition {
   organiser: string | null;
   roundCount: number;
   cardsPerRound: number;
-  maxScorePerCard: number;
   createdAt: string;
   updatedAt: string;
   rounds: Round[];
@@ -217,7 +216,6 @@ export interface ScoreSheet {
     organiser: string | null;
     roundCount: number;
     cardsPerRound: number;
-    maxScorePerCard: number;
   };
   members: { id: string; name: string; email: string }[];
   rounds: SheetRound[];
@@ -227,7 +225,6 @@ export interface DueCard {
   scoreId: string;
   competitionId: string;
   competitionName: string;
-  maxScorePerCard: number;
   roundId: string;
   roundNumber: number;
   dueDate: string;

@@ -62,7 +62,6 @@ const createCompetitionSchema = z.object({
   organiser: z.string().trim().optional().nullable(),
   roundCount: z.number().int().min(1).max(52),
   cardsPerRound: z.number().int().min(1).max(20),
-  maxScorePerCard: z.number().int().min(1).max(1000).default(50),
   rounds: z.array(roundDueDateSchema),
 }).refine(d => d.rounds.length === d.roundCount, {
   message: 'rounds array length must match roundCount',
@@ -201,7 +200,6 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
         organiser: parsed.data.organiser ?? null,
         roundCount: parsed.data.roundCount,
         cardsPerRound: parsed.data.cardsPerRound,
-        maxScorePerCard: parsed.data.maxScorePerCard,
       },
     });
 
@@ -430,7 +428,6 @@ router.get('/clubs/:clubId/scoring/competitions/:competitionId/scoresheet', asyn
       organiser: comp.organiser,
       roundCount: comp.roundCount,
       cardsPerRound: comp.cardsPerRound,
-      maxScorePerCard: comp.maxScorePerCard,
     },
     members: comp.entries.map(e => ({ id: e.user.id, name: e.user.name, email: e.user.email })),
     rounds: comp.rounds.map(r => ({
@@ -573,7 +570,7 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
       round: { dueDate: { gte: cutoff } },
     },
     include: {
-      competition: { select: { id: true, name: true, maxScorePerCard: true } },
+      competition: { select: { id: true, name: true } },
       round: { select: { id: true, roundNumber: true, dueDate: true } },
     },
     orderBy: { round: { dueDate: 'asc' } },
@@ -583,7 +580,6 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     scoreId: s.id,
     competitionId: s.competitionId,
     competitionName: s.competition.name,
-    maxScorePerCard: s.competition.maxScorePerCard,
     roundId: s.roundId,
     roundNumber: s.round.roundNumber,
     dueDate: s.round.dueDate,
