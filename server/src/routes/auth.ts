@@ -396,31 +396,24 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
   const { token, password } = parsed.data;
   const userAgent = sanitizeUserAgent(req.get('user-agent'));
-  const existingToken = await prisma.passwordResetToken.findUnique({
-    where: { token },
-    include: { user: { select: { id: true, email: true } } },
-  });
-
-  if (!existingToken) {
-    auditAuthPasswordResetTokenInvalid(req.ip, 'not_found');
-    res.status(400).json({ error: 'Invalid or expired reset token' });
-    return;
-  }
-  if (existingToken.usedAt) {
-    auditAuthPasswordResetTokenInvalid(req.ip, 'used');
-    res.status(400).json({ error: 'Invalid or expired reset token' });
-    return;
-  }
-  if (existingToken.expiresAt < new Date()) {
-    auditAuthPasswordResetTokenInvalid(req.ip, 'expired');
-    res.status(400).json({ error: 'Invalid or expired reset token' });
-    return;
-  }
-
   const passwordHash = await bcrypt.hash(password, 10);
 
   try {
     const updatedUser = await prisma.$transaction(async tx => {
+      const existingToken = await tx.passwordResetToken.findUnique({
+        where: { token },
+        include: { user: { select: { id: true, email: true } } },
+      });
+      if (!existingToken) {
+        throw new ResetTokenStateError('not_found');
+      }
+      if (existingToken.usedAt) {
+        throw new ResetTokenStateError('used');
+      }
+      if (existingToken.expiresAt < new Date()) {
+        throw new ResetTokenStateError('expired');
+      }
+
       const usedAt = new Date();
       const markUsed = await tx.passwordResetToken.updateMany({
         where: {
@@ -445,10 +438,15 @@ router.post('/reset-password', async (req: Request, res: Response) => {
         if (latestState.usedAt) {
           throw new ResetTokenStateError('used');
         }
-        if (latestState.expiresAt < new Date()) {
+        if (latestState.expiresAt < usedAt) {
           throw new ResetTokenStateError('expired');
         }
-        throw new ResetTokenStateError('used');
+        console.error('Password reset token entered inconsistent state during consumption', {
+          resetTokenId: existingToken.id,
+          usedAt: latestState.usedAt,
+          expiresAt: latestState.expiresAt,
+        });
+        throw new Error('TOKEN_STATE_INCONSISTENT');
       }
 
       await tx.user.update({
