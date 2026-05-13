@@ -344,7 +344,7 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
     return;
   }
 
-  const token = crypto.randomBytes(32).toString('hex');
+  const token = `pwreset_${crypto.randomBytes(32).toString('hex')}`;
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 
   await prisma.$transaction(async tx => {

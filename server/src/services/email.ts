@@ -17,6 +17,15 @@ function getAppOrigin(): string {
   return configured.replace(/\/+$/, '');
 }
 
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function getResendApiKey(): string | null {
   const key = process.env.RESEND_API_KEY?.trim();
   if (!key) {
@@ -41,11 +50,6 @@ function createResendClient(): Resend | null {
     return null;
   }
   return new Resend(apiKey);
-}
-
-function trimUserAgent(userAgent: string | null | undefined): string {
-  const normalized = (userAgent ?? '').trim();
-  return normalized.length > 512 ? normalized.slice(0, 512) : normalized;
 }
 
 export interface SendPasswordResetEmailParams {
@@ -79,7 +83,9 @@ async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Pro
   }
 
   const resetUrl = buildResetUrl(params.resetToken);
+  const safeResetUrl = escapeHtml(resetUrl);
   const greeting = params.name?.trim() ? `Hi ${params.name.trim()},` : 'Hello,';
+  const safeGreeting = escapeHtml(greeting);
   const subject = 'Reset your Rifle Club Manager password';
   const text = [
     greeting,
@@ -91,9 +97,9 @@ async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Pro
     'If you did not request a reset, you can ignore this email.',
   ].join('\n');
   const html = [
-    `<p>${greeting}</p>`,
+    `<p>${safeGreeting}</p>`,
     '<p>We received a request to reset your password.</p>',
-    `<p><a href="${resetUrl}">Reset your password</a></p>`,
+    `<p><a href="${safeResetUrl}">Reset your password</a></p>`,
     `<p>This one-time link expires in ${params.expiresInMinutes} minutes.</p>`,
     '<p>If you did not request a reset, you can ignore this email.</p>',
   ].join('');
@@ -121,6 +127,9 @@ async function sendInviteEmail(params: SendInviteEmailParams): Promise<boolean> 
   }
 
   const inviteUrl = buildInviteUrl(params.inviteToken);
+  const safeInviteUrl = escapeHtml(inviteUrl);
+  const safeClubName = escapeHtml(params.clubName);
+  const safeRole = escapeHtml(params.role);
   const subject = `Invitation to join ${params.clubName}`;
   const text = [
     'Hello,',
@@ -133,8 +142,8 @@ async function sendInviteEmail(params: SendInviteEmailParams): Promise<boolean> 
   ].join('\n');
   const html = [
     '<p>Hello,</p>',
-    `<p>You have been invited to join <strong>${params.clubName}</strong> as <strong>${params.role}</strong>.</p>`,
-    `<p><a href="${inviteUrl}">Accept your invite</a></p>`,
+    `<p>You have been invited to join <strong>${safeClubName}</strong> as <strong>${safeRole}</strong>.</p>`,
+    `<p><a href="${safeInviteUrl}">Accept your invite</a></p>`,
     '<p>If you already have an account, sign in and accept directly. If not, register with this invited email address.</p>',
   ].join('');
 
@@ -154,7 +163,8 @@ async function sendInviteEmail(params: SendInviteEmailParams): Promise<boolean> 
 }
 
 export function sanitizeUserAgent(userAgent: string | null | undefined): string | null {
-  const trimmed = trimUserAgent(userAgent);
+  const normalized = (userAgent ?? '').trim();
+  const trimmed = normalized.length > 512 ? normalized.slice(0, 512) : normalized;
   return trimmed.length > 0 ? trimmed : null;
 }
 

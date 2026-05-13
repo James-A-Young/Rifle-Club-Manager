@@ -363,7 +363,7 @@ export default function ClubDashboard() {
     void navigator.clipboard.writeText(getInviteUrl(token));
   }
 
-  async function sendInviteEmail(invite: ClubInvite) {
+  async function resendInviteEmail(invite: ClubInvite) {
     if (!id) return;
     try {
       setError('');
@@ -762,7 +762,7 @@ export default function ClubDashboard() {
               onExpiresChange={setInviteExpiresInDays}
               onCreate={createInvite}
               onCopyUrl={copyInviteUrl}
-              onSendEmail={sendInviteEmail}
+              onSendEmail={resendInviteEmail}
             />
           )}
         </>
