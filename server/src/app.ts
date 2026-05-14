@@ -113,6 +113,7 @@ export function createApp() {
     res.json({
       apiUrl: process.env.VITE_API_URL ?? '',
       turnstileSiteKey: process.env.VITE_TURNSTILE_SITE_KEY ?? '',
+      gaMeasurementId: process.env.VITE_GA_MEASUREMENT_ID ?? '',
     });
   });
 

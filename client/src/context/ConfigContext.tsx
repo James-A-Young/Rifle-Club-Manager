@@ -1,8 +1,10 @@
 import { createContext, useContext, ReactNode, useEffect, useState } from 'react';
+import { initAnalytics } from '../analytics';
 
 export interface RuntimeConfig {
   apiUrl: string;
   turnstileSiteKey: string;
+  gaMeasurementId: string;
 }
 
 const ConfigContext = createContext<RuntimeConfig | null>(null);
@@ -23,13 +25,18 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         setConfig({
           apiUrl: data.apiUrl ?? '',
           turnstileSiteKey: data.turnstileSiteKey ?? '',
+          gaMeasurementId: data.gaMeasurementId ?? '',
         });
+         // Initialize analytics here!
+        if (data.gaMeasurementId) {
+          initAnalytics(data.gaMeasurementId);
+        }
       })
       .catch(err => {
         console.error('Failed to load runtime config:', err);
         setError(err.message);
         // Fallback: empty config so app doesn't crash
-        setConfig({ apiUrl: '', turnstileSiteKey: '' });
+        setConfig({ apiUrl: '', turnstileSiteKey: '', gaMeasurementId: '' });
       })
       .finally(() => setLoading(false));
   }, []);
