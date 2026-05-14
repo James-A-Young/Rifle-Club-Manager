@@ -13,6 +13,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [gaInitialized, setGaInitialized] = useState(false);
 
   useEffect(() => {
     // Fetch config from backend at app startup
@@ -28,8 +29,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           gaMeasurementId: data.gaMeasurementId ?? '',
         });
          // Initialize analytics here!
-        if (data.gaMeasurementId) {
+        if (data.gaMeasurementId && !gaInitialized) {
           initAnalytics(data.gaMeasurementId);
+          setGaInitialized(true);
         }
       })
       .catch(err => {
