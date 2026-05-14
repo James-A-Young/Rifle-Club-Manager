@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [visits, setVisits] = useState<VisitLog[]>([]);
   const [activeVisit, setActiveVisit] = useState<VisitLog | null>(null);
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [membershipPasses, setMembershipPasses] = useState<Map<string,string>>(new Map()); // clubId -> passLink
   const [ammunitionPurchases, setAmmunitionPurchases] = useState<AmmunitionPurchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,6 +60,10 @@ export default function Dashboard() {
               [club.id]: { ...avgs, clubName: club.name },
             })))
             .catch(() => { /* silently ignore */ });
+
+          api.get<string>(`/api/users/me/membership-passes/${club.id}`)
+            .then(link => setMembershipPasses(prev => new Map(prev).set(club.id, link)))
+            .catch(() => { /* silently ignore if club has no membership pass */ });
         });
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading data'))
@@ -224,14 +229,19 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {clubs.map(club => (
-              <tr key={club.id}>
-                <td>{club.name}</td>
-                <td>
-                  <Link to={`/clubs/${club.id}`} className="btn btn-secondary btn-sm">View</Link>
-                </td>
-              </tr>
-            ))}
+            {clubs.map(club => {
+              const saveUrl = membershipPasses.get(club.id) || '#';
+              return (
+                <tr key={club.id}>
+                  <td>{club.name}</td>
+                  <td>
+                    <Link to={`/clubs/${club.id}`} className="btn btn-secondary btn-sm">View</Link>
+                    { saveUrl !== '#' ? (
+                    <a href={saveUrl}><img src='wallet-button.png' /></a>) : null }
+                  </td>
+                </tr>
+              );
+            })}
             {clubs.length === 0 && (
               <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No clubs yet</td></tr>
             )}

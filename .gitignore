@@ -8,3 +8,4 @@ client/dist/
 server/dist/
 public/
 server/coverage/
+googlecreds.json

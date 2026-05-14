@@ -1,135 +1,113 @@
-import { GoogleAuth } from 'google-auth-library';
+import { GoogleAuth, JWTInput } from 'google-auth-library';
 import * as jwt from 'jsonwebtoken';
-import * as qr from 'qrcode';
+import { env } from 'process';
+import { int } from 'zod/v4';
 
-interface PassClass {
+export interface PassClass{
   id: string;
-  issuerId: string;
-  reviewStatus: string;
-  classTemplate?: {
-    cardBarcodeSectionDetails?: {
-      firstBottomDetail?: { fieldItem?: { firstValue?: { content: string } } };
-      secondBottomDetail?: { fieldItem?: { firstValue?: { content: string } } };
+  classTemplateInfo: {
+    cardTemplateOverride: {
+      cardRowTemplateInfos: CardRowTemplateInfo[];
     };
-    cardRowTemplateInfos?: Array<{
-      twoItems?: {
-        startItem?: { firstValue?: { content: string } };
-        endItem?: { firstValue?: { content: string } };
-      };
-    }>;
-    details?: Array<{
-      fieldLabel?: string;
-      fieldValue?: string;
-    }>;
-    header?: {
-      defaultHeader?: {
-        hexBackgroundColor?: string;
-      };
-    };
-    heroImage?: {
-      image?: {
-        sourceUri?: {
-          uri?: string;
-        };
-      };
-    };
+  },
+  securityAnimation?: SecurityAnimation;
+}
+
+export enum SecurityAnimation { ANIMATION_UNSPECIFIED,  FOIL_SHIMMER }
+export interface CardRowTemplateInfo {
+  threeItems?: {
+    startItem: TemplateItem;
+    middleItem: TemplateItem;
+    endItem: TemplateItem;
+  };
+  // You can add twoItems or oneItem here later if needed
+}
+
+export interface TemplateItem {
+  firstValue: {
+    fields: TemplateField[];
   };
 }
 
-interface PassObject {
-  id: string;
-  classId: string;
-  genericObjects?: Array<{
-    classReference?: {
-      id: string;
-    };
-    id: string;
-    genericData?: {
-      cardDetails?: {
-        cardRowTemplateInfos?: Array<{
-          twoItems?: {
-            startItem?: { firstValue?: { content: string } };
-            endItem?: { firstValue?: { content: string } };
-          };
-        }>;
-      };
-      header?: {
-        hexBackgroundColor?: string;
-      };
-    };
-    barcode?: {
-      type: string;
-      value: string;
-      renderEncoding: string;
-    };
-  }>;
+export interface TemplateField {
+  /**
+   * The path to the data field, 
+   * e.g., "object.textModulesData['visits']"
+   */
+  fieldPath: string;
 }
 
+export interface PassObject {
+  id: string;
+  classId: string;
+  genericType: string
+  logo?: ImageResource;
+  cardTitle: LocalizedString;
+  subheader: LocalizedString;
+  header: LocalizedString;
+  textModulesData: TextModule[];
+  barcode: Barcode;
+  hexBackgroundColor: string;
+  heroImage?: ImageResource;
+}
+
+export interface LocalizedString {
+  defaultValue: {
+    language: string;
+    value: string;
+  };
+}
+
+export interface ImageResource {
+  sourceUri: {
+    uri: string;
+  };
+  contentDescription: LocalizedString;
+}
+
+export interface TextModule {
+  id: string;
+  header: string;
+  body: string;
+}
+
+export interface Barcode {
+  type: 'QR_CODE' | 'AZTEC' | 'BARCODE_128' | 'PDF_417';
+  value: string;
+  alternateText?: string;
+}
+export interface CreatePassParams {
+  userId: string,
+    clubId: string,
+    memberName: string,
+    membershipType: string,
+    visitCount: number,
+    roundsThisYear: number,
+    average: number,
+    clubName: string,
+    settings?: {
+      secondaryColor?: string;
+      accentColor?: string;
+      logoUrl?: string;
+    }
+}
 export class GoogleWalletService {
   private auth: GoogleAuth;
   private issuerId: string;
-  private issuerEmail: string;
-  private issuerPrivateKey: string;
-  private privateKeyId?: string;
+  private classid : string = 'v1';
   private baseUrl = 'https://walletobjects.googleapis.com/walletobjects/v1';
+  private genericClassEnsured = false;
 
   constructor() {
-    this.issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '';
-    this.issuerEmail = process.env.GOOGLE_WALLET_ISSUER_EMAIL || '';
-    this.issuerPrivateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY || '';
-    this.privateKeyId = process.env.GOOGLE_WALLET_PRIVATE_KEY_ID;
-
-    if (!this.issuerId || !this.issuerEmail || !this.issuerPrivateKey) {
-      throw new Error(
-        'Google Wallet credentials not configured. Set GOOGLE_WALLET_ISSUER_ID, GOOGLE_WALLET_ISSUER_EMAIL, and GOOGLE_WALLET_PRIVATE_KEY environment variables.'
-      );
+    if(process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      this.auth = new GoogleAuth({scopes: ['https://www.googleapis.com/auth/wallet_object.issuer']});
+      this.issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '';
+      if(this.auth && this.issuerId) return;
     }
-
-    this.auth = new GoogleAuth({
-      credentials: {
-        type: 'service_account',
-        project_id: process.env.GOOGLE_WALLET_PROJECT_ID,
-        private_key_id: this.privateKeyId,
-        private_key: this.issuerPrivateKey.replace(/\\n/g, '\n'),
-        client_email: this.issuerEmail,
-        client_id: process.env.GOOGLE_WALLET_CLIENT_ID,
-      } as any,
-      scopes: ['https://www.googleapis.com/auth/wallet_object.issuer'],
-    });
-  }
-
-  /**
-   * Generate QR code as data URL string from membership ID
-   */
-  async generateQRCode(membershipId: string): Promise<string> {
-    try {
-      const qrDataUrl = await qr.toDataURL(membershipId, {
-        errorCorrectionLevel: 'H',
-        type: 'image/png',
-        margin: 1,
-        width: 300,
-      } as any);
-      return qrDataUrl;
-    } catch (error) {
-      throw new Error(`Failed to generate QR code: ${error}`);
-    }
-  }
-
-  /**
-   * Generate QR code as PNG buffer
-   */
-  async generateQRCodeBuffer(membershipId: string): Promise<Buffer> {
-    try {
-      const buffer = await qr.toBuffer(membershipId, {
-        errorCorrectionLevel: 'H' as any,
-        type: 'png' as any,
-        margin: 1,
-        width: 300,
-      });
-      return buffer as Buffer;
-    } catch (error) {
-      throw new Error(`Failed to generate QR code buffer: ${error}`);
-    }
+    
+    throw new Error(
+      'Google Wallet credentials not configured. Set GOOGLE_WALLET_ISSUER_ID, GOOGLE_WALLET_ISSUER_EMAIL, and GOOGLE_WALLET_PRIVATE_KEY environment variables.'
+    );
   }
 
   /**
@@ -142,61 +120,60 @@ export class GoogleWalletService {
   /**
    * Create pass class template for club
    */
-  async createPassClass(
-    clubId: string,
-    clubName: string,
-    settings: {
-      primaryColor?: string;
-      secondaryColor?: string;
-      logoUrl?: string;
-    }
-  ): Promise<PassClass> {
+  private async ensurePassClass(): Promise<PassClass> {
     const client = await this.auth.getClient();
 
-    const classId = `${this.issuerId}.${clubId}`;
+    const classId = `${this.issuerId}.${this.classid}`;
     const passClass: PassClass = {
-      id: classId,
-      issuerId: this.issuerId,
-      reviewStatus: 'UNDER_REVIEW',
-      classTemplate: {
-        header: {
-          defaultHeader: {
-            hexBackgroundColor: settings.primaryColor || '#1f2937',
-          },
-        },
-        heroImage:
-          settings.logoUrl && this._isValidUrl(settings.logoUrl)
-            ? {
-                image: {
-                  sourceUri: {
-                    uri: settings.logoUrl,
-                  },
-                },
+  "id": classId,
+  "classTemplateInfo": {
+    "cardTemplateOverride": {
+      "cardRowTemplateInfos": [
+        {
+          "threeItems": {
+            "startItem": {
+              "firstValue": {
+                "fields": [
+                  {
+                    "fieldPath": "object.textModulesData['visits']"
+                  }
+                ]
               }
-            : undefined,
-        cardRowTemplateInfos: [
-          {
-            twoItems: {
-              startItem: {
-                firstValue: {
-                  content: 'Membership Card',
-                },
-              },
-              endItem: {
-                firstValue: {
-                  content: clubName,
-                },
-              },
             },
-          },
-        ],
-      },
-    };
+            "middleItem": {
+              "firstValue": {
+                "fields": [
+                  {
+                    "fieldPath": "object.textModulesData['rounds_this_year']"
+                  }
+                ]
+              }
+            },
+            "endItem": {
+              "firstValue": {
+                "fields": [
+                  {
+                    "fieldPath": "object.textModulesData['average']"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+};
+  console.log('Ensuring pass class with ID:', classId);
+  console.log('Pass class definition:', JSON.stringify(passClass, null, 2));
+    if (this.genericClassEnsured) return passClass;
 
     try {
+      const headers = await this.auth.getRequestHeaders();
       const response = await client.request({
         url: `${this.baseUrl}/genericClass`,
         method: 'POST',
+        headers,
         data: passClass,
       });
       return response.data as PassClass;
@@ -212,90 +189,71 @@ export class GoogleWalletService {
   /**
    * Create pass object for a user
    */
-  async createPassObject(
-    userId: string,
-    clubId: string,
-    memberName: string,
-    membershipType: string,
-    visitCount: number,
-    clubName: string,
-    qrCodeDataUrl: string,
-    settings?: {
-      secondaryColor?: string;
-      accentColor?: string;
-    }
-  ): Promise<PassObject> {
-    const passObjectId = `${this.issuerId}.${clubId}${userId.substring(0, 12)}`;
-    const classId = `${this.issuerId}.${clubId}`;
+  async createPassObject(params: CreatePassParams): Promise<PassObject> {
+    const { userId, clubId, memberName, membershipType, visitCount, roundsThisYear, average, clubName, settings } = params;
+    const passObjectId = `${this.issuerId}.${clubId}${userId}`;
+    const classId = `${this.issuerId}.${this.classid}`;
+
+    await this.ensurePassClass();
 
     const passObject: PassObject = {
-      id: passObjectId,
-      classId,
-      genericObjects: [
-        {
-          classReference: {
-            id: classId,
-          },
-          id: passObjectId,
-          genericData: {
-            cardDetails: {
-              cardRowTemplateInfos: [
-                {
-                  twoItems: {
-                    startItem: {
-                      firstValue: {
-                        content: 'Member',
-                      },
-                    },
-                    endItem: {
-                      firstValue: {
-                        content: memberName,
-                      },
-                    },
-                  },
-                },
-                {
-                  twoItems: {
-                    startItem: {
-                      firstValue: {
-                        content: 'Type',
-                      },
-                    },
-                    endItem: {
-                      firstValue: {
-                        content: membershipType,
-                      },
-                    },
-                  },
-                },
-                {
-                  twoItems: {
-                    startItem: {
-                      firstValue: {
-                        content: 'Visits (YTD)',
-                      },
-                    },
-                    endItem: {
-                      firstValue: {
-                        content: visitCount.toString(),
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-            header: {
-              hexBackgroundColor: settings?.secondaryColor || '#374151',
-            },
-          },
-          barcode: {
-            type: 'QR_CODE',
-            value: `club:${clubId}:member:${userId}`,
-            renderEncoding: 'UTF_8',
-          },
-        },
-      ],
-    };
+  "id": passObjectId,
+  "classId": classId,
+  "genericType": "GENERIC_TYPE_UNSPECIFIED",
+  "logo": {
+    "sourceUri": {
+      "uri": settings?.logoUrl && this._isValidUrl(settings.logoUrl) ? settings.logoUrl : 'https://example.com/default-logo.png'
+    },
+    "contentDescription": {
+      "defaultValue": {
+        "language": "en-US",
+        "value": `Logo for ${clubName}`
+      }
+    }
+  },
+  "cardTitle": {
+    "defaultValue": {
+      "language": "en-US",
+      "value": `${clubName} Membership`
+    }
+  },
+  "subheader": {
+    "defaultValue": {
+      "language": "en-US",
+      "value": membershipType
+    }
+  },
+  "header": {
+    "defaultValue": {
+      "language": "en-US",
+      "value": memberName
+    }
+  },
+  "textModulesData": [
+    {
+      "id": "visits",
+      "header": "Visits",
+      "body": visitCount.toString()
+    },
+    {
+      "id": "rounds_this_year",
+      "header": "Rounds this Year",
+      "body": roundsThisYear.toString()
+    },
+    {
+      "id": "average",
+      "header": "Average",
+      "body": average.toString()
+    }
+  ],
+  "barcode": {
+    "type": "QR_CODE",
+    "value": `membership:${clubId}:${userId}`,
+    "alternateText": ""
+  },
+  "hexBackgroundColor": settings?.secondaryColor && this.validateHexColor(settings.secondaryColor) ? settings.secondaryColor : '#dd10bb',
+}
+    
 
     return passObject;
   }
@@ -303,23 +261,28 @@ export class GoogleWalletService {
   /**
    * Generate JWT for pass object (for Add to Google Wallet button)
    */
-  generateAddToWalletJwt(
-    passClass: PassClass,
+  private async generateJwt(
     passObject: PassObject
-  ): string {
+  ): Promise<string> {
+    await this.ensurePassClass();
     const payload = {
-      iss: this.issuerEmail,
+      iss: (await this.auth.getCredentials()).client_email,
+      iat: Math.floor(Date.now() / 1000),
       aud: 'google',
+      origins:[env.CLIENT_ORIGIN],
       typ: 'savetowallet',
       payload: {
-        genericClasses: [passClass],
-        genericObjects: passObject.genericObjects,
+        genericObjects: [passObject],
       },
     };
-
-    const token = jwt.sign(payload, this.issuerPrivateKey.replace(/\\n/g, '\n'), {
-      algorithm: 'RS256',
-      keyid: this.privateKeyId,
+    console.log('Generating JWT with payload:', JSON.stringify(payload, null, 2));
+    const creds =  await this.auth.getCredentials() as JWTInput;
+    const privateKey = creds.private_key;
+    if (!privateKey) {
+      throw new Error('Google Wallet credentials are missing private key or client email');
+    }
+    const token = jwt.sign(payload, privateKey, {
+      algorithm: 'RS256'
     });
 
     return token;
@@ -328,29 +291,13 @@ export class GoogleWalletService {
   /**
    * Generate Add to Google Wallet link
    */
-  generateAddToWalletLink(jwtToken: string): string {
+  async generateAddToWalletLink(passSettings: CreatePassParams): Promise<string> {
+    const passObject = await this.createPassObject(passSettings);
+    const jwtToken = await this.generateJwt(passObject);
     return `https://pay.google.com/gp/v/save/${jwtToken}`;
   }
 
-  /**
-   * Update pass object visit count and other fields
-   */
-  async updatePassObject(
-    passObject: PassObject,
-    visitCount: number
-  ): Promise<PassObject> {
-    if (passObject.genericObjects?.[0]) {
-      const cardDetails = passObject.genericObjects[0].genericData?.cardDetails;
-      if (cardDetails?.cardRowTemplateInfos) {
-        // Update visit count (3rd row)
-        const visitRow = cardDetails.cardRowTemplateInfos[2];
-        if (visitRow?.twoItems?.endItem?.firstValue) {
-          visitRow.twoItems.endItem.firstValue.content = visitCount.toString();
-        }
-      }
-    }
-    return passObject;
-  }
+  
 
   /**
    * Helper to validate URL format
@@ -377,28 +324,8 @@ export function getGoogleWalletService(): GoogleWalletService {
 
 // Export getter as default export for backward compatibility
 export const googleWalletService = {
-  get generateQRCode() {
-    return getGoogleWalletService().generateQRCode.bind(getGoogleWalletService());
-  },
-  get generateQRCodeBuffer() {
-    return getGoogleWalletService().generateQRCodeBuffer.bind(getGoogleWalletService());
-  },
-  get validateHexColor() {
-    return getGoogleWalletService().validateHexColor.bind(getGoogleWalletService());
-  },
-  get createPassClass() {
-    return getGoogleWalletService().createPassClass.bind(getGoogleWalletService());
-  },
-  get createPassObject() {
-    return getGoogleWalletService().createPassObject.bind(getGoogleWalletService());
-  },
-  get generateAddToWalletJwt() {
-    return getGoogleWalletService().generateAddToWalletJwt.bind(getGoogleWalletService());
-  },
+  
   get generateAddToWalletLink() {
     return getGoogleWalletService().generateAddToWalletLink.bind(getGoogleWalletService());
-  },
-  get updatePassObject() {
-    return getGoogleWalletService().updatePassObject.bind(getGoogleWalletService());
   },
 };

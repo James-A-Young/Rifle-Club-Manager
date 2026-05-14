@@ -4,7 +4,7 @@ import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { OwnerType, MembershipStatus } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
-import { googleWalletService } from '../services/googleWallet';
+import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 
 const router = Router();
 
@@ -170,7 +170,7 @@ router.delete('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Res
 });
 
 // Google Wallet Membership Pass endpoints
-router.post('/me/membership-passes/:clubId', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/me/membership-passes/:clubId', requireAuth, async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
 
   try {
@@ -210,29 +210,6 @@ router.post('/me/membership-passes/:clubId', requireAuth, async (req: AuthReques
       return;
     }
 
-    // Get or create pass
-    let membershipPass = await prisma.membershipPass.findUnique({
-      where: {
-        userId_clubId: {
-          userId: req.user!.id,
-          clubId,
-        },
-      },
-    });
-
-    if (!membershipPass) {
-      // Generate QR code for membership ID
-      const membershipId = `club:${clubId}:member:${req.user!.id}`;
-      const qrCode = await googleWalletService.generateQRCode(membershipId);
-
-      membershipPass = await prisma.membershipPass.create({
-        data: {
-          userId: req.user!.id,
-          clubId,
-          qrCode,
-        },
-      });
-    }
 
     // Get visitor count this year
     const currentYear = new Date().getFullYear();
@@ -247,51 +224,62 @@ router.post('/me/membership-passes/:clubId', requireAuth, async (req: AuthReques
       },
     });
 
-    let addToWalletLink = '';
-    let addToWalletJwt = '';
+    // get total ammunition for year
+    const roundsThisYear = await prisma.ammunitionSale.aggregate({
+      where: {
+        buyerUserId: req.user!.id,
+        clubId,
+        createdAt: {
+          gte: new Date(`${currentYear}-01-01`),
+          lte: new Date(`${currentYear}-12-31T23:59:59Z`),
+        },
+      },
+      _sum: {
+        quantity: true,
+      },
+    });
+    
+    // get average score for last 10 cards
+    const average = await prisma.score.aggregate({
+      where: {
+        userId: req.user!.id,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      take: 10,
+      _avg: {
+        score: true,
+      },
+    });
+
+
 
     try {
-      // Build pass data (Google Wallet API calls may fail without real credentials)
-      const passClass = await googleWalletService.createPassClass(
-        clubId,
-        membership.club.name,
-        {
-          primaryColor: settings.primaryColor || '#1f2937',
-          secondaryColor: settings.secondaryColor || '#374151',
-          logoUrl: settings.logoUrl || undefined,
-        }
-      );
+      
 
-      const passObject = await googleWalletService.createPassObject(
-        req.user!.id,
+      const addToWalletLink = await googleWalletService.generateAddToWalletLink({
+        userId: req.user!.id,
         clubId,
-        currentUser.name,
-        membership.role,
+        memberName: currentUser.name,
+        membershipType: membership.club.name,
         visitCount,
-        membership.club.name,
-        membershipPass.qrCode,
-        {
+        roundsThisYear: roundsThisYear._sum.quantity || 0,
+        average: average._avg.score || 0,
+        clubName: membership.club.name,
+        settings: {
           secondaryColor: settings.secondaryColor || '#374151',
           accentColor: settings.accentColor || '#3b82f6',
-        }
-      );
+        },
+      } as CreatePassParams);
 
-      // Generate JWT for Add to Google Wallet
-      addToWalletJwt = googleWalletService.generateAddToWalletJwt(passClass, passObject);
-      addToWalletLink = googleWalletService.generateAddToWalletLink(addToWalletJwt);
+      res.json(addToWalletLink);
+      
     } catch (apiError) {
       // Google Wallet API may fail in test environments without real credentials
       // Still return pass data, just without wallet link
       console.warn('Google Wallet API error (may be expected in test env):', apiError);
     }
-
-    res.json({
-      id: membershipPass.id,
-      qrCode: membershipPass.qrCode,
-      visitCount,
-      addToWalletLink: addToWalletLink || null,
-      addToWalletJwt: addToWalletJwt || null,
-    });
   } catch (error) {
     console.error('Error generating membership pass:', error);
     res.status(500).json({ error: 'Failed to generate membership pass' });
