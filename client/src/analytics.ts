@@ -1,11 +1,10 @@
-const GA_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
 
-export function initAnalytics(): void {
-  if (!GA_ID) return;
+export function initAnalytics(gaId: string): void {
+  if (!gaId) return;
 
   const script = document.createElement('script');
   script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
   document.head.appendChild(script);
 
   window.dataLayer = window.dataLayer ?? [];
@@ -13,10 +12,10 @@ export function initAnalytics(): void {
     window.dataLayer!.push(args as unknown as IArguments);
   };
   window.gtag('js', new Date());
-  window.gtag('config', GA_ID, { send_page_view: false });
+  window.gtag('config', gaId, { send_page_view: false });
 }
 
 export function trackPageView(path: string): void {
-  if (!GA_ID || typeof window.gtag !== 'function') return;
+  if (typeof window.gtag !== 'function') return;
   window.gtag('event', 'page_view', { page_path: path });
 }
