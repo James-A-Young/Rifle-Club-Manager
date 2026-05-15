@@ -17,7 +17,6 @@ const tables = [
   'Round',
   'Competition',
   'Season',
-  'PassTemplate',
   'ClubSettings',
   'AmmunitionStockInput',
   'AmmunitionSale',

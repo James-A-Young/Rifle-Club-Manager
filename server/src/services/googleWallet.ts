@@ -2,7 +2,6 @@ import { createHash } from 'crypto';
 import { GoogleAuth, JWTInput } from 'google-auth-library';
 import { google, walletobjects_v1 } from 'googleapis';
 import * as jwt from 'jsonwebtoken';
-import { prisma } from '../prisma';
 
 const WALLET_SCOPE = 'https://www.googleapis.com/auth/wallet_object.issuer';
 const DEFAULT_LOGO_URL =
@@ -296,18 +295,6 @@ export class GoogleWalletService {
 
     this.classIdCache.add(classId);
 
-    await prisma.passTemplate.upsert({
-      where: { clubId },
-      create: {
-        clubId,
-        googleClassId: classId,
-        googleIssuerId: this.issuerId,
-      },
-      update: {
-        googleClassId: classId,
-        googleIssuerId: this.issuerId,
-      },
-    });
   }
 
   private async upsertPassObject(passObject: PassObject): Promise<void> {

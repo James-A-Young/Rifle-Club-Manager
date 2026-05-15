@@ -79,7 +79,6 @@ model Club {
   ammunitionStockInputs AmmunitionStockInput[]
   invites          ClubInvite[]
   settings         ClubSettings?
-  passTemplate     PassTemplate?
   seasons          Season[]
   competitions     Competition[]
 }
@@ -199,17 +198,6 @@ model ClubSettings {
   memberCardSignInEnabled  Boolean  @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
-
-  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-}
-
-model PassTemplate {
-  id              String   @id @default(cuid())
-  clubId          String   @unique
-  googleClassId   String?
-  googleIssuerId  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 }
