@@ -50,7 +50,6 @@ model User {
   ammunitionStockInputs  AmmunitionStockInput[]
   createdInvites  ClubInvite[] @relation("InviteCreatedBy")
   redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
-  membershipPasses MembershipPass[]
   competitionEntries CompetitionEntry[]
   scores             Score[]
   passwordResetTokens PasswordResetToken[]
@@ -80,8 +79,6 @@ model Club {
   ammunitionStockInputs AmmunitionStockInput[]
   invites          ClubInvite[]
   settings         ClubSettings?
-  passTemplate     PassTemplate?
-  membershipPasses MembershipPass[]
   seasons          Season[]
   competitions     Competition[]
 }
@@ -203,34 +200,6 @@ model ClubSettings {
   updatedAt                DateTime @updatedAt
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-}
-
-model PassTemplate {
-  id              String   @id @default(cuid())
-  clubId          String   @unique
-  googleClassId   String?
-  googleIssuerId  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-}
-
-model MembershipPass {
-  id                String   @id @default(cuid())
-  userId            String
-  clubId            String
-  googleObjectId    String?
-  qrCode            String
-  lastUpdatedAt     DateTime @default(now())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, clubId])
-  @@index([clubId, createdAt])
 }
 
 model AmmunitionType {

@@ -194,7 +194,7 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
 });
 
 // Google Wallet Membership Pass endpoints
-router.get('/me/membership-passes/:clubId', requireAuth, async (req: AuthRequest, res: Response) => {
+async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
   const clubId = req.params.clubId as string;
 
   try {
@@ -279,35 +279,31 @@ router.get('/me/membership-passes/:clubId', requireAuth, async (req: AuthRequest
 
 
 
-    try {
-      
-
-      const addToWalletLink = await googleWalletService.generateAddToWalletLink({
-        userId: req.user!.id,
-        clubId,
-        memberName: currentUser.name,
-        membershipType: membership.club.name,
-        visitCount,
-        roundsThisYear: roundsThisYear._sum.quantity || 0,
-        average: average._avg.score || 0,
-        clubName: membership.club.name,
-        settings: {
-          secondaryColor: settings.secondaryColor || '#374151',
-          accentColor: settings.accentColor || '#3b82f6',
-        },
-      } as CreatePassParams);
-
-      res.json(addToWalletLink);
-      
-    } catch (apiError) {
-      // Google Wallet API may fail in test environments without real credentials
-      // Still return pass data, just without wallet link
-      console.warn('Google Wallet API error (may be expected in test env):', apiError);
-    }
+    const passResult = await googleWalletService.issueMembershipPass({
+      userId: req.user!.id,
+      clubId,
+      memberName: currentUser.name,
+      membershipType: membership.club.name,
+      visitCount,
+      roundsThisYear: roundsThisYear._sum.quantity || 0,
+      average: average._avg.score || 0,
+      clubName: membership.club.name,
+      settings: {
+        secondaryColor: settings.secondaryColor || '#374151',
+        accentColor: settings.accentColor || '#3b82f6',
+        logoUrl: settings.logoUrl || undefined,
+      },
+    } as CreatePassParams);
+    
+    res.json(passResult);
+    
   } catch (error) {
     console.error('Error generating membership pass:', error);
     res.status(500).json({ error: 'Failed to generate membership pass' });
   }
-});
+}
+
+router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
+router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
 
 export default router;
