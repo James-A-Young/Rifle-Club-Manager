@@ -41,5 +41,16 @@ services:
       migrator:
         condition: service_completed_successfully
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+        PGADMIN_DEFAULT_EMAIL: admin@shootingmatch.app
+        PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+        - "8080:80"
+    depends_on:
+        db:
+          condition: service_healthy
+
 volumes:
   postgres_data:

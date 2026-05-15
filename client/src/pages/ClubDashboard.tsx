@@ -185,6 +185,9 @@ export default function ClubDashboard() {
         setSettingsForm(s);
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
+    api.get<Firearm[]>(`/api/clubs/${id}/firearms`)
+    .then(firearms => setFirearms(firearms))
+    .catch(e => setError(e instanceof Error ? e.message : 'Error loading firearms'));
   }, [id, isAdmin]);
 
   async function loadAmmunitionSettings() {
