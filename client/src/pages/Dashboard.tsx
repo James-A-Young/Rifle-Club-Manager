@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { DueCard, ScoringAverages } from '../types/club';
+import addToGWallet from '../assets/add_to_google_wallet.svg';
 
 interface Club { id: string; name: string; }
 interface VisitLog { id: string; clubId: string; purpose: string; timeIn: string; timeOut: string | null; club: Club; }
+interface MembershipPassResponse { addToWalletLink?: string; }
 interface AmmunitionPurchase {
   id: string;
   buyerFirstName: string;
@@ -61,8 +63,12 @@ export default function Dashboard() {
             })))
             .catch(() => { /* silently ignore */ });
 
-          api.get<string>(`/api/users/me/membership-passes/${club.id}`)
-            .then(link => setMembershipPasses(prev => new Map(prev).set(club.id, link)))
+          api.get<MembershipPassResponse>(`/api/users/me/membership-passes/${club.id}`)
+            .then(pass => {
+              if (pass?.addToWalletLink) {
+                setMembershipPasses(prev => new Map(prev).set(club.id, pass.addToWalletLink as string));
+              }
+            })
             .catch(() => { /* silently ignore if club has no membership pass */ });
         });
       })
@@ -226,6 +232,7 @@ export default function Dashboard() {
             <tr>
               <th>Club</th>
               <th></th>
+              <th>Membership Pass</th>
             </tr>
           </thead>
           <tbody>
@@ -236,8 +243,10 @@ export default function Dashboard() {
                   <td>{club.name}</td>
                   <td>
                     <Link to={`/clubs/${club.id}`} className="btn btn-secondary btn-sm">View</Link>
+                    </td>
+                  <td>
                     { saveUrl !== '#' ? (
-                    <a href={saveUrl}><img src='wallet-button.png' /></a>) : null }
+                    <a href={saveUrl}><img src={addToGWallet} alt="Add to Google Wallet" /></a>) : null }
                   </td>
                 </tr>
               );
