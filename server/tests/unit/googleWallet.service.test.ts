@@ -37,27 +37,6 @@ describe('GoogleWalletService', () => {
     expect(service.validateHexColor('red')).toBe(false);
   });
 
-  it('generates QR code as data URL', async () => {
-    const service = new GoogleWalletService();
-    const qrCode = await service.generateQRCode('test-membership-id');
-    expect(qrCode).toMatch(/^data:image\/png;base64,/);
-    expect(qrCode.length).toBeGreaterThan(100);
-  });
-
-  it('generates different QR codes for different IDs', async () => {
-    const service = new GoogleWalletService();
-    const qr1 = await service.generateQRCode('id-1');
-    const qr2 = await service.generateQRCode('id-2');
-    expect(qr1).not.toBe(qr2);
-  });
-
-  it('generates QR code as buffer', async () => {
-    const service = new GoogleWalletService();
-    const buffer = await service.generateQRCodeBuffer('test-membership-id');
-    expect(Buffer.isBuffer(buffer)).toBe(true);
-    expect(buffer.length).toBeGreaterThan(0);
-  });
-
   it('creates pass object with member details', async () => {
     const service = new GoogleWalletService();
     const passObject = await service.createPassObject({

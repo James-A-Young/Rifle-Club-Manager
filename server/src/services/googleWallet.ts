@@ -7,8 +7,6 @@ import { prisma } from '../prisma';
 const WALLET_SCOPE = 'https://www.googleapis.com/auth/wallet_object.issuer';
 const DEFAULT_LOGO_URL =
   'https://developers.google.com/static/wallet/site-assets/images/pass-builder/pass_google_logo.jpg';
-const DEFAULT_HERO_URL =
-  'https://developers.google.com/static/wallet/site-assets/images/pass-builder/google-io-hero-demo-only.jpg';
 
 export interface PassObject {
   id: string;
@@ -121,7 +119,6 @@ export class GoogleWalletService {
   async issueMembershipPass(params: CreatePassParams): Promise<IssueMembershipPassResult | null> {
     const classId = this.buildClassId('v1-membership');
     const objectId = this.buildObjectId(params.clubId, params.userId);
-    const qrValue = `membership:${params.clubId}:${params.userId}`;
 
     const passObject = this.buildPassObject({
       ...params,

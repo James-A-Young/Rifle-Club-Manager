@@ -252,7 +252,7 @@ export default function Dashboard() {
               );
             })}
             {clubs.length === 0 && (
-              <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No clubs yet</td></tr>
+              <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No clubs yet</td></tr>
             )}
           </tbody>
         </table>

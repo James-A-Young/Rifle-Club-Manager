@@ -295,8 +295,8 @@ async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
       },
     } as CreatePassParams);
     
-    console.log('Membership pass issued successfully:', passResult);
     res.json(passResult);
+    
   } catch (error) {
     console.error('Error generating membership pass:', error);
     res.status(500).json({ error: 'Failed to generate membership pass' });
