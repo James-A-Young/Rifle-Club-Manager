@@ -385,6 +385,53 @@ describe('users routes', () => {
 
     expect(okDelete.status).toBe(204);
   });
+
+  it('updates own firearm and blocks non-owners from updating', async () => {
+    const owner = await createUser({ email: `${unique('owner-firearm-patch')}@test.com` });
+    const stranger = await createUser({ email: `${unique('stranger-firearm-patch')}@test.com` });
+
+    const created = await request(app)
+      .post('/api/users/me/firearms')
+      .set(authHeader(owner))
+      .send({ make: 'Anschutz', model: '1913', caliber: '.22', serialNumber: 'SER-PATCH-1' });
+
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .patch(`/api/users/me/firearms/${created.body.id}`)
+      .set(authHeader(owner))
+      .send({ make: 'Anschutz', model: '2013', caliber: '.22 LR', serialNumber: 'SER-PATCH-2' });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.model).toBe('2013');
+    expect(updated.body.caliber).toBe('.22 LR');
+    expect(updated.body.serialNumber).toBe('SER-PATCH-2');
+
+    const forbiddenUpdate = await request(app)
+      .patch(`/api/users/me/firearms/${created.body.id}`)
+      .set(authHeader(stranger))
+      .send({ make: 'Nope', model: 'Nope', caliber: '.22', serialNumber: 'SER-NOPE' });
+
+    expect(forbiddenUpdate.status).toBe(404);
+  });
+
+  it('rejects invalid payload when updating own firearm', async () => {
+    const owner = await createUser({ email: `${unique('owner-firearm-invalid')}@test.com` });
+
+    const created = await request(app)
+      .post('/api/users/me/firearms')
+      .set(authHeader(owner))
+      .send({ make: 'CZ', model: '457', caliber: '.22 LR', serialNumber: 'SER-INVALID-1' });
+
+    expect(created.status).toBe(201);
+
+    const invalid = await request(app)
+      .patch(`/api/users/me/firearms/${created.body.id}`)
+      .set(authHeader(owner))
+      .send({ make: 'CZ', model: '', caliber: '.22 LR', serialNumber: 'SER-INVALID-2' });
+
+    expect(invalid.status).toBe(400);
+  });
 });
 
 describe('clubs routes', () => {
@@ -452,6 +499,62 @@ describe('clubs routes', () => {
     expect(res.status).toBe(200);
     const found = res.body.find((m: { userId: string }) => m.userId === member.id);
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
+  });
+
+  it('allows admin to update club firearm and forbids non-admin', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('club-member-no-admin')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const created = await request(app)
+      .post(`/api/clubs/${club.id}/firearms`)
+      .set(authHeader(admin))
+      .send({ make: 'Walther', model: 'KK500', caliber: '.22 LR', serialNumber: 'CLUB-SER-1' });
+
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .patch(`/api/clubs/${club.id}/firearms/${created.body.id}`)
+      .set(authHeader(admin))
+      .send({ make: 'Walther', model: 'KK500-M', caliber: '.22 LR', serialNumber: 'CLUB-SER-2' });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.model).toBe('KK500-M');
+    expect(updated.body.serialNumber).toBe('CLUB-SER-2');
+
+    const forbidden = await request(app)
+      .patch(`/api/clubs/${club.id}/firearms/${created.body.id}`)
+      .set(authHeader(member))
+      .send({ make: 'Blocked', model: 'Blocked', caliber: '.22', serialNumber: 'BLOCKED' });
+
+    expect(forbidden.status).toBe(403);
+  });
+
+  it('returns not found when admin updates firearm outside the club scope', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { club: otherClub, admin: otherAdmin } = await createClubWithAdmin();
+
+    const foreignFirearm = await request(app)
+      .post(`/api/clubs/${otherClub.id}/firearms`)
+      .set(authHeader(otherAdmin))
+      .send({ make: 'Bleiker', model: 'Challenger', caliber: '.22 LR', serialNumber: 'FOREIGN-CLUB-1' });
+
+    expect(foreignFirearm.status).toBe(201);
+
+    const notFound = await request(app)
+      .patch(`/api/clubs/${club.id}/firearms/${foreignFirearm.body.id}`)
+      .set(authHeader(admin))
+      .send({ make: 'Bleiker', model: 'Edited', caliber: '.22 LR', serialNumber: 'FOREIGN-CLUB-2' });
+
+    expect(notFound.status).toBe(404);
   });
 });
 

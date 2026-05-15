@@ -169,6 +169,30 @@ router.delete('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Res
   res.status(204).send();
 });
 
+router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+  const firearmId = req.params.id as string;
+  const parsed = firearmSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: parsed.data,
+  });
+
+  res.json(updated);
+});
+
 // Google Wallet Membership Pass endpoints
 async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
   const clubId = req.params.clubId as string;
