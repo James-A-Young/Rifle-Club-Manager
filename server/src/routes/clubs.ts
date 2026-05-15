@@ -643,6 +643,18 @@ const firearmSchema = z.object({
   caliber: z.string().min(1),
   serialNumber: z.string().min(1),
 });
+router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const firearms = await prisma.firearm.findMany({
+    where: { clubId, ownerType: OwnerType.CLUB },
+  });
+  res.json(firearms);
+});
 
 router.post('/:id/firearms', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
