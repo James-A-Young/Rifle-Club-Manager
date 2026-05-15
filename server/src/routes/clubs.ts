@@ -701,6 +701,37 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
   res.status(204).send();
 });
 
+router.patch('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const firearmId = req.params.firearmId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = firearmSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: parsed.data,
+  });
+
+  res.json(updated);
+});
+
 // Club Settings endpoints for Google Wallet
 const hexColorSchema = z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid hex color format').optional();
 

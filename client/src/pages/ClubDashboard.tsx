@@ -389,6 +389,12 @@ export default function ClubDashboard() {
     setShowFirearmForm(false);
   }
 
+  async function editFirearm(firearmId: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
+    if (!id) return;
+    const updated = await api.patch<Firearm>(`/api/clubs/${id}/firearms/${firearmId}`, data);
+    setFirearms(prev => prev.map(f => (f.id === firearmId ? updated : f)));
+  }
+
   async function removeFirearm(firearmId: string) {
     if (!id) return;
     await api.delete(`/api/clubs/${id}/firearms/${firearmId}`);
@@ -714,10 +720,14 @@ export default function ClubDashboard() {
 
           {isAdmin && (
             <ArmorySection
+              title="Club Armory"
+              addButtonLabel="Add Firearm"
+              emptyMessage="No firearms registered"
               firearms={firearms}
               showForm={showFirearmForm}
               onToggleForm={() => setShowFirearmForm(s => !s)}
               onAdd={addFirearm}
+              onEdit={editFirearm}
               onRemove={removeFirearm}
             />
           )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
-import FirearmForm from '../components/FirearmForm';
+import ArmorySection from '../components/dashboard/ArmorySection';
+import { Firearm } from '../types/club';
 
 interface UserProfile {
   id: string;
@@ -13,14 +14,6 @@ interface UserProfile {
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
   shotgunCertificateExpiry?: string | null;
-}
-
-interface Firearm {
-  id: string;
-  make: string;
-  model: string;
-  caliber: string;
-  serialNumber: string;
 }
 
 export default function Profile() {
@@ -81,6 +74,11 @@ export default function Profile() {
   async function removeFirearm(id: string) {
     await api.delete(`/api/users/me/firearms/${id}`);
     setFirearms(prev => prev.filter(f => f.id !== id));
+  }
+
+  async function editFirearm(id: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
+    const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}`, data);
+    setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
   }
 
   if (!profile) return <div>Loading…</div>;
@@ -175,46 +173,17 @@ export default function Profile() {
         )}
       </section>
 
-      <section>
-        <div className="page-header">
-          <h2>My Firearms</h2>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowFirearmForm(s => !s)}>
-            Add Firearm
-          </button>
-        </div>
-        {showFirearmForm && (
-          <div style={{ marginBottom: '1rem' }}>
-            <FirearmForm onSubmit={addFirearm} onCancel={() => setShowFirearmForm(false)} />
-          </div>
-        )}
-        <table>
-          <thead>
-            <tr>
-              <th>Make</th>
-              <th>Model</th>
-              <th>Caliber</th>
-              <th>Serial Number</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {firearms.map(f => (
-              <tr key={f.id}>
-                <td>{f.make}</td>
-                <td>{f.model}</td>
-                <td>{f.caliber}</td>
-                <td>{f.serialNumber}</td>
-                <td>
-                  <button className="btn btn-danger btn-sm" onClick={() => removeFirearm(f.id)}>Remove</button>
-                </td>
-              </tr>
-            ))}
-            {firearms.length === 0 && (
-              <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>No firearms registered</td></tr>
-            )}
-          </tbody>
-        </table>
-      </section>
+      <ArmorySection
+        title="My Firearms"
+        addButtonLabel="Add Firearm"
+        emptyMessage="No firearms registered"
+        firearms={firearms}
+        showForm={showFirearmForm}
+        onToggleForm={() => setShowFirearmForm(s => !s)}
+        onAdd={addFirearm}
+        onEdit={editFirearm}
+        onRemove={removeFirearm}
+      />
     </>
   );
 }
