@@ -148,7 +148,6 @@ export class GoogleWalletService {
         userId: params.userId,
         classId,
         objectId,
-        passObject,
         error: this.extractErrorMessage(error),
       });
 
