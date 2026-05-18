@@ -670,7 +670,6 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     },
     orderBy: { round: { dueDate: 'asc' } },
   });
-  console.log('Due scores for user', userId, sevenDaysAgo, sevenDaysFromNow, clubId);
   res.json(scores.map(s => ({
     scoreId: s.id,
     competitionId: s.competitionId,
