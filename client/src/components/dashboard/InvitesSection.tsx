@@ -11,6 +11,7 @@ interface Props {
   onCreate: () => void;
   onCopyUrl: (token: string) => void;
   onSendEmail: (invite: ClubInvite) => void;
+  onCancel: (invite: ClubInvite) => void;
 }
 
 export default function InvitesSection({
@@ -24,6 +25,7 @@ export default function InvitesSection({
   onCreate,
   onCopyUrl,
   onSendEmail,
+  onCancel,
 }: Props) {
 
   return (
@@ -113,6 +115,13 @@ export default function InvitesSection({
                     disabled={Boolean(invite.redeemedAt) || new Date(invite.expiresAt) < new Date()}
                   >
                     Resend Email
+                  </button>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={() => onCancel(invite)}
+                    disabled={Boolean(invite.redeemedAt)}
+                  >
+                    Cancel
                   </button>
                 </div>
               </td>

@@ -382,6 +382,19 @@ export default function ClubDashboard() {
     }
   }
 
+  async function cancelInvite(invite: ClubInvite) {
+    if (!id) return;
+    if (!confirm(`Cancel invite for ${invite.email}?`)) return;
+
+    try {
+      setError('');
+      await api.delete(`/api/clubs/${id}/invites/${invite.id}`);
+      setInvites(prev => prev.filter(i => i.id !== invite.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error cancelling invite');
+    }
+  }
+
   async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
     if (!id) return;
     const f = await api.post<Firearm>(`/api/clubs/${id}/firearms`, data);
@@ -776,6 +789,7 @@ export default function ClubDashboard() {
               onCreate={createInvite}
               onCopyUrl={copyInviteUrl}
               onSendEmail={resendInviteEmail}
+              onCancel={cancelInvite}
             />
           )}
         </>

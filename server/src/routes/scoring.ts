@@ -651,7 +651,6 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     },
     orderBy: { round: { dueDate: 'asc' } },
   });
-
   res.json(scores.map(s => ({
     scoreId: s.id,
     competitionId: s.competitionId,
