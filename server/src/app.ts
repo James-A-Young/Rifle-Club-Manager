@@ -15,10 +15,25 @@ import ammunitionRouter from './routes/ammunition';
 import scoringRouter from './routes/scoring';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
-import { fr } from 'zod/v4/locales';
-import { connect } from 'http2';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function resolveTrustProxy(): boolean | number | string | string[] {
+  const configuredValue = process.env.TRUST_PROXY?.trim();
+  if (!configuredValue) {
+    return process.env.NODE_ENV === 'production';
+  }
+
+  const normalized = configuredValue.toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+
+  return configuredValue;
+}
 
 /**
  * CSRF protection via Origin header verification.
@@ -65,6 +80,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 
 export function createApp() {
   const app = express();
+
+  app.set('trust proxy', resolveTrustProxy());
 
   app.use(helmet({
     contentSecurityPolicy: {
