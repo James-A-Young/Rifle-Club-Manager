@@ -69,8 +69,9 @@ export function createApp() {
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
-        scriptSrc: ["'self'", 'https://challenges.cloudflare.com'],
+        scriptSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://www.googletagmanager.com','https://static.cloudflareinsights.com'],
         frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
+        connectSrc: ["'self'", 'https://*.analytics.google.com', 'https://cloudflareinsights.com'],
       },
     },
   }));
