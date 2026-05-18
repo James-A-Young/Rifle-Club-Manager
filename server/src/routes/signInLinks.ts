@@ -4,10 +4,10 @@ import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipStatus, MembershipRole } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditSignInLinkInvalid } from '../middleware/auditLog';
+import { ensureAdminForClub } from '../utils/clubAccess';
 
 const router = Router();
 
@@ -25,19 +25,6 @@ const createKioskLinkSchema = z.object({
 const issueQrSchema = z.object({
   expiresInMinutes: z.number().int().min(1).max(60).default(5),
 });
-
-async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
-  const adminMembership = await prisma.clubMembership.findFirst({
-    where: {
-      clubId,
-      userId,
-      role: MembershipRole.ADMIN,
-      status: MembershipStatus.APPROVED,
-    },
-  });
-
-  return Boolean(adminMembership);
-}
 
 function isKioskLink(expiresAt: Date): boolean {
   return expiresAt.getTime() - Date.now() > 365 * 24 * 60 * 60 * 1000;

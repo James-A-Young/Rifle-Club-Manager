@@ -11,6 +11,7 @@ import {
   auditMemberRoleChange,
 } from '../middleware/auditLog';
 import { emailService } from '../services/email';
+import { ensureAdminForClub } from '../utils/clubAccess';
 
 const router = Router();
 
@@ -86,18 +87,6 @@ router.get('/invite-preview/:token', async (req, res: Response) => {
 });
 
 router.use(requireAuth);
-
-async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
-  const membership = await prisma.clubMembership.findFirst({
-    where: {
-      clubId,
-      userId,
-      role: MembershipRole.ADMIN,
-      status: MembershipStatus.APPROVED,
-    },
-  });
-  return Boolean(membership);
-}
 
 const createClubSchema = z.object({
   name: z.string().min(2),

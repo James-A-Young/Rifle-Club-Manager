@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
-import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
+import { MembershipStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { formatZodError } from '../utils/zodError';
+import { ensureAdminForClub } from '../utils/clubAccess';
 
 const router = Router();
 
@@ -24,19 +25,6 @@ function parsePageSize(value: unknown): number {
     return DEFAULT_PAGE_SIZE;
   }
   return Math.min(Math.floor(parsed), MAX_PAGE_SIZE);
-}
-
-async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
-  const membership = await prisma.clubMembership.findFirst({
-    where: {
-      userId,
-      clubId,
-      role: MembershipRole.ADMIN,
-      status: MembershipStatus.APPROVED,
-    },
-    select: { id: true },
-  });
-  return Boolean(membership);
 }
 
 const createTypeSchema = z.object({

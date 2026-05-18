@@ -2,32 +2,13 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipRole, MembershipStatus, Prisma } from '@prisma/client';
+import { MembershipStatus, Prisma } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
+import { ensureAdminForClub, ensureMemberOfClub } from '../utils/clubAccess';
 
 const router = Router();
 
 router.use(requireAuth);
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
-  const m = await prisma.clubMembership.findFirst({
-    where: { userId, clubId, role: MembershipRole.ADMIN, status: MembershipStatus.APPROVED },
-    select: { id: true },
-  });
-  return Boolean(m);
-}
-
-async function ensureMemberOfClub(userId: string, clubId: string): Promise<boolean> {
-  const m = await prisma.clubMembership.findFirst({
-    where: { userId, clubId, status: MembershipStatus.APPROVED },
-    select: { id: true },
-  });
-  return Boolean(m);
-}
 
 function escapeCsvCell(value: unknown): string {
   const normalized = value === null || value === undefined ? '' : String(value);

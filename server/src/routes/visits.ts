@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret } from '../config/jwt';
 import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
+import { ensureAdminForClub } from '../utils/clubAccess';
 
 const router = Router();
 
@@ -223,19 +224,6 @@ function applyHistoryCursor(
       },
     ],
   };
-}
-
-async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
-  const membership = await prisma.clubMembership.findFirst({
-    where: {
-      userId,
-      clubId,
-      role: MembershipRole.ADMIN,
-      status: MembershipStatus.APPROVED,
-    },
-  });
-
-  return Boolean(membership);
 }
 
 function csvCell(value: unknown): string {
