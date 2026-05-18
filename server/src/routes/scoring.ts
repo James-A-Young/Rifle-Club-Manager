@@ -655,7 +655,7 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
 
   // Cards due: score IS NULL, dueDate within [-7d, +7d] window from today
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysFromNow = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
   const scores = await prisma.score.findMany({
     where: {
@@ -670,7 +670,7 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
     },
     orderBy: { round: { dueDate: 'asc' } },
   });
-
+  console.log('Due scores for user', userId, sevenDaysAgo, sevenDaysFromNow, clubId);
   res.json(scores.map(s => ({
     scoreId: s.id,
     competitionId: s.competitionId,
