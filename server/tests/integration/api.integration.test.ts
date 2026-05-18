@@ -556,6 +556,83 @@ describe('clubs routes', () => {
 
     expect(notFound.status).toBe(404);
   });
+
+  it('allows admin to cancel a pending invite', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const invite = await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email: `${unique('invite-cancel')}@test.com`,
+        role: MembershipRole.MEMBER,
+        token: unique('token-cancel'),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdByUserId: admin.id,
+      },
+    });
+
+    const res = await request(app)
+      .delete(`/api/clubs/${club.id}/invites/${invite.id}`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(204);
+
+    const deletedInvite = await prisma.clubInvite.findUnique({ where: { id: invite.id } });
+    expect(deletedInvite).toBeNull();
+  });
+
+  it('forbids non-admin users from cancelling invites', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('invite-member')}@test.com` });
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const invite = await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email: `${unique('invite-no-cancel')}@test.com`,
+        role: MembershipRole.MEMBER,
+        token: unique('token-no-cancel'),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdByUserId: admin.id,
+      },
+    });
+
+    const res = await request(app)
+      .delete(`/api/clubs/${club.id}/invites/${invite.id}`)
+      .set(authHeader(member));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns conflict when cancelling a redeemed invite', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const redeemedBy = await createUser({ email: `${unique('invite-redeemed')}@test.com` });
+    const invite = await prisma.clubInvite.create({
+      data: {
+        clubId: club.id,
+        email: redeemedBy.email,
+        role: MembershipRole.MEMBER,
+        token: unique('token-redeemed'),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        createdByUserId: admin.id,
+        redeemedAt: new Date(),
+        redeemedByUserId: redeemedBy.id,
+      },
+    });
+
+    const res = await request(app)
+      .delete(`/api/clubs/${club.id}/invites/${invite.id}`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('redeemed');
+  });
 });
 
 describe('firearms route', () => {

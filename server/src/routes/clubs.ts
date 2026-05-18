@@ -418,6 +418,53 @@ router.post('/:id/invites/:inviteId/send', async (req: AuthRequest, res: Respons
   });
 });
 
+router.delete('/:id/invites/:inviteId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const inviteId = req.params.inviteId as string;
+
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const invite = await prisma.clubInvite.findFirst({
+    where: {
+      id: inviteId,
+      clubId,
+    },
+    select: {
+      id: true,
+      redeemedAt: true,
+    },
+  });
+
+  if (!invite) {
+    res.status(404).json({ error: 'Invite not found' });
+    return;
+  }
+
+  if (invite.redeemedAt) {
+    res.status(409).json({ error: 'Invite already redeemed' });
+    return;
+  }
+
+  const deleted = await prisma.clubInvite.deleteMany({
+    where: {
+      id: inviteId,
+      clubId,
+      redeemedAt: null,
+    },
+  });
+
+  if (deleted.count !== 1) {
+    res.status(409).json({ error: 'Invite already redeemed' });
+    return;
+  }
+
+  res.status(204).send();
+});
+
 router.get('/:id/invites', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
