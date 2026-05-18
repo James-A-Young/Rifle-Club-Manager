@@ -590,7 +590,7 @@ describe('member due cards', () => {
     expect(dueRes.body).toHaveLength(0);
   });
 
-  it('excludes cards due more than 7 days in the future', async () => {
+  it('excludes cards due more than 30 days in the future', async () => {
     const { admin, club } = await createClubWithAdmin();
     const member = await addApprovedMember(club.id);
 
@@ -599,8 +599,8 @@ describe('member due cards', () => {
       .set(authHeader(admin))
       .send({ name: 'Far Future Season' });
 
-    // Due 14 days from now — outside the +7d upper bound
-    const farFutureDue = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Due 14 days from now — outside the +30d upper bound
+    const farFutureDue = new Date(Date.now() + 100 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const { body: comp } = await request(app)
       .post(`/api/clubs/${club.id}/scoring/competitions`)

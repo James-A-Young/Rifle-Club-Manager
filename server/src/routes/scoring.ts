@@ -653,9 +653,9 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
   const isMember = await ensureMemberOfClub(userId, clubId);
   if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
 
-  // Cards due: score IS NULL, dueDate within [-7d, +7d] window from today
+  // Cards due: score IS NULL, dueDate within [-7d, +60d] window from today
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const sevenDaysFromNow = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
   const scores = await prisma.score.findMany({
     where: {
