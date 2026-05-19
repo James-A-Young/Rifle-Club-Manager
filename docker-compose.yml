@@ -46,7 +46,7 @@ services:
       context: .
       target: backup-worker
     environment:
-      DATABASE_URL: ******db:5432/shootingmatch
+      DATABASE_URL: postgresql://shootingmatch:shootingmatch@db:5432/shootingmatch
       NODE_ENV: production
       GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${GOOGLE_DRIVE_OAUTH_CLIENT_ID:-}
       GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: ${GOOGLE_DRIVE_OAUTH_CLIENT_SECRET:-}
