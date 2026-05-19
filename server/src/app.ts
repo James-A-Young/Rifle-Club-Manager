@@ -14,6 +14,7 @@ import signInLinksRouter from './routes/signInLinks';
 import ammunitionRouter from './routes/ammunition';
 import cashboxRouter from './routes/cashbox';
 import scoringRouter from './routes/scoring';
+import competitionsRouter from './routes/competitions';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
 
@@ -145,6 +146,7 @@ export function createApp() {
   app.use('/api/ammunition', ammunitionRouter);
   app.use('/api/cashbox', cashboxRouter);
   app.use('/api', scoringRouter);
+  app.use('/api', competitionsRouter);
 
   if (process.env.NODE_ENV === 'production') {
     const publicPath = path.join(__dirname, '..', '..', 'public');

@@ -782,6 +782,7 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
   // Group scores by userId (already desc by updatedAt, preserving order for last-10)
   const scoresByUser = new Map<string, number[]>();
   for (const row of allScoreRows) {
+    if (row.userId == null) continue;
     const arr = scoresByUser.get(row.userId);
     if (arr) {
       arr.push(row.score as number);
@@ -864,10 +865,10 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
   res.json(scores.map(s => ({
     scoreId: s.id,
     competitionId: s.competitionId,
-    competitionName: s.competition.name,
+    competitionName: s.competition?.name,
     roundId: s.roundId,
-    roundNumber: s.round.roundNumber,
-    dueDate: s.round.dueDate,
+    roundNumber: s.round?.roundNumber,
+    dueDate: s.round?.dueDate,
     cardNumber: s.cardNumber,
   })));
 });
