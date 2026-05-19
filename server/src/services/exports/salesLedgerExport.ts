@@ -84,7 +84,7 @@ export async function streamSalesLedgerCsv(
   let cursor: { createdAt: Date; id: string } | null = null;
 
   while (true) {
-    const rows = await prisma.ammunitionSale.findMany({
+    const rows: SalesRow[] = await prisma.ammunitionSale.findMany({
       where: applySalesCursor(where, cursor),
       take: CSV_BATCH_SIZE,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -121,7 +121,7 @@ export async function buildSalesLedgerCsvForMonth(
 
   let cursor: { createdAt: Date; id: string } | null = null;
   while (true) {
-    const rows = await prisma.ammunitionSale.findMany({
+    const rows: SalesRow[] = await prisma.ammunitionSale.findMany({
       where: applySalesCursor(where, cursor),
       take: CSV_BATCH_SIZE,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -143,4 +143,3 @@ export async function buildSalesLedgerCsvForMonth(
 
   return lines.join('\n');
 }
-

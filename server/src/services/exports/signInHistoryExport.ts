@@ -101,7 +101,7 @@ export async function streamSignInHistoryCsv(
   let cursor: { timeIn: Date; id: string } | null = null;
 
   while (true) {
-    const rows = await prisma.visitLog.findMany({
+    const rows: SignInHistoryRow[] = await prisma.visitLog.findMany({
       where: applyHistoryCursor(where, cursor),
       take: CSV_BATCH_SIZE,
       orderBy: [
@@ -168,7 +168,7 @@ export async function buildSignInHistoryCsvForMonth(
   let cursor: { timeIn: Date; id: string } | null = null;
 
   while (true) {
-    const rows = await prisma.visitLog.findMany({
+    const rows: SignInHistoryRow[] = await prisma.visitLog.findMany({
       where: applyHistoryCursor(where, cursor),
       take: CSV_BATCH_SIZE,
       orderBy: [{ timeIn: 'desc' }, { id: 'desc' }],
@@ -199,4 +199,3 @@ export async function buildSignInHistoryCsvForMonth(
 
   return lines.join('\n');
 }
-

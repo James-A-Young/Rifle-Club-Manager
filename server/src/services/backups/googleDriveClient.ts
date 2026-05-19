@@ -9,7 +9,7 @@ function requiredEnv(name: string): string {
 }
 
 function qEscape(value: string): string {
-  return value.replace(/'/g, "\\'");
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 export class GoogleDriveBackupClient {
@@ -118,4 +118,3 @@ export class GoogleDriveBackupClient {
     return created.data.id;
   }
 }
-
