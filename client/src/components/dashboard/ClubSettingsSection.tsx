@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClubSettings, AmmunitionType, AmmunitionSafe } from '../../types/club';
+import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus } from '../../types/club';
 
 interface Props {
   settings: ClubSettings | null;
@@ -22,6 +22,13 @@ interface Props {
   onUpdateAmmunitionTypePrice: (typeId: string, pricePence: number) => void;
   onRenameSafe: (safeId: string, newName: string) => void;
   onDeleteSafe: (safeId: string) => void;
+  googleDriveStatus: GoogleDriveBackupStatus | null;
+  backupDriveFolderIdInput: string;
+  backupActionLoading: boolean;
+  onBackupDriveFolderIdInputChange: (value: string) => void;
+  onStartGoogleDriveLink: () => void;
+  onDisconnectGoogleDrive: () => void;
+  onRefreshBackupStatus: () => void;
 }
 
 export default function ClubSettingsSection({
@@ -45,6 +52,13 @@ export default function ClubSettingsSection({
   onUpdateAmmunitionTypePrice,
   onRenameSafe,
   onDeleteSafe,
+  googleDriveStatus,
+  backupDriveFolderIdInput,
+  backupActionLoading,
+  onBackupDriveFolderIdInputChange,
+  onStartGoogleDriveLink,
+  onDisconnectGoogleDrive,
+  onRefreshBackupStatus,
 }: Props) {
   return (
     <section>
@@ -120,7 +134,7 @@ export default function ClubSettingsSection({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
               <label>
                 <input
@@ -140,6 +154,17 @@ export default function ClubSettingsSection({
                   onChange={e => onFormChange({ memberCardSignInEnabled: e.target.checked })}
                 />
                 {' '}Member Card Sign-In Enabled
+              </label>
+            </div>
+
+            <div className="form-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.backupEnabled}
+                  onChange={e => onFormChange({ backupEnabled: e.target.checked })}
+                />
+                {' '}Nightly Google Drive Backups Enabled
               </label>
             </div>
           </div>
@@ -171,8 +196,91 @@ export default function ClubSettingsSection({
           <dd>{settings?.passIssuingEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Member Card Sign-In Enabled</dt>
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
+          <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
         </dl>
       )}
+
+      <section style={{ marginTop: '2rem' }}>
+        <div className="page-header" style={{ marginBottom: '0.75rem' }}>
+          <h3>Google Drive Backups</h3>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={onRefreshBackupStatus}>
+            Refresh Status
+          </button>
+        </div>
+
+        <div className="form-group">
+          <label>Target Drive Folder ID (optional)</label>
+          <input
+            value={backupDriveFolderIdInput}
+            onChange={e => onBackupDriveFolderIdInputChange(e.target.value)}
+            placeholder="Leave blank to auto-create managed folders"
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            onClick={onStartGoogleDriveLink}
+            disabled={backupActionLoading}
+          >
+            {googleDriveStatus?.connection?.linked ? 'Reconnect Google Drive' : 'Link Google Drive'}
+          </button>
+          <button
+            className="btn btn-danger btn-sm"
+            type="button"
+            onClick={onDisconnectGoogleDrive}
+            disabled={backupActionLoading || !googleDriveStatus?.connection?.linked}
+          >
+            Disconnect
+          </button>
+        </div>
+
+        <dl style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '0.5rem 1rem', marginBottom: '1rem' }}>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Connection Status</dt>
+          <dd>{googleDriveStatus?.connection?.status ?? 'UNKNOWN'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked</dt>
+          <dd>{googleDriveStatus?.connection?.linked ? 'Yes' : 'No'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Drive Folder ID</dt>
+          <dd>{googleDriveStatus?.connection?.driveFolderId ?? 'Not set'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked At</dt>
+          <dd>{googleDriveStatus?.connection?.linkedAt ? new Date(googleDriveStatus.connection.linkedAt).toLocaleString() : 'N/A'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disconnected At</dt>
+          <dd>{googleDriveStatus?.connection?.disconnectedAt ? new Date(googleDriveStatus.connection.disconnectedAt).toLocaleString() : 'N/A'}</dd>
+        </dl>
+
+        <h4>Last Run Status by Dataset</h4>
+        <table>
+          <thead>
+            <tr>
+              <th>Dataset</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Finished</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(googleDriveStatus?.latestByDataset ?? {}).map(([dataset, run]) => (
+              <tr key={dataset}>
+                <td>{dataset}</td>
+                <td>{run?.status ?? 'N/A'}</td>
+                <td>{run?.startedAt ? new Date(run.startedAt).toLocaleString() : 'N/A'}</td>
+                <td>{run?.finishedAt ? new Date(run.finishedAt).toLocaleString() : 'N/A'}</td>
+                <td>{run?.error ?? ''}</td>
+              </tr>
+            ))}
+            {Object.keys(googleDriveStatus?.latestByDataset ?? {}).length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                  No backup runs recorded yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
 
       <section style={{ marginTop: '2rem' }}>
         <h3>Ammunition Type & Price Settings</h3>

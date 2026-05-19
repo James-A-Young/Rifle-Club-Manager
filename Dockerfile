@@ -53,3 +53,16 @@ COPY --from=builder /app/client/dist ./public
 USER nonroot:nonroot
 EXPOSE 3000
 CMD ["server/dist/index.js"]
+
+# Stage 7: Distroless backup worker runtime
+FROM gcr.io/distroless/nodejs24-debian12 AS backup-worker
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=production-deps /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/server/dist ./server/dist
+
+USER nonroot:nonroot
+CMD ["server/dist/backupWorker.js"]

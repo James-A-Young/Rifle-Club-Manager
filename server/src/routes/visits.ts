@@ -9,13 +9,12 @@ import { formatZodError } from '../utils/zodError';
 import { jwtSecret } from '../config/jwt';
 import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { streamSignInHistoryCsv } from '../services/exports/signInHistoryExport';
 
 const router = Router();
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;
-const CSV_BATCH_SIZE = 1000;
-
 type TimeWindowPreset = '3m' | '6m' | '12m' | 'custom';
 
 type HistoryFilters = {
@@ -224,11 +223,6 @@ function applyHistoryCursor(
       },
     ],
   };
-}
-
-function csvCell(value: unknown): string {
-  const normalized = value === null || value === undefined ? '' : String(value);
-  return `"${normalized.replace(/"/g, '""')}"`;
 }
 
 // Schema for public sign-in endpoint: explicitly excludes account/profile mutations
@@ -926,91 +920,7 @@ router.get('/club/:clubId/history/export.csv', requireAuth, async (req: AuthRequ
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-history.csv"`);
-
-  res.write([
-    'visit_id',
-    'visitor_type',
-    'visitor_name',
-    'visitor_email',
-    'guest_club_represented',
-    'purpose',
-    'firearm_serial',
-    'firearm_make',
-    'firearm_model',
-    'firearm_caliber',
-    'time_in',
-    'time_out',
-  ].join(',') + '\n');
-
-  let cursor: { timeIn: Date; id: string } | null = null;
-
-  while (true) {
-    const where = applyHistoryCursor(baseWhere, cursor);
-    const rows = await prisma.visitLog.findMany({
-      where,
-      take: CSV_BATCH_SIZE,
-      orderBy: [
-        { timeIn: 'desc' },
-        { id: 'desc' },
-      ],
-      select: {
-        id: true,
-        userId: true,
-        purpose: true,
-        timeIn: true,
-        timeOut: true,
-        guestName: true,
-        guestEmail: true,
-        guestClubRepresented: true,
-        user: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-        firearmUsed: {
-          select: {
-            serialNumber: true,
-            make: true,
-            model: true,
-            caliber: true,
-          },
-        },
-      },
-    });
-
-    if (rows.length === 0) {
-      break;
-    }
-
-    for (const row of rows) {
-      const visitorType = row.userId ? 'member' : 'guest';
-      const visitorName = row.userId ? row.user?.name : row.guestName;
-      const visitorEmail = row.userId ? row.user?.email : row.guestEmail;
-
-      res.write([
-        csvCell(row.id),
-        csvCell(visitorType),
-        csvCell(visitorName ?? ''),
-        csvCell(visitorEmail ?? ''),
-        csvCell(row.guestClubRepresented ?? ''),
-        csvCell(row.purpose),
-        csvCell(row.firearmUsed?.serialNumber ?? ''),
-        csvCell(row.firearmUsed?.make ?? ''),
-        csvCell(row.firearmUsed?.model ?? ''),
-        csvCell(row.firearmUsed?.caliber ?? ''),
-        csvCell(row.timeIn.toISOString()),
-        csvCell(row.timeOut ? row.timeOut.toISOString() : ''),
-      ].join(',') + '\n');
-    }
-
-    if (rows.length < CSV_BATCH_SIZE) {
-      break;
-    }
-
-    const last = rows[rows.length - 1];
-    cursor = { timeIn: last.timeIn, id: last.id };
-  }
+  await streamSignInHistoryCsv(res, baseWhere);
 
   res.end();
 });

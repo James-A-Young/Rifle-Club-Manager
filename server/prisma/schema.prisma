@@ -25,6 +25,17 @@ enum OwnerType {
   CLUB
 }
 
+enum BackupDataset {
+  SIGN_IN_HISTORY
+  SALES_LEDGER
+  COMPETITION_RESULTS
+}
+
+enum GoogleDriveConnectionStatus {
+  ACTIVE
+  DISCONNECTED
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -53,6 +64,7 @@ model User {
   competitionEntries CompetitionEntry[]
   scores             Score[]
   passwordResetTokens PasswordResetToken[]
+  linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
 }
 
 model Club {
@@ -81,6 +93,9 @@ model Club {
   settings         ClubSettings?
   seasons          Season[]
   competitions     Competition[]
+  googleDriveConnection GoogleDriveConnection?
+  backupJobStates  BackupJobState[]
+  backupRuns       BackupRun[]
 }
 
 model ClubMembership {
@@ -196,10 +211,87 @@ model ClubSettings {
   accentColor              String?  @default("#3b82f6")
   passIssuingEnabled       Boolean  @default(false)
   memberCardSignInEnabled  Boolean  @default(false)
+  backupEnabled            Boolean  @default(false)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
   club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+}
+
+model GoogleDriveConnection {
+  id                      String   @id @default(cuid())
+  clubId                  String   @unique
+  linkedByUserId          String
+  status                  GoogleDriveConnectionStatus @default(ACTIVE)
+  driveFolderId           String?
+  encryptedRefreshToken   String
+  tokenIv                 String
+  tokenAuthTag            String
+  tokenScope              String?
+  tokenExpiry             DateTime?
+  linkedAt                DateTime @default(now())
+  disconnectedAt          DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  club        Club  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  linkedBy    User  @relation("GoogleDriveLinkedByUser", fields: [linkedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([linkedAt])
+}
+
+model BackupJobState {
+  id                    String       @id @default(cuid())
+  clubId                String
+  dataset               BackupDataset
+  monthStartUtc         DateTime
+  lastSourceFingerprint String
+  driveFileId           String?
+  lastSuccessAt         DateTime?
+  lastRunDurationMs     Int?
+  lastError             String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, dataset, monthStartUtc])
+  @@index([clubId, dataset])
+  @@index([lastSuccessAt])
+}
+
+model BackupRun {
+  id             String   @id @default(cuid())
+  clubId         String
+  dataset        BackupDataset
+  monthStartUtc  DateTime
+  status         String
+  sourceFingerprint String?
+  driveFileId    String?
+  durationMs     Int?
+  error          String?
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, startedAt])
+  @@index([dataset, monthStartUtc])
+}
+
+model GoogleDriveOAuthState {
+  id          String   @id @default(cuid())
+  state       String   @unique
+  clubId      String
+  userId      String
+  nonce       String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([clubId, userId])
+  @@index([expiresAt])
 }
 
 model AmmunitionType {

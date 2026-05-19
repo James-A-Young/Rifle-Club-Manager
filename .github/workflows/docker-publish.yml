@@ -20,6 +20,8 @@ jobs:
             target: app
           - image: iammind/rifle-club-manager-migrator
             target: migrator
+          - image: iammind/rifle-club-manager-backup-worker
+            target: backup-worker
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

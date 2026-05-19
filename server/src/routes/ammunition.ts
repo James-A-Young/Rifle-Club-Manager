@@ -5,6 +5,7 @@ import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { formatZodError } from '../utils/zodError';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { streamSalesLedgerCsv } from '../services/exports/salesLedgerExport';
 
 const router = Router();
 
@@ -117,32 +118,6 @@ function buildSalesWhere(clubId: string, req: AuthRequest): Prisma.AmmunitionSal
   }
 
   return { AND: and };
-}
-
-function applySalesExportCursor(
-  where: Prisma.AmmunitionSaleWhereInput,
-  cursor: { createdAt: Date; id: string } | null
-): Prisma.AmmunitionSaleWhereInput {
-  if (!cursor) {
-    return where;
-  }
-
-  return {
-    AND: [
-      where,
-      {
-        OR: [
-          { createdAt: { lt: cursor.createdAt } },
-          {
-            AND: [
-              { createdAt: cursor.createdAt },
-              { id: { lt: cursor.id } },
-            ],
-          },
-        ],
-      },
-    ],
-  };
 }
 
 router.get('/club/:clubId/settings', async (req: AuthRequest, res: Response) => {
@@ -841,62 +816,7 @@ router.get('/club/:clubId/sales/export.csv', async (req: AuthRequest, res: Respo
   const where = buildSalesWhere(clubId, req);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-ammunition-sales.csv"`);
-  res.write([
-    'sale_id',
-    'sold_at',
-    'buyer_first_name',
-    'buyer_last_name',
-    'buyer_user_id',
-    'seller_user_id',
-    'seller_name',
-    'ammunition_type',
-    'safe_name',
-    'quantity',
-    'unit_price_pence',
-    'total_price_pence',
-  ].join(',') + '\n');
-
-  let cursor: { createdAt: Date; id: string } | null = null;
-  while (true) {
-    const pagedWhere = applySalesExportCursor(where, cursor);
-    const rows = await prisma.ammunitionSale.findMany({
-      where: pagedWhere,
-      take: CSV_BATCH_SIZE,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      include: {
-        soldBy: { select: { name: true } },
-        ammunitionType: { select: { name: true } },
-        ammunitionSafe: { select: { name: true } },
-      },
-    });
-
-    if (rows.length === 0) {
-      break;
-    }
-
-    for (const row of rows) {
-      res.write([
-        escapeCsvCell(row.id),
-        escapeCsvCell(row.createdAt.toISOString()),
-        escapeCsvCell(row.buyerFirstName),
-        escapeCsvCell(row.buyerLastName),
-        escapeCsvCell(row.buyerUserId ?? ''),
-        escapeCsvCell(row.soldByUserId),
-        escapeCsvCell(row.soldBy.name),
-        escapeCsvCell(row.ammunitionType.name),
-        escapeCsvCell(row.ammunitionSafe.name),
-        escapeCsvCell(row.quantity),
-        escapeCsvCell(row.unitPricePence),
-        escapeCsvCell(row.totalPricePence),
-      ].join(',') + '\n');
-    }
-
-    if (rows.length < CSV_BATCH_SIZE) {
-      break;
-    }
-    const lastRow = rows[rows.length - 1];
-    cursor = { createdAt: lastRow.createdAt, id: lastRow.id };
-  }
+  await streamSalesLedgerCsv(res, where);
 
   res.end();
 });

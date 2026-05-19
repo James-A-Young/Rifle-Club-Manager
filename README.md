@@ -123,6 +123,10 @@ TURNSTILE_SECRET_KEY=
 VITE_TURNSTILE_SITE_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+GOOGLE_DRIVE_OAUTH_REDIRECT_URI=
+GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY=
 ```
 
 ### Optional: Google Wallet Membership Cards
@@ -152,6 +156,39 @@ Club admins can configure:
 - Toggle membership card kiosk sign-in on/off
 
 Without Google Wallet credentials, the app functions normally; pass issuing is simply unavailable.
+
+### Optional: Google Drive Nightly Backups
+
+Club admins can link a Google Drive account and enable nightly backups from **Club Settings**.
+
+Backups currently include:
+- Sign-in history CSV
+- Sales ledger CSV
+- Competition results CSV
+
+Behavior:
+- Files are produced per dataset per month (`YYYY-MM`)
+- Current-month files are month-to-date and are updated nightly
+- Existing monthly files are only replaced when CSV content fingerprint changes
+- No-write runs are recorded as skipped (unchanged)
+
+Required environment variables:
+
+```env
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=<google_oauth_client_id>
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=<google_oauth_client_secret>
+GOOGLE_DRIVE_OAUTH_REDIRECT_URI=<public_callback_url_to_/api/clubs/settings/backups/google-drive/callback>
+GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY=<32-byte key or base64-encoded 32-byte key>
+```
+
+Backup worker schedule tuning (optional):
+
+```env
+BACKUP_SCHEDULE_HOUR_UTC=2
+BACKUP_SCHEDULE_JITTER_MS=300000
+BACKUP_WORKER_CONCURRENCY=2
+BACKUP_RUN_ON_STARTUP=false
+```
 
 ### Optional: Cloudflare Turnstile (Signup Captcha)
 
@@ -401,6 +438,7 @@ App URL:
 
 Notes:
 - Docker compose provides `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV`, and `PORT` to the app container.
+- Docker compose also provides a separate `backup-worker` container for nightly Drive backups.
 - If schema is not initialized yet, run Prisma setup once before relying on the containerized app.
 
 ## Runtime Configuration

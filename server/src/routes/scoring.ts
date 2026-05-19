@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { MembershipStatus, Prisma } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { ensureAdminForClub, ensureMemberOfClub } from '../utils/clubAccess';
+import { buildRawSeasonCompetitionResultsCsv } from '../services/exports/competitionResultsExport';
 
 const router = Router();
 
@@ -490,55 +491,25 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
       return;
     }
 
-    const season = await prisma.season.findFirst({
-      where: { id: seasonId, clubId },
-      select: { id: true, name: true },
-    });
-    if (!season) { res.status(404).json({ error: 'Season not found' }); return; }
+    let csv: string;
+    let seasonName: string;
+    try {
+      const result = await buildRawSeasonCompetitionResultsCsv({
+        clubId,
+        seasonId,
+        competitionId,
+      });
+      csv = result.csv;
+      seasonName = result.seasonName;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'SEASON_NOT_FOUND') {
+        res.status(404).json({ error: 'Season not found' });
+        return;
+      }
+      throw error;
+    }
 
-    const scoreRows = await prisma.score.findMany({
-      where: {
-        competition: {
-          clubId,
-          seasonId,
-          ...(competitionId && { id: competitionId }),
-        },
-      },
-      select: {
-        cardNumber: true,
-        score: true,
-        updatedAt: true,
-        competition: { select: { name: true } },
-        round: { select: { roundNumber: true, dueDate: true } },
-        user: { select: { name: true, email: true } },
-      },
-    });
-
-    const sorted = [...scoreRows].sort((a, b) => {
-      const byCompetition = a.competition.name.localeCompare(b.competition.name);
-      if (byCompetition !== 0) return byCompetition;
-      const byRound = a.round.roundNumber - b.round.roundNumber;
-      if (byRound !== 0) return byRound;
-      const byCard = a.cardNumber - b.cardNumber;
-      if (byCard !== 0) return byCard;
-      return a.user.name.localeCompare(b.user.name);
-    });
-
-    const headers = ['Season', 'Competition', 'Round', 'Due Date', 'Card Number', 'Member Name', 'Member Email', 'Score', 'Updated At'];
-    const rows = sorted.map(r => [
-      escapeCsvCell(season.name),
-      escapeCsvCell(r.competition.name),
-      escapeCsvCell(r.round.roundNumber),
-      escapeCsvCell(r.round.dueDate.toISOString()),
-      escapeCsvCell(r.cardNumber),
-      escapeCsvCell(r.user.name),
-      escapeCsvCell(r.user.email),
-      escapeCsvCell(r.score ?? ''),
-      escapeCsvCell(r.updatedAt.toISOString()),
-    ].join(','));
-
-    const safeSeason = season.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'season';
-    const csv = [headers.map(h => escapeCsvCell(h)).join(','), ...rows].join('\n');
+    const safeSeason = seasonName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'season';
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="raw-scores-${safeSeason}.csv"`);
     res.send(csv);
