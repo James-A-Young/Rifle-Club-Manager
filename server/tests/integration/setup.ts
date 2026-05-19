@@ -14,7 +14,7 @@ process.env.GOOGLE_WALLET_PRIVATE_KEY_ID = 'test-key-id';
 const tables = [
   'BackupRun',
   'BackupJobState',
-  'CashboxTransaction',
+  'CashBoxTransaction',
   'CashBox',
   'GoogleDriveOAuthState',
   'GoogleDriveConnection',
