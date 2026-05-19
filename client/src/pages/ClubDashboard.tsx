@@ -18,6 +18,9 @@ import {
   AmmunitionSafe,
   AmmunitionSale,
   AmmunitionStock,
+  PaymentMethod,
+  AmmunitionReorderAnalysisResponse,
+  AmmunitionReorderAnalysisRow,
 } from '../types/club';
 import DashboardTabNav from '../components/dashboard/DashboardTabNav';
 import ClubProfileSection from '../components/dashboard/ClubProfileSection';
@@ -122,6 +125,9 @@ export default function ClubDashboard() {
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
     backupEnabled: false,
+    ammoSalesLookbackDays: 30,
+    ammoDefaultLeadTimeDays: 14,
+    ammoDefaultSafetyStockDays: 7,
   });
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
   const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
@@ -130,6 +136,7 @@ export default function ClubDashboard() {
   const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
   const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
   const [ammunitionSales, setAmmunitionSales] = useState<AmmunitionSale[]>([]);
+  const [reorderAnalysisRows, setReorderAnalysisRows] = useState<AmmunitionReorderAnalysisRow[]>([]);
   const [newAmmunitionTypeName, setNewAmmunitionTypeName] = useState('');
   const [newAmmunitionTypePricePence, setNewAmmunitionTypePricePence] = useState(0);
   const [newAmmunitionSafeName, setNewAmmunitionSafeName] = useState('');
@@ -139,6 +146,7 @@ export default function ClubDashboard() {
   const [saleTypeId, setSaleTypeId] = useState('');
   const [saleSafeId, setSaleSafeId] = useState('');
   const [saleQuantity, setSaleQuantity] = useState(50);
+  const [salePaymentMethod, setSalePaymentMethod] = useState<PaymentMethod>('CASH');
   const [ledgerBuyerSearch, setLedgerBuyerSearch] = useState('');
   const [ledgerSellerSearch, setLedgerSellerSearch] = useState('');
   const [ledgerTypeId, setLedgerTypeId] = useState('');
@@ -237,9 +245,17 @@ export default function ClubDashboard() {
     setAmmunitionSales(rows);
   }
 
+  async function loadReorderAnalysis() {
+    if (!id || !isAdmin) return;
+    const response = await api.get<AmmunitionReorderAnalysisResponse>(
+      `/api/ammunition/club/${id}/reorder-analysis?lookbackDays=${settingsForm.ammoSalesLookbackDays}`,
+    );
+    setReorderAnalysisRows(response.rows);
+  }
+
   useEffect(() => {
     if (!id || !isAdmin) return;
-    Promise.all([loadAmmunitionSettings(), loadAmmunitionStock(), loadAmmunitionSales()])
+    Promise.all([loadAmmunitionSettings(), loadAmmunitionStock(), loadAmmunitionSales(), loadReorderAnalysis()])
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading ammunition data'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isAdmin]);
@@ -500,10 +516,14 @@ export default function ClubDashboard() {
         passIssuingEnabled: settingsForm.passIssuingEnabled,
         memberCardSignInEnabled: settingsForm.memberCardSignInEnabled,
         backupEnabled: settingsForm.backupEnabled,
+        ammoSalesLookbackDays: settingsForm.ammoSalesLookbackDays,
+        ammoDefaultLeadTimeDays: settingsForm.ammoDefaultLeadTimeDays,
+        ammoDefaultSafetyStockDays: settingsForm.ammoDefaultSafetyStockDays,
       });
       setSettings(updated);
       setSettingsForm(updated);
       setEditingSettings(false);
+      await loadReorderAnalysis();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error updating settings');
     } finally {
@@ -558,6 +578,7 @@ export default function ClubDashboard() {
       setNewAmmunitionTypePricePence(0);
       await loadAmmunitionSettings();
       await loadAmmunitionStock();
+      await loadReorderAnalysis();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error creating ammunition type');
     }
@@ -569,8 +590,28 @@ export default function ClubDashboard() {
       await api.patch(`/api/ammunition/club/${id}/types/${typeId}`, { pricePence });
       await loadAmmunitionSettings();
       await loadAmmunitionSales();
+      await loadReorderAnalysis();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error updating ammunition type');
+    }
+  }
+
+  async function updateAmmunitionTypeReorderConfig(
+    typeId: string,
+    config: {
+      reorderLevelQuantity: number | null;
+      reorderQuantity: number | null;
+      leadTimeDays: number | null;
+      safetyStockDays: number | null;
+    },
+  ) {
+    if (!id) return;
+    try {
+      await api.patch(`/api/ammunition/club/${id}/types/${typeId}`, config);
+      await loadAmmunitionSettings();
+      await loadReorderAnalysis();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating reorder settings');
     }
   }
 
@@ -614,6 +655,7 @@ export default function ClubDashboard() {
         ammunitionTypeId: saleTypeId,
         ammunitionSafeId: saleSafeId,
         quantity: saleQuantity,
+        paymentMethod: salePaymentMethod,
       });
       setSaleQuantity(50);
       await Promise.all([loadAmmunitionSales(), loadAmmunitionStock()]);
@@ -746,6 +788,11 @@ export default function ClubDashboard() {
             </Link>
           )}
           {isAdmin && (
+            <Link to={`/clubs/${id}/cashbox`} className="btn btn-secondary btn-sm">
+              Cashbox
+            </Link>
+          )}
+          {isAdmin && (
             <Link to={`/clubs/${id}/scores-report`} className="btn btn-secondary btn-sm">
               Scores Report
             </Link>
@@ -799,6 +846,7 @@ export default function ClubDashboard() {
               onCreateAmmunitionType={createAmmunitionType}
               onCreateAmmunitionSafe={createAmmunitionSafe}
               onUpdateAmmunitionTypePrice={updateAmmunitionTypePrice}
+              onUpdateAmmunitionTypeReorderConfig={updateAmmunitionTypeReorderConfig}
               onRenameSafe={renameSafe}
               onDeleteSafe={deleteSafe}
               googleDriveStatus={googleDriveStatus}
@@ -897,12 +945,14 @@ export default function ClubDashboard() {
               safes={ammunitionSafes}
               stock={ammunitionStock}
               sales={ammunitionSales}
+              reorderAnalysisRows={reorderAnalysisRows}
               saleBuyerUserId={saleBuyerUserId}
               saleBuyerFirstName={saleBuyerFirstName}
               saleBuyerLastName={saleBuyerLastName}
               saleTypeId={saleTypeId}
               saleSafeId={saleSafeId}
               saleQuantity={saleQuantity}
+              salePaymentMethod={salePaymentMethod}
               saleTotalPence={saleTotalPence}
               ledgerBuyerSearch={ledgerBuyerSearch}
               ledgerSellerSearch={ledgerSellerSearch}
@@ -922,6 +972,7 @@ export default function ClubDashboard() {
               onSaleTypeIdChange={setSaleTypeId}
               onSaleSafeIdChange={setSaleSafeId}
               onSaleQuantityChange={setSaleQuantity}
+              onSalePaymentMethodChange={setSalePaymentMethod}
               onConfirmSale={confirmAmmunitionSale}
               onLedgerBuyerSearchChange={setLedgerBuyerSearch}
               onLedgerSellerSearchChange={setLedgerSellerSearch}
@@ -929,6 +980,7 @@ export default function ClubDashboard() {
               onLedgerFromDateChange={setLedgerFromDate}
               onLedgerToDateChange={setLedgerToDate}
               onRefreshLedger={loadAmmunitionSales}
+              onRefreshReorderAnalysis={loadReorderAnalysis}
               onExportLedgerCsv={exportAmmunitionLedgerCsv}
               onStockInputTypeIdChange={setStockInputTypeId}
               onStockInputSafeIdChange={setStockInputSafeId}

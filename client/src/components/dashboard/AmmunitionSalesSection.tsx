@@ -1,4 +1,5 @@
-import { Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
+import { AmmunitionReorderAnalysisRow, Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
+import { PaymentMethod } from '../../types/club';
 
 interface Props {
   members: Member[];
@@ -6,12 +7,14 @@ interface Props {
   safes: AmmunitionSafe[];
   stock: AmmunitionStock[];
   sales: AmmunitionSale[];
+  reorderAnalysisRows: AmmunitionReorderAnalysisRow[];
   saleBuyerUserId: string;
   saleBuyerFirstName: string;
   saleBuyerLastName: string;
   saleTypeId: string;
   saleSafeId: string;
   saleQuantity: number;
+  salePaymentMethod: PaymentMethod;
   saleTotalPence: number;
   ledgerBuyerSearch: string;
   ledgerSellerSearch: string;
@@ -31,6 +34,7 @@ interface Props {
   onSaleTypeIdChange: (value: string) => void;
   onSaleSafeIdChange: (value: string) => void;
   onSaleQuantityChange: (value: number) => void;
+  onSalePaymentMethodChange: (value: PaymentMethod) => void;
   onConfirmSale: () => void;
   onLedgerBuyerSearchChange: (value: string) => void;
   onLedgerSellerSearchChange: (value: string) => void;
@@ -38,6 +42,7 @@ interface Props {
   onLedgerFromDateChange: (value: string) => void;
   onLedgerToDateChange: (value: string) => void;
   onRefreshLedger: () => void;
+  onRefreshReorderAnalysis: () => void;
   onExportLedgerCsv: () => void;
   onStockInputTypeIdChange: (value: string) => void;
   onStockInputSafeIdChange: (value: string) => void;
@@ -63,6 +68,48 @@ export default function AmmunitionSalesSection(props: Props) {
 
   return (
     <>
+      <section>
+        <div className="page-header">
+          <h2>Reorder Recommendations</h2>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={props.onRefreshReorderAnalysis}>
+            Refresh
+          </button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Current Stock</th>
+              <th>Avg Daily Usage</th>
+              <th>Reorder Point</th>
+              <th>Suggested Qty</th>
+              <th>Days Until Stockout</th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.reorderAnalysisRows.map(row => (
+              <tr key={row.ammunitionTypeId}>
+                <td>{row.ammunitionTypeName}</td>
+                <td>{row.status}</td>
+                <td>{row.currentStock}</td>
+                <td>{row.avgDailyUsage.toFixed(2)}</td>
+                <td>{row.reorderPoint}</td>
+                <td>{row.suggestedQuantity}</td>
+                <td>{row.daysUntilStockout === null ? 'N/A' : row.daysUntilStockout.toFixed(1)}</td>
+              </tr>
+            ))}
+            {props.reorderAnalysisRows.length === 0 && (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                  No reorder recommendations available
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
       <section>
         <h2>Record Ammunition Sale</h2>
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -110,6 +157,17 @@ export default function AmmunitionSalesSection(props: Props) {
               onChange={e => props.onSaleQuantityChange(Number(e.target.value || '50'))}
               step={50}
             />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Payment Type</label>
+            <select value={props.salePaymentMethod} onChange={e => props.onSalePaymentMethodChange(e.target.value as PaymentMethod)}>
+              <option value="CASH">Cash</option>
+              <option value="ONLINE">Online</option>
+              <option value="CARD">Card</option>
+              <option value="BANK_TRANSFER">Bank Transfer</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="OTHER">Other</option>
+            </select>
           </div>
         </div>
         <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -172,6 +230,7 @@ export default function AmmunitionSalesSection(props: Props) {
               <th>Safe</th>
               <th>Qty</th>
               <th>Total</th>
+              <th>Payment</th>
             </tr>
           </thead>
           <tbody>
@@ -184,11 +243,12 @@ export default function AmmunitionSalesSection(props: Props) {
                 <td>{sale.ammunitionSafe.name}</td>
                 <td>{sale.quantity}</td>
                 <td>£{(sale.totalPricePence / 100).toFixed(2)}</td>
+                <td>{sale.paymentMethod}</td>
               </tr>
             ))}
             {props.sales.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                   No sales found
                 </td>
               </tr>

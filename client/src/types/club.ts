@@ -73,6 +73,9 @@ export interface ClubSettings {
   passIssuingEnabled: boolean;
   memberCardSignInEnabled: boolean;
   backupEnabled: boolean;
+  ammoSalesLookbackDays: number;
+  ammoDefaultLeadTimeDays: number;
+  ammoDefaultSafetyStockDays: number;
 }
 
 export interface BackupDatasetRunStatus {
@@ -105,8 +108,14 @@ export interface AmmunitionType {
   id: string;
   name: string;
   currentPricePence: number;
+  reorderLevelQuantity?: number | null;
+  reorderQuantity?: number | null;
+  leadTimeDays?: number | null;
+  safetyStockDays?: number | null;
   priceHistory: AmmunitionTypePriceHistory[];
 }
+
+export type PaymentMethod = 'CASH' | 'ONLINE' | 'CARD' | 'BANK_TRANSFER' | 'CHEQUE' | 'OTHER';
 
 export interface AmmunitionSafe {
   id: string;
@@ -129,6 +138,7 @@ export interface AmmunitionSale {
   quantity: number;
   unitPricePence: number;
   totalPricePence: number;
+  paymentMethod: PaymentMethod;
   createdAt: string;
   buyer?: {
     id: string;
@@ -148,6 +158,60 @@ export interface AmmunitionSale {
     id: string;
     name: string;
   };
+}
+
+export interface AmmunitionReorderAnalysisRow {
+  ammunitionTypeId: string;
+  ammunitionTypeName: string;
+  lookbackDays: number;
+  currentStock: number;
+  soldInWindow: number;
+  avgDailyUsage: number;
+  leadTimeDays: number;
+  safetyStockDays: number;
+  reorderPoint: number;
+  suggestedReorderPoint: number;
+  suggestedQuantity: number;
+  daysUntilStockout: number | null;
+  status: 'OK' | 'LOW' | 'CRITICAL';
+}
+
+export interface AmmunitionReorderAnalysisResponse {
+  lookbackDays: number;
+  rows: AmmunitionReorderAnalysisRow[];
+}
+
+export interface CashBox {
+  id: string;
+  clubId: string;
+  balancePence: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CashBoxTransaction {
+  id: string;
+  clubId: string;
+  reason: 'AMMUNITION_SALE' | 'ADD_FLOAT' | 'DONATION' | 'FEE_PAYMENT' | 'BANKED_CASH';
+  amountPence: number;
+  balanceAfterPence: number;
+  relatedSaleId?: string | null;
+  createdByUserId: string;
+  note?: string | null;
+  createdAt: string;
+  createdBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  relatedSale?: {
+    id: string;
+    buyerFirstName: string;
+    buyerLastName: string;
+    quantity: number;
+    totalPricePence: number;
+    paymentMethod: PaymentMethod;
+  } | null;
 }
 
 export interface AmmunitionStockInput {

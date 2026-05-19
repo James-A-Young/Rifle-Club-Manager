@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { MembershipStatus, Prisma } from '@prisma/client';
+import { CashBoxTransactionReason, MembershipStatus, PaymentMethod, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
@@ -31,11 +31,19 @@ function parsePageSize(value: unknown): number {
 const createTypeSchema = z.object({
   name: z.string().trim().min(1),
   pricePence: z.number().int().nonnegative(),
+  reorderLevelQuantity: z.number().int().positive().optional().nullable(),
+  reorderQuantity: z.number().int().positive().optional().nullable(),
+  leadTimeDays: z.number().int().positive().optional().nullable(),
+  safetyStockDays: z.number().int().nonnegative().optional().nullable(),
 });
 
 const updateTypeSchema = z.object({
   name: z.string().trim().min(1).optional(),
   pricePence: z.number().int().nonnegative().optional(),
+  reorderLevelQuantity: z.number().int().positive().optional().nullable(),
+  reorderQuantity: z.number().int().positive().optional().nullable(),
+  leadTimeDays: z.number().int().positive().optional().nullable(),
+  safetyStockDays: z.number().int().nonnegative().optional().nullable(),
 });
 
 const createSafeSchema = z.object({
@@ -66,12 +74,18 @@ const createSaleSchema = z.object({
   ammunitionTypeId: z.string().min(1),
   ammunitionSafeId: z.string().min(1),
   quantity: z.number().int().positive(),
+  paymentMethod: z.nativeEnum(PaymentMethod).optional(),
+});
+
+const reorderAnalysisQuerySchema = z.object({
+  lookbackDays: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 function buildSalesWhere(clubId: string, req: AuthRequest): Prisma.AmmunitionSaleWhereInput {
   const typeId = typeof req.query.typeId === 'string' ? req.query.typeId : undefined;
   const buyerUserId = typeof req.query.buyerUserId === 'string' ? req.query.buyerUserId : undefined;
   const sellerUserId = typeof req.query.sellerUserId === 'string' ? req.query.sellerUserId : undefined;
+  const paymentMethod = typeof req.query.paymentMethod === 'string' ? req.query.paymentMethod : undefined;
   const buyerSearch = typeof req.query.buyerSearch === 'string' ? req.query.buyerSearch.trim() : undefined;
   const sellerSearch = typeof req.query.sellerSearch === 'string' ? req.query.sellerSearch.trim() : undefined;
   const from = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
@@ -87,6 +101,9 @@ function buildSalesWhere(clubId: string, req: AuthRequest): Prisma.AmmunitionSal
   }
   if (sellerUserId) {
     and.push({ soldByUserId: sellerUserId });
+  }
+  if (paymentMethod && Object.values(PaymentMethod).includes(paymentMethod as PaymentMethod)) {
+    and.push({ paymentMethod: paymentMethod as PaymentMethod });
   }
   if (from && !Number.isNaN(from.getTime())) {
     and.push({ createdAt: { gte: from } });
@@ -169,6 +186,10 @@ router.post('/club/:clubId/types', async (req: AuthRequest, res: Response) => {
           clubId,
           name: parsed.data.name,
           currentPricePence: parsed.data.pricePence,
+          reorderLevelQuantity: parsed.data.reorderLevelQuantity ?? null,
+          reorderQuantity: parsed.data.reorderQuantity ?? null,
+          leadTimeDays: parsed.data.leadTimeDays ?? null,
+          safetyStockDays: parsed.data.safetyStockDays ?? null,
         },
       });
       await tx.ammunitionTypePriceHistory.create({
@@ -212,7 +233,14 @@ router.patch('/club/:clubId/types/:typeId', async (req: AuthRequest, res: Respon
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  if (!parsed.data.name && parsed.data.pricePence === undefined) {
+  if (
+    !parsed.data.name
+    && parsed.data.pricePence === undefined
+    && !('reorderLevelQuantity' in parsed.data)
+    && !('reorderQuantity' in parsed.data)
+    && !('leadTimeDays' in parsed.data)
+    && !('safetyStockDays' in parsed.data)
+  ) {
     res.status(400).json({ error: 'No updates supplied' });
     return;
   }
@@ -232,6 +260,10 @@ router.patch('/club/:clubId/types/:typeId', async (req: AuthRequest, res: Respon
         data: {
           ...(parsed.data.name ? { name: parsed.data.name } : {}),
           ...(parsed.data.pricePence !== undefined ? { currentPricePence: parsed.data.pricePence } : {}),
+          ...('reorderLevelQuantity' in parsed.data ? { reorderLevelQuantity: parsed.data.reorderLevelQuantity ?? null } : {}),
+          ...('reorderQuantity' in parsed.data ? { reorderQuantity: parsed.data.reorderQuantity ?? null } : {}),
+          ...('leadTimeDays' in parsed.data ? { leadTimeDays: parsed.data.leadTimeDays ?? null } : {}),
+          ...('safetyStockDays' in parsed.data ? { safetyStockDays: parsed.data.safetyStockDays ?? null } : {}),
         },
       });
 
@@ -696,6 +728,7 @@ router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
   }
 
   const buyerUserId = parsed.data.buyerUserId ?? null;
+  const paymentMethod = parsed.data.paymentMethod ?? PaymentMethod.CASH;
 
   if (buyerUserId) {
     const buyerMembership = await prisma.clubMembership.findFirst({
@@ -743,7 +776,7 @@ router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
         throw new Error('INSUFFICIENT_STOCK');
       }
 
-      return tx.ammunitionSale.create({
+      const sale = await tx.ammunitionSale.create({
         data: {
           clubId,
           buyerFirstName: parsed.data.buyerFirstName,
@@ -755,6 +788,7 @@ router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
           quantity: parsed.data.quantity,
           unitPricePence: type.currentPricePence,
           totalPricePence: type.currentPricePence * parsed.data.quantity,
+          paymentMethod,
         },
         include: {
           buyer: { select: { id: true, name: true, email: true } },
@@ -763,6 +797,37 @@ router.post('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
           ammunitionSafe: { select: { id: true, name: true } },
         },
       });
+
+      if (paymentMethod === PaymentMethod.CASH) {
+        const cashBox = await tx.cashBox.upsert({
+          where: { clubId },
+          update: {},
+          create: { clubId, balancePence: 0 },
+          select: { id: true, balancePence: true },
+        });
+
+        const nextBalancePence = cashBox.balancePence + sale.totalPricePence;
+
+        await tx.cashBox.update({
+          where: { id: cashBox.id },
+          data: { balancePence: nextBalancePence },
+        });
+
+        await tx.cashBoxTransaction.create({
+          data: {
+            cashBoxId: cashBox.id,
+            clubId,
+            reason: CashBoxTransactionReason.AMMUNITION_SALE,
+            amountPence: sale.totalPricePence,
+            balanceAfterPence: nextBalancePence,
+            relatedSaleId: sale.id,
+            createdByUserId: req.user!.id,
+            note: 'Auto-posted from ammunition sale',
+          },
+        });
+      }
+
+      return sale;
     });
 
     res.status(201).json(sale);
@@ -803,6 +868,115 @@ router.get('/club/:clubId/sales', async (req: AuthRequest, res: Response) => {
   });
 
   res.json(rows);
+});
+
+router.get('/club/:clubId/reorder-analysis', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsedQuery = reorderAnalysisQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: formatZodError(parsedQuery.error) });
+    return;
+  }
+
+  const settings = await prisma.clubSettings.findUnique({
+    where: { clubId },
+    select: {
+      ammoSalesLookbackDays: true,
+      ammoDefaultLeadTimeDays: true,
+      ammoDefaultSafetyStockDays: true,
+    },
+  });
+
+  const lookbackDays = parsedQuery.data.lookbackDays ?? settings?.ammoSalesLookbackDays ?? 30;
+  const analysisStart = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  const [types, stockByType, salesByType] = await Promise.all([
+    prisma.ammunitionType.findMany({
+      where: { clubId },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        reorderLevelQuantity: true,
+        reorderQuantity: true,
+        leadTimeDays: true,
+        safetyStockDays: true,
+      },
+    }),
+    prisma.ammunitionStock.groupBy({
+      by: ['ammunitionTypeId'],
+      where: { clubId },
+      _sum: { quantity: true },
+    }),
+    prisma.ammunitionSale.groupBy({
+      by: ['ammunitionTypeId'],
+      where: { clubId, createdAt: { gte: analysisStart } },
+      _sum: { quantity: true },
+    }),
+  ]);
+
+  const stockMap = new Map(stockByType.map(row => [row.ammunitionTypeId, row._sum.quantity ?? 0]));
+  const salesMap = new Map(salesByType.map(row => [row.ammunitionTypeId, row._sum.quantity ?? 0]));
+
+  const rows = types.map(type => {
+    const currentStock = stockMap.get(type.id) ?? 0;
+    const soldInWindow = salesMap.get(type.id) ?? 0;
+    const avgDailyUsage = soldInWindow / lookbackDays;
+
+    const leadTimeDays = type.leadTimeDays ?? settings?.ammoDefaultLeadTimeDays ?? 14;
+    const safetyStockDays = type.safetyStockDays ?? settings?.ammoDefaultSafetyStockDays ?? 7;
+    const suggestedReorderPoint = Math.ceil(avgDailyUsage * (leadTimeDays + safetyStockDays));
+    const reorderPoint = type.reorderLevelQuantity ?? suggestedReorderPoint;
+    const suggestedQuantity = Math.max(
+      0,
+      type.reorderQuantity ?? Math.ceil(avgDailyUsage * (leadTimeDays + safetyStockDays) * 2) - currentStock,
+    );
+    const daysUntilStockout = avgDailyUsage > 0 ? currentStock / avgDailyUsage : null;
+
+    let status: 'OK' | 'LOW' | 'CRITICAL' = 'OK';
+    const criticalThreshold = Math.max(0, Math.floor(reorderPoint / 2));
+    if (currentStock <= criticalThreshold) {
+      status = 'CRITICAL';
+    } else if (currentStock <= reorderPoint) {
+      status = 'LOW';
+    }
+
+    return {
+      ammunitionTypeId: type.id,
+      ammunitionTypeName: type.name,
+      lookbackDays,
+      currentStock,
+      soldInWindow,
+      avgDailyUsage,
+      leadTimeDays,
+      safetyStockDays,
+      reorderPoint,
+      suggestedReorderPoint,
+      suggestedQuantity,
+      daysUntilStockout,
+      status,
+    };
+  });
+
+  rows.sort((a, b) => {
+    const severityOrder: Record<typeof a.status, number> = {
+      CRITICAL: 0,
+      LOW: 1,
+      OK: 2,
+    };
+    if (severityOrder[a.status] !== severityOrder[b.status]) {
+      return severityOrder[a.status] - severityOrder[b.status];
+    }
+    return a.ammunitionTypeName.localeCompare(b.ammunitionTypeName);
+  });
+
+  res.json({ lookbackDays, rows });
 });
 
 router.get('/club/:clubId/sales/export.csv', async (req: AuthRequest, res: Response) => {

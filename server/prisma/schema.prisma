@@ -38,6 +38,23 @@ enum GoogleDriveConnectionStatus {
   DISCONNECTED
 }
 
+enum PaymentMethod {
+  CASH
+  ONLINE
+  CARD
+  BANK_TRANSFER
+  CHEQUE
+  OTHER
+}
+
+enum CashBoxTransactionReason {
+  AMMUNITION_SALE
+  ADD_FLOAT
+  DONATION
+  FEE_PAYMENT
+  BANKED_CASH
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -69,6 +86,7 @@ model User {
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
   profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
+  cashBoxTransactionsCreated CashBoxTransaction[] @relation("CashBoxTransactionCreatedBy")
 }
 
 model Club {
@@ -100,6 +118,8 @@ model Club {
   googleDriveConnection GoogleDriveConnection?
   backupJobStates  BackupJobState[]
   backupRuns       BackupRun[]
+  cashBox          CashBox?
+  cashBoxTransactions CashBoxTransaction[]
 }
 
 model ClubMembership {
@@ -230,6 +250,9 @@ model ClubSettings {
   passIssuingEnabled       Boolean  @default(false)
   memberCardSignInEnabled  Boolean  @default(false)
   backupEnabled            Boolean  @default(false)
+  ammoSalesLookbackDays    Int      @default(30)
+  ammoDefaultLeadTimeDays  Int      @default(14)
+  ammoDefaultSafetyStockDays Int    @default(7)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
@@ -317,6 +340,10 @@ model AmmunitionType {
   clubId            String
   name              String
   currentPricePence Int
+  reorderLevelQuantity Int?
+  reorderQuantity      Int?
+  leadTimeDays         Int?
+  safetyStockDays      Int?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -385,6 +412,7 @@ model AmmunitionSale {
   quantity          Int
   unitPricePence    Int
   totalPricePence   Int
+  paymentMethod     PaymentMethod @default(CASH)
   createdAt         DateTime @default(now())
 
   club           Club           @relation(fields: [clubId], references: [id], onDelete: Cascade)
@@ -392,10 +420,46 @@ model AmmunitionSale {
   soldBy         User           @relation("AmmunitionSaleSeller", fields: [soldByUserId], references: [id], onDelete: Restrict)
   ammunitionType AmmunitionType @relation(fields: [ammunitionTypeId], references: [id], onDelete: Restrict)
   ammunitionSafe AmmunitionSafe @relation(fields: [ammunitionSafeId], references: [id], onDelete: Restrict)
+  cashBoxTransaction CashBoxTransaction?
 
   @@index([clubId, createdAt])
   @@index([clubId, buyerUserId, createdAt])
   @@index([clubId, soldByUserId, createdAt])
+}
+
+model CashBox {
+  id          String   @id @default(cuid())
+  clubId      String   @unique
+  balancePence Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  club          Club                 @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  transactions  CashBoxTransaction[]
+
+  @@index([updatedAt])
+}
+
+model CashBoxTransaction {
+  id               String   @id @default(cuid())
+  cashBoxId        String
+  clubId           String
+  reason           CashBoxTransactionReason
+  amountPence      Int
+  balanceAfterPence Int
+  relatedSaleId    String?
+  createdByUserId  String
+  note             String?
+  createdAt        DateTime @default(now())
+
+  cashBox     CashBox         @relation(fields: [cashBoxId], references: [id], onDelete: Cascade)
+  club        Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  relatedSale AmmunitionSale? @relation(fields: [relatedSaleId], references: [id], onDelete: SetNull)
+  createdBy   User            @relation("CashBoxTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([relatedSaleId])
+  @@index([cashBoxId, createdAt])
+  @@index([clubId, createdAt])
 }
 
 model Season {

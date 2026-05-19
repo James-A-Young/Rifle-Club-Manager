@@ -18,6 +18,7 @@ export const SALES_LEDGER_HEADERS = [
   'quantity',
   'unit_price_pence',
   'total_price_pence',
+  'payment_method',
 ];
 
 type SalesRow = {
@@ -30,6 +31,7 @@ type SalesRow = {
   quantity: number;
   unitPricePence: number;
   totalPricePence: number;
+  paymentMethod: string;
   soldBy: { name: string };
   ammunitionType: { name: string };
   ammunitionSafe: { name: string };
@@ -73,6 +75,7 @@ function rowToCsv(row: SalesRow): string {
     csvCell(row.quantity),
     csvCell(row.unitPricePence),
     csvCell(row.totalPricePence),
+    csvCell(row.paymentMethod),
   ].join(',');
 }
 
