@@ -293,6 +293,17 @@ router.post('/:id/join', async (req: AuthRequest, res: Response) => {
     where: { userId_clubId: { userId: req.user!.id, clubId } },
   });
   if (existing) {
+    if (existing.status === MembershipStatus.INACTIVE) {
+      const membership = await prisma.clubMembership.update({
+        where: { userId_clubId: { userId: req.user!.id, clubId } },
+        data: {
+          status: MembershipStatus.PENDING,
+          role: MembershipRole.MEMBER,
+        },
+      });
+      res.status(201).json(membership);
+      return;
+    }
     res.status(409).json({ error: 'Already a member or request pending' });
     return;
   }
@@ -309,7 +320,7 @@ router.post('/:id/join', async (req: AuthRequest, res: Response) => {
 
 const createInviteSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER']).default('MEMBER'),
+  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER', 'JUNIOR']).default('MEMBER'),
   expiresInDays: z.number().int().min(1).max(90).default(14),
 });
 
@@ -621,7 +632,7 @@ router.post('/invites/:token/accept', async (req: AuthRequest, res: Response) =>
 
 const updateMemberSchema = z.object({
   status: z.enum(['APPROVED', 'REJECTED']).optional(),
-  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER']).optional(),
+  role: z.enum(['MEMBER', 'ADMIN', 'PROBATIONARY_MEMBER', 'JUNIOR']).optional(),
 });
 
 router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => {
@@ -677,6 +688,57 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
     auditMemberRoleChange(req.ip, req.user!.id, clubId, targetUserId, role);
   }
 
+  res.json(updated);
+});
+
+router.delete('/:id/members/:userId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const targetUserId = req.params.userId as string;
+  const adminUserId = req.user!.id;
+  const isAdmin = await ensureAdminForClub(adminUserId, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  if (targetUserId === adminUserId) {
+    res.status(409).json({ error: 'You cannot remove yourself from the club' });
+    return;
+  }
+
+  const targetMember = await prisma.clubMembership.findUnique({
+    where: { userId_clubId: { userId: targetUserId, clubId } },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+  if (!targetMember) {
+    res.status(404).json({ error: 'Membership not found' });
+    return;
+  }
+  if (targetMember.status === MembershipStatus.INACTIVE) {
+    res.status(200).json(targetMember);
+    return;
+  }
+
+  if (targetMember.role === MembershipRole.ADMIN && targetMember.status === MembershipStatus.APPROVED) {
+    const adminCount = await prisma.clubMembership.count({
+      where: {
+        clubId,
+        role: MembershipRole.ADMIN,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+    if (adminCount === 1) {
+      res.status(409).json({ error: 'Cannot remove the last approved admin of the club' });
+      return;
+    }
+  }
+
+  const updated = await prisma.clubMembership.update({
+    where: { userId_clubId: { userId: targetUserId, clubId } },
+    data: { status: MembershipStatus.INACTIVE },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+
+  auditMemberStatusChange(req.ip, adminUserId, clubId, targetUserId, MembershipStatus.INACTIVE);
   res.json(updated);
 });
 

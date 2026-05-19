@@ -100,6 +100,7 @@ export default function ClubDashboard() {
   // Member role editing
   const [editingRole, setEditingRole] = useState<EditingRoleState | null>(null);
   const [savingRole, setSavingRole] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   // Active visits
   const [activeVisits, setActiveVisits] = useState<ActiveVisitor[]>([]);
@@ -337,6 +338,29 @@ export default function ClubDashboard() {
       setError(e instanceof Error ? e.message : 'Error updating member role');
     } finally {
       setSavingRole(false);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!id) return;
+    const member = members.find(m => m.userId === userId);
+    const name = member?.user.name ?? 'this member';
+    if (!confirm(`Remove ${name} from this club? They will be marked inactive and can apply again later.`)) {
+      return;
+    }
+
+    setRemovingMemberId(userId);
+    setError('');
+    try {
+      const updated = await api.delete<Member>(`/api/clubs/${id}/members/${userId}`);
+      setMembers(prev => prev.map(m => (m.userId === userId ? updated : m)));
+      if (editingRole?.userId === userId) {
+        setEditingRole(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error removing member');
+    } finally {
+      setRemovingMemberId(null);
     }
   }
 
@@ -832,9 +856,12 @@ export default function ClubDashboard() {
             members={members}
             clubId={id ?? ''}
             isAdmin={isAdmin}
+            currentUserId={user?.id}
             editingRole={editingRole}
             savingRole={savingRole}
+            removingUserId={removingMemberId}
             onApprove={approveMember}
+            onRemove={removeMember}
             onStartEditRole={(userId, role) => setEditingRole({ userId, role })}
             onEditingRoleChange={role => setEditingRole(prev => prev ? { ...prev, role } : null)}
             onSaveRole={saveRoleChange}

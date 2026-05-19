@@ -186,8 +186,11 @@ tr:hover td { background: var(--gray-50); }
 .badge-pending { background: #fef3cd; color: #856404; }
 .badge-approved { background: #d1e7dd; color: #0f5132; }
 .badge-rejected { background: #f8d7da; color: #842029; }
+.badge-inactive { background: #e9ecef; color: #495057; }
 .badge-admin { background: #cfe2ff; color: #084298; }
 .badge-member { background: var(--gray-100); color: var(--gray-600); }
+.badge-junior { background: #fff3cd; color: #7c5700; }
+.badge-probationary_member { background: #ffc4f7; color: #7c5700; }
 
 .stats-grid {
   display: grid;

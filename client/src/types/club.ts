@@ -51,7 +51,7 @@ export interface SignInLink {
   mode?: 'KIOSK' | 'QR';
 }
 
-export type MembershipRoleType = 'MEMBER' | 'ADMIN' | 'PROBATIONARY_MEMBER';
+export type MembershipRoleType = 'MEMBER' | 'ADMIN' | 'PROBATIONARY_MEMBER' | 'JUNIOR';
 
 export interface ClubInvite {
   id: string;

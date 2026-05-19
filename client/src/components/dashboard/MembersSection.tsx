@@ -5,9 +5,12 @@ interface Props {
   members: Member[];
   clubId: string;
   isAdmin: boolean;
+  currentUserId?: string;
   editingRole: EditingRoleState | null;
   savingRole: boolean;
+  removingUserId: string | null;
   onApprove: (userId: string, status: 'APPROVED' | 'REJECTED') => void;
+  onRemove: (userId: string) => void;
   onStartEditRole: (userId: string, role: MembershipRoleType) => void;
   onEditingRoleChange: (role: MembershipRoleType) => void;
   onSaveRole: () => void;
@@ -18,9 +21,12 @@ export default function MembersSection({
   members,
   clubId,
   isAdmin,
+  currentUserId,
   editingRole,
   savingRole,
+  removingUserId,
   onApprove,
+  onRemove,
   onStartEditRole,
   onEditingRoleChange,
   onSaveRole,
@@ -59,6 +65,7 @@ export default function MembersSection({
                     <option value="MEMBER">MEMBER</option>
                     <option value="ADMIN">ADMIN</option>
                     <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
+                    <option value="JUNIOR">JUNIOR</option>
                   </select>
                 ) : (
                   <span className={`badge badge-${m.role.toLowerCase()}`}>{m.role}</span>
@@ -112,6 +119,15 @@ export default function MembersSection({
                           Edit Role
                         </button>
                       )
+                    )}
+                    {m.status === 'APPROVED' && m.userId !== currentUserId && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => onRemove(m.userId)}
+                        disabled={removingUserId === m.userId}
+                      >
+                        {removingUserId === m.userId ? 'Removing…' : 'Remove Member'}
+                      </button>
                     )}
                   </div>
                 </td>

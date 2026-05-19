@@ -12,12 +12,14 @@ enum MembershipStatus {
   PENDING
   APPROVED
   REJECTED
+  INACTIVE
 }
 
 enum MembershipRole {
   MEMBER
   ADMIN
   PROBATIONARY_MEMBER
+  JUNIOR
 }
 
 enum OwnerType {

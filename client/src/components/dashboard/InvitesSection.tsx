@@ -51,6 +51,7 @@ export default function InvitesSection({
             <option value="MEMBER">MEMBER</option>
             <option value="ADMIN">ADMIN</option>
             <option value="PROBATIONARY_MEMBER">PROBATIONARY MEMBER</option>
+            <option value="JUNIOR">JUNIOR</option>
           </select>
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>

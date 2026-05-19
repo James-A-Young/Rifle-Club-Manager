@@ -501,6 +501,129 @@ describe('clubs routes', () => {
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
   });
 
+  it('admin can remove a member by marking them inactive', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('inactive-member')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const season = await prisma.season.create({
+      data: {
+        clubId: club.id,
+        name: `Season-${unique('inactive')}`,
+      },
+    });
+    const competition = await prisma.competition.create({
+      data: {
+        clubId: club.id,
+        seasonId: season.id,
+        name: `Comp-${unique('inactive')}`,
+        roundCount: 1,
+        cardsPerRound: 1,
+      },
+    });
+    const round = await prisma.round.create({
+      data: {
+        competitionId: competition.id,
+        roundNumber: 1,
+        dueDate: new Date('2026-12-01'),
+      },
+    });
+    await prisma.score.create({
+      data: {
+        competitionId: competition.id,
+        roundId: round.id,
+        userId: member.id,
+        cardNumber: 1,
+        score: 47,
+      },
+    });
+
+    await prisma.ammunitionSale.create({
+      data: {
+        clubId: club.id,
+        buyerFirstName: 'Test',
+        buyerLastName: 'Member',
+        buyerUserId: member.id,
+        soldByUserId: admin.id,
+        ammunitionTypeId: (await prisma.ammunitionType.create({
+          data: { clubId: club.id, name: `Type-${unique('inactive')}`, currentPricePence: 100 },
+        })).id,
+        ammunitionSafeId: (await prisma.ammunitionSafe.create({
+          data: { clubId: club.id, name: `Safe-${unique('inactive')}` },
+        })).id,
+        quantity: 10,
+        unitPricePence: 100,
+        totalPricePence: 1000,
+      },
+    });
+
+    const res = await request(app)
+      .delete(`/api/clubs/${club.id}/members/${member.id}`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('INACTIVE');
+
+    const membership = await prisma.clubMembership.findUnique({
+      where: { userId_clubId: { userId: member.id, clubId: club.id } },
+    });
+    expect(membership?.status).toBe(MembershipStatus.INACTIVE);
+
+    const ammoHistoryCount = await prisma.ammunitionSale.count({
+      where: { clubId: club.id, buyerUserId: member.id },
+    });
+    expect(ammoHistoryCount).toBe(1);
+
+    const scoreHistoryCount = await prisma.score.count({
+      where: { competitionId: competition.id, userId: member.id },
+    });
+    expect(scoreHistoryCount).toBe(1);
+  });
+
+  it('inactive member can apply to join the club again', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('reapply-member')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.JUNIOR,
+        status: MembershipStatus.INACTIVE,
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/join`)
+      .set(authHeader(member));
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('PENDING');
+    expect(res.body.role).toBe('MEMBER');
+
+    const updated = await prisma.clubMembership.findUnique({
+      where: { userId_clubId: { userId: member.id, clubId: club.id } },
+    });
+    expect(updated?.status).toBe(MembershipStatus.PENDING);
+    expect(updated?.role).toBe(MembershipRole.MEMBER);
+
+    const pendingCount = await prisma.clubMembership.count({
+      where: { userId: member.id, clubId: club.id, status: MembershipStatus.PENDING },
+    });
+    expect(pendingCount).toBe(1);
+
+    // Keep admin variable used for context consistency and future assertions.
+    expect(admin.id).toBeTruthy();
+  });
+
   it('allows admin to update club firearm and forbids non-admin', async () => {
     const { club, admin } = await createClubWithAdmin();
     const member = await createUser({ email: `${unique('club-member-no-admin')}@test.com` });
@@ -1705,6 +1828,25 @@ describe('probationary member', () => {
     expect(emailSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('admin can create invite with JUNIOR role', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const emailSpy = vi.spyOn(emailService, 'sendInviteEmail').mockResolvedValue(true);
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/invites`)
+      .set(authHeader(admin))
+      .send({
+        email: `${unique('junior')}@test.com`,
+        role: 'JUNIOR',
+        expiresInDays: 14,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.role).toBe('JUNIOR');
+    expect(res.body.emailSent).toBe(true);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('admin can change member role to PROBATIONARY_MEMBER', async () => {
     const { club, admin } = await createClubWithAdmin();
     const member = await createUser({ email: `${unique('prob-member')}@test.com` });
@@ -1725,6 +1867,28 @@ describe('probationary member', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.role).toBe('PROBATIONARY_MEMBER');
+  });
+
+  it('admin can change member role to JUNIOR', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('junior-member')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/members/${member.id}`)
+      .set(authHeader(admin))
+      .send({ role: 'JUNIOR' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.role).toBe('JUNIOR');
   });
 
   it('probationary member registers via invite and gets correct membership role', async () => {
