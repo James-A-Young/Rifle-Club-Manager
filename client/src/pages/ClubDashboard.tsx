@@ -138,7 +138,7 @@ export default function ClubDashboard() {
   const [saleBuyerLastName, setSaleBuyerLastName] = useState('');
   const [saleTypeId, setSaleTypeId] = useState('');
   const [saleSafeId, setSaleSafeId] = useState('');
-  const [saleQuantity, setSaleQuantity] = useState(1);
+  const [saleQuantity, setSaleQuantity] = useState(50);
   const [ledgerBuyerSearch, setLedgerBuyerSearch] = useState('');
   const [ledgerSellerSearch, setLedgerSellerSearch] = useState('');
   const [ledgerTypeId, setLedgerTypeId] = useState('');
@@ -615,7 +615,7 @@ export default function ClubDashboard() {
         ammunitionSafeId: saleSafeId,
         quantity: saleQuantity,
       });
-      setSaleQuantity(1);
+      setSaleQuantity(50);
       await Promise.all([loadAmmunitionSales(), loadAmmunitionStock()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error recording sale');
