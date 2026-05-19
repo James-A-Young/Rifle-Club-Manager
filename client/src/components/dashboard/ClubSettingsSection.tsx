@@ -20,6 +20,12 @@ interface Props {
   onCreateAmmunitionType: () => void;
   onCreateAmmunitionSafe: () => void;
   onUpdateAmmunitionTypePrice: (typeId: string, pricePence: number) => void;
+  onUpdateAmmunitionTypeReorderConfig: (typeId: string, config: {
+    reorderLevelQuantity: number | null;
+    reorderQuantity: number | null;
+    leadTimeDays: number | null;
+    safetyStockDays: number | null;
+  }) => void;
   onRenameSafe: (safeId: string, newName: string) => void;
   onDeleteSafe: (safeId: string) => void;
   googleDriveStatus: GoogleDriveBackupStatus | null;
@@ -50,6 +56,7 @@ export default function ClubSettingsSection({
   onCreateAmmunitionType,
   onCreateAmmunitionSafe,
   onUpdateAmmunitionTypePrice,
+  onUpdateAmmunitionTypeReorderConfig,
   onRenameSafe,
   onDeleteSafe,
   googleDriveStatus,
@@ -136,6 +143,41 @@ export default function ClubSettingsSection({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
+              <label>Ammunition Usage Lookback (Days)</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={form.ammoSalesLookbackDays}
+                onChange={e => onFormChange({ ammoSalesLookbackDays: Number(e.target.value || '30') })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Default Lead Time (Days)</label>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={form.ammoDefaultLeadTimeDays}
+                onChange={e => onFormChange({ ammoDefaultLeadTimeDays: Number(e.target.value || '14') })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Default Safety Stock (Days)</label>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={form.ammoDefaultSafetyStockDays}
+                onChange={e => onFormChange({ ammoDefaultSafetyStockDays: Number(e.target.value || '7') })}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
               <label>
                 <input
                   type="checkbox"
@@ -198,6 +240,12 @@ export default function ClubSettingsSection({
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
           <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Usage Lookback</dt>
+          <dd>{settings?.ammoSalesLookbackDays ?? 30} days</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Lead Time</dt>
+          <dd>{settings?.ammoDefaultLeadTimeDays ?? 14} days</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Safety Stock</dt>
+          <dd>{settings?.ammoDefaultSafetyStockDays ?? 7} days</dd>
         </dl>
       )}
 
@@ -314,6 +362,7 @@ export default function ClubSettingsSection({
               <th>Type</th>
               <th>Current Price</th>
               <th>Update Price (£)</th>
+              <th>Reorder Config</th>
               <th>Price History</th>
             </tr>
           </thead>
@@ -338,6 +387,67 @@ export default function ClubSettingsSection({
                   </button>
                 </td>
                 <td>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--gray-700)' }}>
+                    Level: {type.reorderLevelQuantity ?? 'auto'} · Qty: {type.reorderQuantity ?? 'auto'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--gray-700)' }}>
+                    Lead: {type.leadTimeDays ?? 'default'}d · Safety: {type.safetyStockDays ?? 'default'}d
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    style={{ marginTop: '0.5rem' }}
+                    onClick={() => {
+                      const levelRaw = window.prompt(
+                        `Reorder level quantity for ${type.name} (blank = auto)`,
+                        type.reorderLevelQuantity != null ? String(type.reorderLevelQuantity) : '',
+                      );
+                      if (levelRaw === null) return;
+
+                      const qtyRaw = window.prompt(
+                        `Reorder quantity for ${type.name} (blank = auto)`,
+                        type.reorderQuantity != null ? String(type.reorderQuantity) : '',
+                      );
+                      if (qtyRaw === null) return;
+
+                      const leadRaw = window.prompt(
+                        `Lead time days for ${type.name} (blank = club default)`,
+                        type.leadTimeDays != null ? String(type.leadTimeDays) : '',
+                      );
+                      if (leadRaw === null) return;
+
+                      const safetyRaw = window.prompt(
+                        `Safety stock days for ${type.name} (blank = club default)`,
+                        type.safetyStockDays != null ? String(type.safetyStockDays) : '',
+                      );
+                      if (safetyRaw === null) return;
+
+                      const level = levelRaw.trim() === '' ? null : Number(levelRaw);
+                      const qty = qtyRaw.trim() === '' ? null : Number(qtyRaw);
+                      const lead = leadRaw.trim() === '' ? null : Number(leadRaw);
+                      const safety = safetyRaw.trim() === '' ? null : Number(safetyRaw);
+
+                      if (
+                        (level !== null && (!Number.isFinite(level) || level <= 0))
+                        || (qty !== null && (!Number.isFinite(qty) || qty <= 0))
+                        || (lead !== null && (!Number.isFinite(lead) || lead <= 0))
+                        || (safety !== null && (!Number.isFinite(safety) || safety < 0))
+                      ) {
+                        return;
+                      }
+
+                      onUpdateAmmunitionTypeReorderConfig(type.id, {
+                        reorderLevelQuantity: level,
+                        reorderQuantity: qty,
+                        leadTimeDays: lead,
+                        safetyStockDays: safety,
+                      });
+                    }}
+                  >
+                    Configure
+                  </button>
+                </td>
+                <td>
                   {(type.priceHistory ?? []).slice(0, 5).map(history => (
                     <div key={history.id} style={{ fontSize: '0.85rem' }}>
                       £{(history.pricePence / 100).toFixed(2)} ({new Date(history.createdAt).toLocaleDateString()})
@@ -348,7 +458,7 @@ export default function ClubSettingsSection({
             ))}
             {ammunitionTypes.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                   No ammunition types configured
                 </td>
               </tr>

@@ -911,6 +911,9 @@ const updateClubSettingsSchema = z.object({
   passIssuingEnabled: z.boolean().optional(),
   memberCardSignInEnabled: z.boolean().optional(),
   backupEnabled: z.boolean().optional(),
+  ammoSalesLookbackDays: z.number().int().min(1).max(365).optional(),
+  ammoDefaultLeadTimeDays: z.number().int().min(1).max(365).optional(),
+  ammoDefaultSafetyStockDays: z.number().int().min(0).max(365).optional(),
 });
 
 router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
@@ -936,6 +939,9 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         passIssuingEnabled: false,
         memberCardSignInEnabled: false,
         backupEnabled: false,
+        ammoSalesLookbackDays: 30,
+        ammoDefaultLeadTimeDays: 14,
+        ammoDefaultSafetyStockDays: 7,
       },
     });
   }
@@ -965,6 +971,9 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     passIssuingEnabled?: boolean;
     memberCardSignInEnabled?: boolean;
     backupEnabled?: boolean;
+    ammoSalesLookbackDays?: number;
+    ammoDefaultLeadTimeDays?: number;
+    ammoDefaultSafetyStockDays?: number;
   } = {};
 
   if ('logoUrl' in parsed.data) {
@@ -987,6 +996,15 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
   if ('backupEnabled' in parsed.data && typeof parsed.data.backupEnabled === 'boolean') {
     updateData.backupEnabled = parsed.data.backupEnabled;
+  }
+  if ('ammoSalesLookbackDays' in parsed.data && typeof parsed.data.ammoSalesLookbackDays === 'number') {
+    updateData.ammoSalesLookbackDays = parsed.data.ammoSalesLookbackDays;
+  }
+  if ('ammoDefaultLeadTimeDays' in parsed.data && typeof parsed.data.ammoDefaultLeadTimeDays === 'number') {
+    updateData.ammoDefaultLeadTimeDays = parsed.data.ammoDefaultLeadTimeDays;
+  }
+  if ('ammoDefaultSafetyStockDays' in parsed.data && typeof parsed.data.ammoDefaultSafetyStockDays === 'number') {
+    updateData.ammoDefaultSafetyStockDays = parsed.data.ammoDefaultSafetyStockDays;
   }
 
   let settings = await prisma.clubSettings.findUnique({
