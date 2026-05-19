@@ -52,6 +52,8 @@ const createCompetitionSchema = z.object({
 const updateCompetitionSchema = z.object({
   name: z.string().trim().min(1).optional(),
   organiser: z.string().trim().optional().nullable(),
+  roundCount: z.number().int().min(1).max(52).optional(),
+  cardsPerRound: z.number().int().min(1).max(20).optional(),
   rounds: z.array(z.object({
     roundNumber: z.number().int().min(1),
     dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, 'Date must be in YYYY-MM-DD or ISO format')
@@ -234,24 +236,210 @@ router.patch('/clubs/:clubId/scoring/competitions/:competitionId', async (req: A
   const parsed = updateCompetitionSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
 
-  await prisma.$transaction(async tx => {
-    await tx.competition.update({
-      where: { id: competitionId },
-      data: {
-        ...(parsed.data.name !== undefined && { name: parsed.data.name }),
-        ...(parsed.data.organiser !== undefined && { organiser: parsed.data.organiser }),
-      },
-    });
+  const roundUpdatesByNumber = new Map<number, string>();
+  if (parsed.data.rounds) {
+    for (const roundUpdate of parsed.data.rounds) {
+      if (roundUpdatesByNumber.has(roundUpdate.roundNumber)) {
+        res.status(400).json({ error: 'Duplicate roundNumber in rounds update payload' });
+        return;
+      }
+      roundUpdatesByNumber.set(roundUpdate.roundNumber, roundUpdate.dueDate);
+    }
+  }
 
-    if (parsed.data.rounds) {
-      for (const r of parsed.data.rounds) {
-        await tx.round.updateMany({
-          where: { competitionId, roundNumber: r.roundNumber },
-          data: { dueDate: new Date(r.dueDate) },
+  try {
+    await prisma.$transaction(async tx => {
+      const current = await tx.competition.findUnique({
+        where: { id: competitionId },
+        include: {
+          rounds: {
+            orderBy: { roundNumber: 'asc' },
+            select: { id: true, roundNumber: true, dueDate: true },
+          },
+        },
+      });
+      if (!current || current.clubId !== clubId) {
+        throw new Error('Competition not found');
+      }
+
+      const nextRoundCount = parsed.data.roundCount ?? current.roundCount;
+      const nextCardsPerRound = parsed.data.cardsPerRound ?? current.cardsPerRound;
+
+      if (roundUpdatesByNumber.size > 0) {
+        for (const roundNumber of roundUpdatesByNumber.keys()) {
+          if (roundNumber > nextRoundCount) {
+            throw new Error('Round update references a roundNumber outside the target roundCount');
+          }
+        }
+      }
+
+      if (nextRoundCount < current.roundCount) {
+        const removedRoundsScoreCount = await tx.score.count({
+          where: {
+            competitionId,
+            score: { not: null },
+            round: {
+              competitionId,
+              roundNumber: { gt: nextRoundCount },
+            },
+          },
+        });
+        if (removedRoundsScoreCount > 0) {
+          throw new Error('Cannot reduce round count because removed rounds have recorded scores');
+        }
+      }
+
+      if (nextCardsPerRound < current.cardsPerRound) {
+        const removedCardsScoreCount = await tx.score.count({
+          where: {
+            competitionId,
+            score: { not: null },
+            cardNumber: { gt: nextCardsPerRound },
+            round: {
+              competitionId,
+              roundNumber: { lte: nextRoundCount },
+            },
+          },
+        });
+        if (removedCardsScoreCount > 0) {
+          throw new Error('Cannot reduce cards per round because removed cards have recorded scores');
+        }
+      }
+
+      if (nextRoundCount < current.roundCount) {
+        await tx.score.deleteMany({
+          where: {
+            competitionId,
+            round: {
+              competitionId,
+              roundNumber: { gt: nextRoundCount },
+            },
+          },
+        });
+
+        await tx.round.deleteMany({
+          where: {
+            competitionId,
+            roundNumber: { gt: nextRoundCount },
+          },
         });
       }
+
+      if (nextCardsPerRound < current.cardsPerRound) {
+        await tx.score.deleteMany({
+          where: {
+            competitionId,
+            cardNumber: { gt: nextCardsPerRound },
+            round: {
+              competitionId,
+              roundNumber: { lte: nextRoundCount },
+            },
+          },
+        });
+      }
+
+      const roundCreateData: { competitionId: string; roundNumber: number; dueDate: Date }[] = [];
+      if (nextRoundCount > current.roundCount) {
+        for (let roundNumber = current.roundCount + 1; roundNumber <= nextRoundCount; roundNumber++) {
+          const dueDate = roundUpdatesByNumber.get(roundNumber);
+          if (!dueDate) {
+            throw new Error(`Due date is required for new round ${roundNumber}`);
+          }
+          roundCreateData.push({
+            competitionId,
+            roundNumber,
+            dueDate: new Date(dueDate),
+          });
+        }
+      }
+
+      if (roundCreateData.length > 0) {
+        await tx.round.createMany({ data: roundCreateData });
+      }
+
+      await tx.competition.update({
+        where: { id: competitionId },
+        data: {
+          ...(parsed.data.name !== undefined && { name: parsed.data.name }),
+          ...(parsed.data.organiser !== undefined && { organiser: parsed.data.organiser }),
+          roundCount: nextRoundCount,
+          cardsPerRound: nextCardsPerRound,
+        },
+      });
+
+      if (roundUpdatesByNumber.size > 0) {
+        for (const [roundNumber, dueDate] of roundUpdatesByNumber.entries()) {
+          await tx.round.updateMany({
+            where: { competitionId, roundNumber },
+            data: { dueDate: new Date(dueDate) },
+          });
+        }
+      }
+
+      const shouldAddScoreStubs = nextRoundCount > current.roundCount || nextCardsPerRound > current.cardsPerRound;
+      if (shouldAddScoreStubs) {
+        const entries = await tx.competitionEntry.findMany({
+          where: { competitionId },
+          select: { userId: true },
+        });
+        if (entries.length > 0) {
+          const rounds = await tx.round.findMany({
+            where: { competitionId, roundNumber: { lte: nextRoundCount } },
+            select: { id: true, roundNumber: true },
+            orderBy: { roundNumber: 'asc' },
+          });
+
+          const scoreStubs: { competitionId: string; roundId: string; userId: string; cardNumber: number }[] = [];
+
+          if (nextCardsPerRound > current.cardsPerRound) {
+            const existingRounds = rounds.filter(r => r.roundNumber <= Math.min(current.roundCount, nextRoundCount));
+            for (const { userId } of entries) {
+              for (const round of existingRounds) {
+                for (let card = current.cardsPerRound + 1; card <= nextCardsPerRound; card++) {
+                  scoreStubs.push({ competitionId, roundId: round.id, userId, cardNumber: card });
+                }
+              }
+            }
+          }
+
+          if (nextRoundCount > current.roundCount) {
+            const newRounds = rounds.filter(r => r.roundNumber > current.roundCount);
+            for (const { userId } of entries) {
+              for (const round of newRounds) {
+                for (let card = 1; card <= nextCardsPerRound; card++) {
+                  scoreStubs.push({ competitionId, roundId: round.id, userId, cardNumber: card });
+                }
+              }
+            }
+          }
+
+          if (scoreStubs.length > 0) {
+            await tx.score.createMany({ data: scoreStubs, skipDuplicates: true });
+          }
+        }
+      }
+    });
+  } catch (e) {
+    if (e instanceof Error) {
+      if (e.message === 'Competition not found') {
+        res.status(404).json({ error: e.message });
+        return;
+      }
+      if (e.message.includes('Cannot reduce') || e.message.includes('Due date is required')) {
+        res.status(409).json({ error: e.message });
+        return;
+      }
+      if (e.message.includes('roundNumber outside the target roundCount') || e.message.includes('Duplicate roundNumber')) {
+        res.status(400).json({ error: e.message });
+        return;
+      }
     }
-  });
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      res.status(409).json({ error: 'A competition with that name already exists in this season' });
+      return;
+    }
+    throw e;
+  }
 
   const updated = await prisma.competition.findUnique({
     where: { id: competitionId },
@@ -273,6 +461,57 @@ router.delete('/clubs/:clubId/scoring/competitions/:competitionId', async (req: 
   if (!comp) { res.status(404).json({ error: 'Competition not found' }); return; }
 
   await prisma.competition.delete({ where: { id: competitionId } });
+  res.status(204).end();
+});
+
+router.delete('/clubs/:clubId/scoring/competitions/:competitionId/rounds/:roundNumber', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const competitionId = req.params.competitionId as string;
+  const roundNumber = Number(req.params.roundNumber);
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    res.status(400).json({ error: 'Invalid round number' });
+    return;
+  }
+
+  const comp = await prisma.competition.findFirst({
+    where: { id: competitionId, clubId },
+    select: { id: true, roundCount: true },
+  });
+  if (!comp) { res.status(404).json({ error: 'Competition not found' }); return; }
+  if (comp.roundCount <= 1) {
+    res.status(400).json({ error: 'Competition must have at least one round' });
+    return;
+  }
+  if (roundNumber !== comp.roundCount) {
+    res.status(400).json({ error: 'Only the final round can be deleted' });
+    return;
+  }
+
+  const targetRound = await prisma.round.findFirst({
+    where: { competitionId, roundNumber },
+    select: { id: true },
+  });
+  if (!targetRound) { res.status(404).json({ error: 'Round not found' }); return; }
+
+  const scoreCount = await prisma.score.count({
+    where: { roundId: targetRound.id, score: { not: null } },
+  });
+  if (scoreCount > 0) {
+    res.status(409).json({ error: 'Cannot delete round with scores already recorded' });
+    return;
+  }
+
+  await prisma.$transaction(async tx => {
+    await tx.score.deleteMany({ where: { roundId: targetRound.id } });
+    await tx.round.delete({ where: { id: targetRound.id } });
+    await tx.competition.update({
+      where: { id: competitionId },
+      data: { roundCount: { decrement: 1 } },
+    });
+  });
+
   res.status(204).end();
 });
 

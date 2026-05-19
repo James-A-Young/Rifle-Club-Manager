@@ -11,6 +11,23 @@ interface Props {
   members: Member[];
 }
 
+interface CompetitionEditRound {
+  roundNumber: number;
+  dueDate: string;
+}
+
+interface CompetitionEditForm {
+  name: string;
+  organiser: string;
+  roundCount: number;
+  cardsPerRound: number;
+  rounds: CompetitionEditRound[];
+}
+
+function toDateInputValue(value: string): string {
+  return value.slice(0, 10);
+}
+
 export default function MatchSecretarySection({ clubId, members }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
@@ -29,6 +46,9 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
 
   // Competition form state
   const [showCompetitionForm, setShowCompetitionForm] = useState(false);
+  const [editingCompId, setEditingCompId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<CompetitionEditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   // Per-competition UI state: open accordion, score sheet, enrolment
   const [openCompId, setOpenCompId] = useState<string | null>(null);
@@ -126,6 +146,112 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
       if (openCompId === compId) setOpenCompId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error deleting competition');
+    }
+  }
+
+  function startEditCompetition(comp: Competition) {
+    setError('');
+    setOpenCompId(comp.id);
+    setEditingCompId(comp.id);
+    setEditForm({
+      name: comp.name,
+      organiser: comp.organiser ?? '',
+      roundCount: comp.roundCount,
+      cardsPerRound: comp.cardsPerRound,
+      rounds: comp.rounds
+        .slice()
+        .sort((a, b) => a.roundNumber - b.roundNumber)
+        .map(r => ({ roundNumber: r.roundNumber, dueDate: toDateInputValue(r.dueDate) })),
+    });
+  }
+
+  function cancelEditCompetition() {
+    setEditingCompId(null);
+    setEditForm(null);
+    setEditSaving(false);
+  }
+
+  function updateEditRoundCount(roundCount: number) {
+    setEditForm(prev => {
+      if (!prev) return prev;
+      const nextCount = Math.max(1, Math.min(52, roundCount));
+      const nextRounds = prev.rounds.slice(0, nextCount);
+      while (nextRounds.length < nextCount) {
+        nextRounds.push({ roundNumber: nextRounds.length + 1, dueDate: '' });
+      }
+      return {
+        ...prev,
+        roundCount: nextCount,
+        rounds: nextRounds.map((r, i) => ({ ...r, roundNumber: i + 1 })),
+      };
+    });
+  }
+
+  function updateEditRoundDueDate(index: number, dueDate: string) {
+    setEditForm(prev => {
+      if (!prev) return prev;
+      const rounds = prev.rounds.map((r, i) => (i === index ? { ...r, dueDate } : r));
+      return { ...prev, rounds };
+    });
+  }
+
+  async function saveCompetitionEdit(compId: string) {
+    if (!editForm) return;
+    if (!editForm.name.trim()) {
+      setError('Competition name is required');
+      return;
+    }
+    if (editForm.rounds.length !== editForm.roundCount || editForm.rounds.some(r => !r.dueDate)) {
+      setError('All rounds must have a due date');
+      return;
+    }
+
+    setEditSaving(true);
+    setError('');
+    try {
+      const updated = await api.patch<Competition>(`/api/clubs/${clubId}/scoring/competitions/${compId}`, {
+        name: editForm.name.trim(),
+        organiser: editForm.organiser.trim() || null,
+        roundCount: editForm.roundCount,
+        cardsPerRound: editForm.cardsPerRound,
+        rounds: editForm.rounds.map(r => ({ roundNumber: r.roundNumber, dueDate: r.dueDate })),
+      });
+
+      setCompetitions(prev => prev.map(c => (c.id === compId ? updated : c)));
+      setSheets(prev => {
+        const next = { ...prev };
+        delete next[compId];
+        return next;
+      });
+      if (openCompId === compId) {
+        await loadScoreSheet(compId);
+      }
+      cancelEditCompetition();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating competition');
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function deleteFinalRound(compId: string, roundNumber: number) {
+    if (!confirm('Delete the final round? This can only be done when that round has no recorded scores.')) return;
+    try {
+      await api.delete(`/api/clubs/${clubId}/scoring/competitions/${compId}/rounds/${roundNumber}`);
+      if (selectedSeasonId) {
+        await loadCompetitions(selectedSeasonId);
+      }
+      setSheets(prev => {
+        const next = { ...prev };
+        delete next[compId];
+        return next;
+      });
+      if (openCompId === compId) {
+        await loadScoreSheet(compId);
+      }
+      cancelEditCompetition();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error deleting round');
     }
   }
 
@@ -346,6 +472,12 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={e => { e.stopPropagation(); startEditCompetition(comp); }}
+                      >
+                        Edit
+                      </button>
+                      <button
                         className="btn btn-danger btn-sm"
                         onClick={e => { e.stopPropagation(); deleteCompetition(comp.id); }}
                       >
@@ -358,6 +490,96 @@ export default function MatchSecretarySection({ clubId, members }: Props) {
                   {/* Accordion body */}
                   {isOpen && (
                     <div style={{ padding: '1rem', borderTop: '1px solid var(--gray-200)' }}>
+                      {editingCompId === comp.id && editForm && (
+                        <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '1rem', marginBottom: '1rem', border: '1px solid var(--gray-200)' }}>
+                          <h4 style={{ marginBottom: '0.75rem' }}>Edit Competition</h4>
+                          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label>Competition Name *</label>
+                              <input
+                                value={editForm.name}
+                                onChange={e => setEditForm(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                                placeholder="Competition name"
+                              />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label>Organiser</label>
+                              <input
+                                value={editForm.organiser}
+                                onChange={e => setEditForm(prev => prev ? { ...prev, organiser: e.target.value } : prev)}
+                                placeholder="Organiser"
+                              />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label>Number of Rounds</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={52}
+                                value={editForm.roundCount}
+                                onChange={e => updateEditRoundCount(Number(e.target.value))}
+                              />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label>Cards per Round</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={20}
+                                value={editForm.cardsPerRound}
+                                onChange={e => {
+                                  const value = Math.max(1, Math.min(20, Number(e.target.value) || 1));
+                                  setEditForm(prev => prev ? { ...prev, cardsPerRound: value } : prev);
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: '1rem' }}>
+                            <h5 style={{ marginBottom: '0.5rem' }}>Round Due Dates</h5>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.5rem' }}>
+                              {editForm.rounds.map((round, index) => (
+                                <div className="form-group" key={round.roundNumber} style={{ marginBottom: 0 }}>
+                                  <label>Round {round.roundNumber} Due Date</label>
+                                  <input
+                                    type="date"
+                                    value={round.dueDate}
+                                    onChange={e => updateEditRoundDueDate(index, e.target.value)}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="actions" style={{ marginTop: '1rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={editSaving}
+                              onClick={() => saveCompetitionEdit(comp.id)}
+                            >
+                              {editSaving ? 'Saving…' : 'Save Changes'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={editSaving}
+                              onClick={cancelEditCompetition}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              disabled={editSaving || editForm.roundCount <= 1}
+                              onClick={() => deleteFinalRound(comp.id, comp.roundCount)}
+                            >
+                              Delete Final Round
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Sub-tab nav */}
                       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--gray-200)', marginBottom: '1rem' }}>
                         {(['scores', 'members'] as const).map(t => (

@@ -218,6 +218,232 @@ describe('competitions', () => {
 
     expect(dupRes.status).toBe(409);
   });
+
+  it('admin can edit competition name, rounds, cards, and due dates', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Editable Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Editable Comp',
+        organiser: 'Club',
+        roundCount: 2,
+        cardsPerRound: 2,
+        rounds: [{ dueDate: '2025-01-01' }, { dueDate: '2025-02-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const patchRes = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/competitions/${comp.id}`)
+      .set(authHeader(admin))
+      .send({
+        name: 'Editable Comp Updated',
+        roundCount: 3,
+        cardsPerRound: 3,
+        rounds: [
+          { roundNumber: 1, dueDate: '2025-03-01' },
+          { roundNumber: 2, dueDate: '2025-04-01' },
+          { roundNumber: 3, dueDate: '2025-05-01' },
+        ],
+      });
+
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.name).toBe('Editable Comp Updated');
+    expect(patchRes.body.roundCount).toBe(3);
+    expect(patchRes.body.cardsPerRound).toBe(3);
+    expect(patchRes.body.rounds).toHaveLength(3);
+    expect(String(patchRes.body.rounds[2].dueDate)).toContain('2025-05-01');
+
+    // Existing enrolled member should now have 3 rounds x 3 cards = 9 stubs
+    const scoreCount = await prisma.score.count({ where: { competitionId: comp.id, userId: member.id } });
+    expect(scoreCount).toBe(9);
+  });
+
+  it('blocks reducing roundCount when removed rounds contain scores', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Round Guard Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Round Guard Comp',
+        roundCount: 3,
+        cardsPerRound: 2,
+        rounds: [{ dueDate: '2025-01-01' }, { dueDate: '2025-02-01' }, { dueDate: '2025-03-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const roundThreeScore = await prisma.score.findFirst({
+      where: {
+        competitionId: comp.id,
+        userId: member.id,
+        round: { roundNumber: 3 },
+      },
+      orderBy: { cardNumber: 'asc' },
+    });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${roundThreeScore!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 49 });
+
+    const patchRes = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/competitions/${comp.id}`)
+      .set(authHeader(admin))
+      .send({ roundCount: 2, rounds: [{ roundNumber: 1, dueDate: '2025-01-01' }, { roundNumber: 2, dueDate: '2025-02-01' }] });
+
+    expect(patchRes.status).toBe(409);
+    expect(String(patchRes.body.error)).toContain('Cannot reduce round count');
+  });
+
+  it('blocks reducing cardsPerRound when removed cards contain scores', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Card Guard Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Card Guard Comp',
+        roundCount: 2,
+        cardsPerRound: 3,
+        rounds: [{ dueDate: '2025-01-01' }, { dueDate: '2025-02-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const thirdCardScore = await prisma.score.findFirst({
+      where: { competitionId: comp.id, userId: member.id, cardNumber: 3 },
+      orderBy: { id: 'asc' },
+    });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${thirdCardScore!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 50 });
+
+    const patchRes = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/competitions/${comp.id}`)
+      .set(authHeader(admin))
+      .send({ cardsPerRound: 2, rounds: [{ roundNumber: 1, dueDate: '2025-01-01' }, { roundNumber: 2, dueDate: '2025-02-01' }] });
+
+    expect(patchRes.status).toBe(409);
+    expect(String(patchRes.body.error)).toContain('Cannot reduce cards per round');
+  });
+
+  it('blocks deleting a final round when it contains scores', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Delete Guard Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Delete Guard Comp',
+        roundCount: 2,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2025-01-01' }, { dueDate: '2025-02-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const finalRoundScore = await prisma.score.findFirst({
+      where: {
+        competitionId: comp.id,
+        userId: member.id,
+        round: { roundNumber: 2 },
+      },
+    });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${finalRoundScore!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 45 });
+
+    const delRes = await request(app)
+      .delete(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/rounds/2`)
+      .set(authHeader(admin));
+
+    expect(delRes.status).toBe(409);
+    expect(String(delRes.body.error)).toContain('Cannot delete round with scores');
+  });
+
+  it('deletes a final round when it has no scores', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Delete Round Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Delete Round Comp',
+        roundCount: 2,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2025-01-01' }, { dueDate: '2025-02-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const delRes = await request(app)
+      .delete(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/rounds/2`)
+      .set(authHeader(admin));
+
+    expect(delRes.status).toBe(204);
+
+    const updatedComp = await prisma.competition.findUnique({ where: { id: comp.id } });
+    const rounds = await prisma.round.findMany({ where: { competitionId: comp.id } });
+    const scores = await prisma.score.findMany({ where: { competitionId: comp.id } });
+
+    expect(updatedComp?.roundCount).toBe(1);
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0].roundNumber).toBe(1);
+    expect(scores).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
