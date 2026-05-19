@@ -907,6 +907,88 @@ describe('club settings routes', () => {
     expect(res.status).toBe(403);
   });
 
+  it('updates backupEnabled in club settings', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ backupEnabled: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.backupEnabled).toBe(true);
+  });
+
+  it('returns backup status for admin and blocks non-admin', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser();
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        status: MembershipStatus.APPROVED,
+        role: MembershipRole.MEMBER,
+      },
+    });
+
+    const denied = await request(app)
+      .get(`/api/clubs/${club.id}/settings/backups/google-drive/status`)
+      .set(authHeader(member));
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(app)
+      .get(`/api/clubs/${club.id}/settings/backups/google-drive/status`)
+      .set(authHeader(admin));
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.connection.linked).toBe(false);
+  });
+
+  it('starts Google Drive OAuth link flow for admin', async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = 'test-client-secret';
+    process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI = 'http://localhost:3000/api/clubs/settings/backups/google-drive/callback';
+
+    const { club, admin } = await createClubWithAdmin();
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings/backups/google-drive/link/start`)
+      .set(authHeader(admin))
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(typeof res.body.authUrl).toBe('string');
+    expect(res.body.authUrl).toContain('accounts.google.com');
+
+    const states = await prisma.googleDriveOAuthState.findMany({
+      where: { clubId: club.id, userId: admin.id },
+    });
+    expect(states.length).toBe(1);
+  });
+
+  it('rejects callback with invalid state', async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = 'test-client-secret';
+    process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI = 'http://localhost:3000/api/clubs/settings/backups/google-drive/callback';
+    process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef';
+
+    const { admin } = await createClubWithAdmin();
+    const res = await request(app)
+      .get('/api/clubs/settings/backups/google-drive/callback')
+      .set(authHeader(admin))
+      .query({ state: 'invalid-state', code: 'oauth-code' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Invalid OAuth state');
+  });
+
+  it('disconnect endpoint returns 404 when no connection exists', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings/backups/google-drive/disconnect`)
+      .set(authHeader(admin))
+      .send({});
+
+    expect(res.status).toBe(404);
+  });
+
   it('returns 404 for nonexistent club settings', async () => {
     const admin = await createUser();
 

@@ -41,6 +41,25 @@ services:
       migrator:
         condition: service_completed_successfully
 
+  backup-worker:
+    build:
+      context: .
+      target: backup-worker
+    environment:
+      DATABASE_URL: postgresql://shootingmatch:shootingmatch@db:5432/shootingmatch
+      NODE_ENV: production
+      GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${GOOGLE_DRIVE_OAUTH_CLIENT_ID:-}
+      GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: ${GOOGLE_DRIVE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_DRIVE_OAUTH_REDIRECT_URI: ${GOOGLE_DRIVE_OAUTH_REDIRECT_URI:-}
+      GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY:-}
+      BACKUP_SCHEDULE_HOUR_UTC: ${BACKUP_SCHEDULE_HOUR_UTC:-2}
+      BACKUP_SCHEDULE_JITTER_MS: ${BACKUP_SCHEDULE_JITTER_MS:-300000}
+      BACKUP_WORKER_CONCURRENCY: ${BACKUP_WORKER_CONCURRENCY:-2}
+      BACKUP_RUN_ON_STARTUP: ${BACKUP_RUN_ON_STARTUP:-false}
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:

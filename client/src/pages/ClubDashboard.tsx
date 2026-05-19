@@ -10,6 +10,7 @@ import {
   SignInLink,
   ClubInvite,
   ClubSettings,
+  GoogleDriveBackupStatus,
   ClubFormData,
   MembershipRoleType,
   EditingRoleState,
@@ -119,7 +120,11 @@ export default function ClubDashboard() {
     accentColor: '#3b82f6',
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
+    backupEnabled: false,
   });
+  const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
+  const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
+  const [backupActionLoading, setBackupActionLoading] = useState(false);
   const [ammunitionTypes, setAmmunitionTypes] = useState<AmmunitionType[]>([]);
   const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
   const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
@@ -185,9 +190,24 @@ export default function ClubDashboard() {
         setSettingsForm(s);
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
+    api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`)
+      .then(status => {
+        setGoogleDriveStatus(status);
+        setBackupDriveFolderIdInput(status.connection.driveFolderId ?? '');
+      })
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading backup status'));
     api.get<Firearm[]>(`/api/clubs/${id}/firearms`)
     .then(firearms => setFirearms(firearms))
     .catch(e => setError(e instanceof Error ? e.message : 'Error loading firearms'));
+  }, [id, isAdmin]);
+
+  useEffect(() => {
+    if (!id || !isAdmin) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('backupDriveLinked') !== '1') return;
+    void reloadBackupStatus()
+      .finally(() => setBackupActionLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isAdmin]);
 
   async function loadAmmunitionSettings() {
@@ -455,6 +475,7 @@ export default function ClubDashboard() {
         accentColor: settingsForm.accentColor,
         passIssuingEnabled: settingsForm.passIssuingEnabled,
         memberCardSignInEnabled: settingsForm.memberCardSignInEnabled,
+        backupEnabled: settingsForm.backupEnabled,
       });
       setSettings(updated);
       setSettingsForm(updated);
@@ -463,6 +484,42 @@ export default function ClubDashboard() {
       setError(e instanceof Error ? e.message : 'Error updating settings');
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function reloadBackupStatus() {
+    if (!id || !isAdmin) return;
+    const status = await api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`);
+    setGoogleDriveStatus(status);
+  }
+
+  async function startGoogleDriveLink() {
+    if (!id) return;
+    setBackupActionLoading(true);
+    setError('');
+    try {
+      const response = await api.post<{ authUrl: string }>(`/api/clubs/${id}/settings/backups/google-drive/link/start`, {
+        driveFolderId: backupDriveFolderIdInput.trim() || undefined,
+      });
+      window.location.href = response.authUrl;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error starting Google Drive link');
+      setBackupActionLoading(false);
+    }
+  }
+
+  async function disconnectGoogleDrive() {
+    if (!id || !window.confirm('Disconnect Google Drive backup for this club?')) return;
+    setBackupActionLoading(true);
+    setError('');
+    try {
+      await api.post(`/api/clubs/${id}/settings/backups/google-drive/disconnect`, {});
+      setSettingsForm(prev => ({ ...prev, backupEnabled: false }));
+      await reloadBackupStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error disconnecting Google Drive');
+    } finally {
+      setBackupActionLoading(false);
     }
   }
 
@@ -720,6 +777,13 @@ export default function ClubDashboard() {
               onUpdateAmmunitionTypePrice={updateAmmunitionTypePrice}
               onRenameSafe={renameSafe}
               onDeleteSafe={deleteSafe}
+              googleDriveStatus={googleDriveStatus}
+              backupDriveFolderIdInput={backupDriveFolderIdInput}
+              backupActionLoading={backupActionLoading}
+              onBackupDriveFolderIdInputChange={setBackupDriveFolderIdInput}
+              onStartGoogleDriveLink={startGoogleDriveLink}
+              onDisconnectGoogleDrive={disconnectGoogleDrive}
+              onRefreshBackupStatus={() => void reloadBackupStatus()}
             />
           )}
 

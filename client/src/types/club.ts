@@ -72,6 +72,27 @@ export interface ClubSettings {
   accentColor: string;
   passIssuingEnabled: boolean;
   memberCardSignInEnabled: boolean;
+  backupEnabled: boolean;
+}
+
+export interface BackupDatasetRunStatus {
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+}
+
+export interface GoogleDriveBackupStatus {
+  backupEnabled: boolean;
+  connection: {
+    linked: boolean;
+    status: string;
+    driveFolderId: string | null;
+    linkedAt: string | null;
+    disconnectedAt: string | null;
+    updatedAt: string | null;
+  };
+  latestByDataset: Record<string, BackupDatasetRunStatus | null>;
 }
 
 export interface AmmunitionTypePriceHistory {

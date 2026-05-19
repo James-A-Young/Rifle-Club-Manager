@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import {
   auditFirearmDeleteDenied,
@@ -12,6 +12,13 @@ import {
 } from '../middleware/auditLog';
 import { emailService } from '../services/email';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { decryptSecret, encryptSecret } from '../services/backups/crypto';
+import {
+  assertGoogleDriveOAuthConfigured,
+  buildGoogleDriveAuthUrl,
+  exchangeGoogleOAuthCode,
+  revokeGoogleToken,
+} from '../services/backups/googleDriveOAuth';
 
 const router = Router();
 
@@ -778,6 +785,7 @@ const updateClubSettingsSchema = z.object({
   accentColor: hexColorSchema,
   passIssuingEnabled: z.boolean().optional(),
   memberCardSignInEnabled: z.boolean().optional(),
+  backupEnabled: z.boolean().optional(),
 });
 
 router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
@@ -802,6 +810,7 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         accentColor: '#3b82f6',
         passIssuingEnabled: false,
         memberCardSignInEnabled: false,
+        backupEnabled: false,
       },
     });
   }
@@ -830,6 +839,7 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     accentColor?: string;
     passIssuingEnabled?: boolean;
     memberCardSignInEnabled?: boolean;
+    backupEnabled?: boolean;
   } = {};
 
   if ('logoUrl' in parsed.data) {
@@ -849,6 +859,9 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
   if ('memberCardSignInEnabled' in parsed.data && typeof parsed.data.memberCardSignInEnabled === 'boolean') {
     updateData.memberCardSignInEnabled = parsed.data.memberCardSignInEnabled;
+  }
+  if ('backupEnabled' in parsed.data && typeof parsed.data.backupEnabled === 'boolean') {
+    updateData.backupEnabled = parsed.data.backupEnabled;
   }
 
   let settings = await prisma.clubSettings.findUnique({
@@ -870,6 +883,273 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
 
   res.json(settings);
+});
+
+const backupOAuthStartSchema = z.object({
+  driveFolderId: z.string().min(1).optional(),
+});
+
+router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const [settings, connection, latestRuns] = await Promise.all([
+    prisma.clubSettings.findUnique({ where: { clubId }, select: { backupEnabled: true } }),
+    prisma.googleDriveConnection.findUnique({
+      where: { clubId },
+      select: {
+        status: true,
+        driveFolderId: true,
+        linkedAt: true,
+        disconnectedAt: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.backupRun.findMany({
+      where: { clubId },
+      orderBy: { startedAt: 'desc' },
+      take: 20,
+      select: {
+        dataset: true,
+        status: true,
+        startedAt: true,
+        finishedAt: true,
+        error: true,
+      },
+    }),
+  ]);
+
+  const latestByDataset = Object.values(BackupDataset).reduce<Record<string, {
+    status: string;
+    startedAt: Date;
+    finishedAt: Date | null;
+    error: string | null;
+  } | null>>((acc, dataset) => {
+    const run = latestRuns.find(r => r.dataset === dataset) ?? null;
+    acc[dataset] = run ? {
+      status: run.status,
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+      error: run.error ?? null,
+    } : null;
+    return acc;
+  }, {});
+
+  res.json({
+    backupEnabled: settings?.backupEnabled ?? false,
+    connection: connection
+      ? {
+          linked: connection.status === GoogleDriveConnectionStatus.ACTIVE,
+          status: connection.status,
+          driveFolderId: connection.driveFolderId,
+          linkedAt: connection.linkedAt,
+          disconnectedAt: connection.disconnectedAt,
+          updatedAt: connection.updatedAt,
+        }
+      : {
+          linked: false,
+          status: 'NONE',
+          driveFolderId: null,
+          linkedAt: null,
+          disconnectedAt: null,
+          updatedAt: null,
+        },
+    latestByDataset,
+  });
+});
+
+router.post('/:id/settings/backups/google-drive/link/start', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  try {
+    assertGoogleDriveOAuthConfigured();
+  } catch (error) {
+    res.status(503).json({ error: error instanceof Error ? error.message : 'Google Drive OAuth is not configured' });
+    return;
+  }
+
+  const parsed = backupOAuthStartSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const state = crypto.randomBytes(24).toString('hex');
+  const nonce = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await prisma.googleDriveOAuthState.create({
+    data: {
+      state,
+      clubId,
+      userId: req.user!.id,
+      nonce,
+      expiresAt,
+    },
+  });
+
+  if (parsed.data.driveFolderId) {
+    await prisma.googleDriveConnection.upsert({
+      where: { clubId },
+      create: {
+        clubId,
+        linkedByUserId: req.user!.id,
+        status: GoogleDriveConnectionStatus.DISCONNECTED,
+        driveFolderId: parsed.data.driveFolderId.trim(),
+        encryptedRefreshToken: '',
+        tokenIv: '',
+        tokenAuthTag: '',
+      },
+      update: {
+        driveFolderId: parsed.data.driveFolderId.trim(),
+      },
+    });
+  }
+
+  res.json({
+    authUrl: buildGoogleDriveAuthUrl(state),
+    expiresAt,
+  });
+});
+
+router.get('/settings/backups/google-drive/callback', async (req: AuthRequest, res: Response) => {
+  if (!req.user?.id) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const state = typeof req.query.state === 'string' ? req.query.state : '';
+  const code = typeof req.query.code === 'string' ? req.query.code : '';
+  if (!state || !code) {
+    res.status(400).json({ error: 'Missing OAuth state or code' });
+    return;
+  }
+
+  const oauthState = await prisma.googleDriveOAuthState.findUnique({ where: { state } });
+  if (!oauthState || oauthState.userId !== req.user.id) {
+    res.status(400).json({ error: 'Invalid OAuth state' });
+    return;
+  }
+  if (oauthState.consumedAt || oauthState.expiresAt < new Date()) {
+    res.status(400).json({ error: 'OAuth state expired or already used' });
+    return;
+  }
+
+  let refreshToken: string;
+  let scope: string | undefined;
+  let expiryDate: Date | undefined;
+  try {
+    const exchanged = await exchangeGoogleOAuthCode(code);
+    refreshToken = exchanged.refreshToken;
+    scope = exchanged.scope;
+    expiryDate = exchanged.expiryDate;
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to complete OAuth exchange' });
+    return;
+  }
+
+  const encrypted = encryptSecret(refreshToken);
+  const existingConnection = await prisma.googleDriveConnection.findUnique({
+    where: { clubId: oauthState.clubId },
+    select: { driveFolderId: true },
+  });
+
+  await prisma.$transaction([
+    prisma.googleDriveOAuthState.update({
+      where: { state: oauthState.state },
+      data: { consumedAt: new Date() },
+    }),
+    prisma.googleDriveConnection.upsert({
+      where: { clubId: oauthState.clubId },
+      create: {
+        clubId: oauthState.clubId,
+        linkedByUserId: req.user.id,
+        status: GoogleDriveConnectionStatus.ACTIVE,
+        driveFolderId: existingConnection?.driveFolderId ?? null,
+        encryptedRefreshToken: encrypted.ciphertext,
+        tokenIv: encrypted.iv,
+        tokenAuthTag: encrypted.authTag,
+        tokenScope: scope,
+        tokenExpiry: expiryDate,
+        linkedAt: new Date(),
+        disconnectedAt: null,
+      },
+      update: {
+        linkedByUserId: req.user.id,
+        status: GoogleDriveConnectionStatus.ACTIVE,
+        encryptedRefreshToken: encrypted.ciphertext,
+        tokenIv: encrypted.iv,
+        tokenAuthTag: encrypted.authTag,
+        tokenScope: scope,
+        tokenExpiry: expiryDate,
+        linkedAt: new Date(),
+        disconnectedAt: null,
+      },
+    }),
+  ]);
+
+  const origin = process.env.CLIENT_ORIGIN?.trim();
+  if (origin) {
+    res.redirect(`${origin}/clubs/${oauthState.clubId}?backupDriveLinked=1`);
+    return;
+  }
+
+  res.json({ success: true, clubId: oauthState.clubId });
+});
+
+router.post('/:id/settings/backups/google-drive/disconnect', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const connection = await prisma.googleDriveConnection.findUnique({ where: { clubId } });
+  if (!connection) {
+    res.status(404).json({ error: 'Google Drive connection not found' });
+    return;
+  }
+
+  if (connection.encryptedRefreshToken && connection.tokenIv && connection.tokenAuthTag) {
+    try {
+      const token = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+      await revokeGoogleToken(token);
+    } catch {
+      // best effort revoke; continue to disconnect locally
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.googleDriveConnection.update({
+      where: { clubId },
+      data: {
+        status: GoogleDriveConnectionStatus.DISCONNECTED,
+        disconnectedAt: new Date(),
+      },
+    }),
+    prisma.clubSettings.upsert({
+      where: { clubId },
+      create: {
+        clubId,
+        backupEnabled: false,
+      },
+      update: {
+        backupEnabled: false,
+      },
+    }),
+  ]);
+
+  res.json({ success: true });
 });
 
 export default router;
