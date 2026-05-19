@@ -30,6 +30,7 @@ const tables = [
   'AmmunitionType',
   'VisitLog',
   'SignInLink',
+  'UserProfileHistory',
   'PasswordResetToken',
   'ClubInvite',
   'ClubMembership',

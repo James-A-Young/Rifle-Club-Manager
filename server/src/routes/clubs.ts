@@ -19,6 +19,7 @@ import {
   exchangeGoogleOAuthCode,
   revokeGoogleToken,
 } from '../services/backups/googleDriveOAuth';
+import { getUserProfileHistorySince } from '../services/profileHistory';
 
 const router = Router();
 
@@ -163,6 +164,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
           userId: req.user!.id,
           status: MembershipStatus.APPROVED,
           role: MembershipRole.ADMIN,
+          approvedAt: new Date(),
         },
       },
     },
@@ -280,6 +282,45 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
     },
   });
   res.json(members);
+});
+
+router.get('/:id/members/:userId/profile-history', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const targetUserId = req.params.userId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const membership = await prisma.clubMembership.findUnique({
+    where: {
+      userId_clubId: {
+        userId: targetUserId,
+        clubId,
+      },
+    },
+    select: {
+      approvedAt: true,
+    },
+  });
+
+  if (!membership) {
+    res.status(404).json({ error: 'Membership not found' });
+    return;
+  }
+
+  if (!membership.approvedAt) {
+    res.json([]);
+    return;
+  }
+
+  const history = await getUserProfileHistorySince({
+    userId: targetUserId,
+    since: membership.approvedAt,
+  });
+
+  res.json(history);
 });
 
 router.post('/:id/join', async (req: AuthRequest, res: Response) => {
@@ -655,12 +696,18 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
     return;
   }
 
+  const existingMembership = await prisma.clubMembership.findUnique({
+    where: { userId_clubId: { userId: targetUserId, clubId } },
+    select: { role: true, status: true, approvedAt: true },
+  });
+  if (!existingMembership) {
+    res.status(404).json({ error: 'Membership not found' });
+    return;
+  }
+
   // Validate: cannot demote the last admin
   if (role && role !== MembershipRole.ADMIN) {
-    const targetMember = await prisma.clubMembership.findUnique({
-      where: { userId_clubId: { userId: targetUserId, clubId } },
-    });
-    if (targetMember?.role === MembershipRole.ADMIN) {
+    if (existingMembership.role === MembershipRole.ADMIN) {
       const adminCount = await prisma.clubMembership.count({
         where: {
           clubId,
@@ -675,9 +722,25 @@ router.patch('/:id/members/:userId', async (req: AuthRequest, res: Response) => 
     }
   }
 
+  const updateData: {
+    status?: MembershipStatus;
+    role?: MembershipRole;
+    approvedAt?: Date;
+  } = {};
+
+  if (status) {
+    updateData.status = status;
+    if (status === MembershipStatus.APPROVED && !existingMembership.approvedAt) {
+      updateData.approvedAt = new Date();
+    }
+  }
+  if (role) {
+    updateData.role = role;
+  }
+
   const updated = await prisma.clubMembership.update({
     where: { userId_clubId: { userId: targetUserId, clubId } },
-    data: { ...(status && { status }), ...(role && { role }) },
+    data: updateData,
     include: { user: { select: { id: true, name: true, email: true } } },
   });
 

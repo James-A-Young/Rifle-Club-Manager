@@ -175,6 +175,27 @@ export interface EditingRoleState {
   role: MembershipRoleType;
 }
 
+export interface ProfileHistoryFieldChange {
+  field:
+    | 'name'
+    | 'address'
+    | 'placeOfBirth'
+    | 'dateOfBirth'
+    | 'firearmCertificateNumber'
+    | 'firearmCertificateExpiry'
+    | 'shotgunCertificateNumber'
+    | 'shotgunCertificateExpiry';
+  oldValue: string | null;
+  newValue: string | null;
+}
+
+export interface MemberProfileHistoryEntry {
+  id: string;
+  changedAt: string;
+  changedByUserId: string | null;
+  changes: ProfileHistoryFieldChange[];
+}
+
 // ---------------------------------------------------------------------------
 // Scoring / Match Secretary types
 // ---------------------------------------------------------------------------

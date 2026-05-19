@@ -362,6 +362,48 @@ describe('users routes', () => {
     expect(res.body.shotgunCertificateNumber).toBe('SGC-123');
   });
 
+  it('records profile history when tracked fields change', async () => {
+    const user = await createUser({ email: `${unique('profile-history-change')}@test.com` });
+
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set(authHeader(user))
+      .send({
+        name: 'Updated Test User',
+      });
+
+    expect(res.status).toBe(200);
+
+    const history = await prisma.userProfileHistory.findMany({
+      where: { userId: user.id },
+      orderBy: { changedAt: 'desc' },
+    });
+
+    expect(history.length).toBe(1);
+    const changes = history[0]?.changes as Array<{ field: string; oldValue: string | null; newValue: string | null }>;
+    expect(changes).toContainEqual({
+      field: 'name',
+      oldValue: 'Test User',
+      newValue: 'Updated Test User',
+    });
+  });
+
+  it('does not record profile history for no-op profile updates', async () => {
+    const user = await createUser({ email: `${unique('profile-history-noop')}@test.com` });
+
+    const res = await request(app)
+      .patch('/api/users/me')
+      .set(authHeader(user))
+      .send({ name: 'Test User' });
+
+    expect(res.status).toBe(200);
+
+    const historyCount = await prisma.userProfileHistory.count({
+      where: { userId: user.id },
+    });
+    expect(historyCount).toBe(0);
+  });
+
   it('creates and deletes own firearm only', async () => {
     const owner = await createUser({ email: `${unique('owner-firearm')}@test.com` });
     const stranger = await createUser({ email: `${unique('stranger-firearm')}@test.com` });
@@ -499,6 +541,87 @@ describe('clubs routes', () => {
     expect(res.status).toBe(200);
     const found = res.body.find((m: { userId: string }) => m.userId === member.id);
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
+  });
+
+  it('admin can view member profile history from acceptance onward in newest-first order', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('member-history')}@test.com` });
+    const acceptedAt = new Date('2026-01-15T00:00:00.000Z');
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+        approvedAt: acceptedAt,
+      },
+    });
+
+    await prisma.userProfileHistory.create({
+      data: {
+        userId: member.id,
+        changedByUserId: member.id,
+        changedAt: new Date('2026-01-10T08:00:00.000Z'),
+        changes: [{ field: 'address', oldValue: 'Old A', newValue: 'Old B' }],
+      },
+    });
+    await prisma.userProfileHistory.create({
+      data: {
+        userId: member.id,
+        changedByUserId: member.id,
+        changedAt: new Date('2026-02-01T08:00:00.000Z'),
+        changes: [{ field: 'name', oldValue: 'Test User', newValue: 'Member V2' }],
+      },
+    });
+    await prisma.userProfileHistory.create({
+      data: {
+        userId: member.id,
+        changedByUserId: member.id,
+        changedAt: new Date('2026-03-01T08:00:00.000Z'),
+        changes: [{ field: 'placeOfBirth', oldValue: 'London', newValue: 'Leeds' }],
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/${member.id}/profile-history`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].changedAt).toBe('2026-03-01T08:00:00.000Z');
+    expect(res.body[1].changedAt).toBe('2026-02-01T08:00:00.000Z');
+  });
+
+  it('forbids non-admin from viewing member profile history', async () => {
+    const { club } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('member-history-no-admin')}@test.com` });
+    const nonAdmin = await createUser({ email: `${unique('not-admin')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+        approvedAt: new Date('2026-01-15T00:00:00.000Z'),
+      },
+    });
+    await prisma.clubMembership.create({
+      data: {
+        userId: nonAdmin.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+        approvedAt: new Date('2026-01-15T00:00:00.000Z'),
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/${member.id}/profile-history`)
+      .set(authHeader(nonAdmin));
+
+    expect(res.status).toBe(403);
   });
 
   it('admin can remove a member by marking them inactive', async () => {

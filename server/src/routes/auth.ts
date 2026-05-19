@@ -146,6 +146,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
               userId: createdUser.id,
               status: MembershipStatus.APPROVED,
               role: MembershipRole.ADMIN,
+              approvedAt: new Date(),
             },
           },
         },

@@ -67,6 +67,8 @@ model User {
   scores             Score[]
   passwordResetTokens PasswordResetToken[]
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
+  profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
+  profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
 }
 
 model Club {
@@ -106,6 +108,7 @@ model ClubMembership {
   clubId    String
   status    MembershipStatus @default(PENDING)
   role      MembershipRole   @default(MEMBER)
+  approvedAt DateTime?
   expiresAt DateTime?
   createdAt DateTime         @default(now())
 
@@ -113,6 +116,19 @@ model ClubMembership {
   club Club @relation(fields: [clubId], references: [id])
 
   @@unique([userId, clubId])
+}
+
+model UserProfileHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  changedByUserId String?
+  changes         Json
+  changedAt       DateTime @default(now())
+
+  user          User  @relation("UserProfileHistorySubject", fields: [userId], references: [id], onDelete: Cascade)
+  changedByUser User? @relation("UserProfileHistoryActor", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, changedAt])
 }
 
 model Firearm {

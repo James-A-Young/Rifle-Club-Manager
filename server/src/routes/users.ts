@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { OwnerType, MembershipStatus } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
+import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
 
 const router = Router();
 
@@ -89,6 +90,24 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
     shotgunCertificateNumber,
   } = parsed.data;
 
+  const existingUser = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      name: true,
+      address: true,
+      placeOfBirth: true,
+      dateOfBirth: true,
+      firearmCertificateNumber: true,
+      firearmCertificateExpiry: true,
+      shotgunCertificateNumber: true,
+      shotgunCertificateExpiry: true,
+    },
+  });
+  if (!existingUser) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
   const user = await prisma.user.update({
     where: { id: req.user!.id },
     data: {
@@ -123,6 +142,23 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       updatedAt: true,
     },
   });
+
+  await recordUserProfileHistoryChange({
+    userId: req.user!.id,
+    changedByUserId: req.user!.id,
+    previous: existingUser as TrackedProfile,
+    next: {
+      name: user.name,
+      address: user.address,
+      placeOfBirth: user.placeOfBirth,
+      dateOfBirth: user.dateOfBirth,
+      firearmCertificateNumber: user.firearmCertificateNumber,
+      firearmCertificateExpiry: user.firearmCertificateExpiry,
+      shotgunCertificateNumber: user.shotgunCertificateNumber,
+      shotgunCertificateExpiry: user.shotgunCertificateExpiry,
+    },
+  });
+
   res.json(user);
 });
 
