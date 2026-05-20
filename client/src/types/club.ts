@@ -91,6 +91,7 @@ export interface GoogleDriveBackupStatus {
     linked: boolean;
     status: string;
     driveFolderId: string | null;
+    driveFolderName: string | null;
     linkedAt: string | null;
     disconnectedAt: string | null;
     updatedAt: string | null;

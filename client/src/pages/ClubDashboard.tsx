@@ -133,6 +133,7 @@ export default function ClubDashboard() {
   });
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
   const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
+  const [backupDriveFolderName, setBackupDriveFolderName] = useState('');
   const [backupActionLoading, setBackupActionLoading] = useState(false);
   const [backupFolderPickerOpen, setBackupFolderPickerOpen] = useState(false);
   const [backupFolderPickerLoading, setBackupFolderPickerLoading] = useState(false);
@@ -192,6 +193,12 @@ export default function ClubDashboard() {
       .catch(() => setIsAdmin(false));
   }, [id, user?.id]);
 
+  function applyBackupStatus(status: GoogleDriveBackupStatus) {
+    setGoogleDriveStatus(status);
+    setBackupDriveFolderIdInput(status.connection.driveFolderId ?? '');
+    setBackupDriveFolderName(status.connection.driveFolderName ?? '');
+  }
+
   useEffect(() => {
     if (!id || !isAdmin) return;
     api.get<SignInLink[]>(`/api/sign-in-links/club/${id}`)
@@ -207,10 +214,7 @@ export default function ClubDashboard() {
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
     api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`)
-      .then(status => {
-        setGoogleDriveStatus(status);
-        setBackupDriveFolderIdInput(status.connection.driveFolderId ?? '');
-      })
+      .then(status => applyBackupStatus(status))
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading backup status'));
     api.get<Firearm[]>(`/api/clubs/${id}/firearms`)
     .then(firearms => setFirearms(firearms))
@@ -541,7 +545,7 @@ export default function ClubDashboard() {
   async function reloadBackupStatus() {
     if (!id || !isAdmin) return;
     const status = await api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`);
-    setGoogleDriveStatus(status);
+    applyBackupStatus(status);
   }
 
   async function startGoogleDriveLink() {
@@ -602,15 +606,16 @@ export default function ClubDashboard() {
     await loadDriveFolderChoices(parentId);
   }
 
-  async function selectBackupFolder(folderId: string, _folderName: string) {
+  async function selectBackupFolder(folderId: string, folderName: string) {
     if (!id) return;
     setBackupActionLoading(true);
     setError('');
     try {
-      await api.post<{ driveFolderId: string; folderName: string }>(`/api/clubs/${id}/settings/backups/google-drive/folder`, {
+      const response = await api.post<{ driveFolderId: string; folderName: string }>(`/api/clubs/${id}/settings/backups/google-drive/folder`, {
         driveFolderId: folderId,
       });
-      setBackupDriveFolderIdInput(folderId);
+      setBackupDriveFolderIdInput(response.driveFolderId);
+      setBackupDriveFolderName(response.folderName || folderName);
       setBackupFolderPickerOpen(false);
       await reloadBackupStatus();
     } catch (e) {
@@ -921,6 +926,7 @@ export default function ClubDashboard() {
               onDeleteSafe={deleteSafe}
               googleDriveStatus={googleDriveStatus}
               backupDriveFolderIdInput={backupDriveFolderIdInput}
+              backupDriveFolderName={backupDriveFolderName}
               backupActionLoading={backupActionLoading}
               onBackupDriveFolderIdInputChange={setBackupDriveFolderIdInput}
               backupFolderPickerOpen={backupFolderPickerOpen}

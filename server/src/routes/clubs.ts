@@ -1056,6 +1056,9 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
       select: {
         status: true,
         driveFolderId: true,
+        encryptedRefreshToken: true,
+        tokenIv: true,
+        tokenAuthTag: true,
         linkedAt: true,
         disconnectedAt: true,
         updatedAt: true,
@@ -1091,6 +1094,22 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
     return acc;
   }, {});
 
+  let driveFolderName: string | null = null;
+  if (connection?.driveFolderId
+    && connection.status === GoogleDriveConnectionStatus.ACTIVE
+    && connection.encryptedRefreshToken
+    && connection.tokenIv
+    && connection.tokenAuthTag) {
+    try {
+      const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+      const drive = new GoogleDriveBackupClient(refreshToken);
+      const folder = await drive.getFolderMetadata(connection.driveFolderId);
+      driveFolderName = folder?.name ?? null;
+    } catch {
+      driveFolderName = null;
+    }
+  }
+
   res.json({
     backupEnabled: settings?.backupEnabled ?? false,
     connection: connection
@@ -1098,6 +1117,7 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
           linked: connection.status === GoogleDriveConnectionStatus.ACTIVE,
           status: connection.status,
           driveFolderId: connection.driveFolderId,
+          driveFolderName,
           linkedAt: connection.linkedAt,
           disconnectedAt: connection.disconnectedAt,
           updatedAt: connection.updatedAt,
@@ -1106,6 +1126,7 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
           linked: false,
           status: 'NONE',
           driveFolderId: null,
+          driveFolderName: null,
           linkedAt: null,
           disconnectedAt: null,
           updatedAt: null,

@@ -30,6 +30,7 @@ interface Props {
   onDeleteSafe: (safeId: string) => void;
   googleDriveStatus: GoogleDriveBackupStatus | null;
   backupDriveFolderIdInput: string;
+  backupDriveFolderName: string;
   backupActionLoading: boolean;
   onBackupDriveFolderIdInputChange: (value: string) => void;
   backupFolderPickerOpen: boolean;
@@ -71,7 +72,8 @@ export default function ClubSettingsSection({
   onRenameSafe,
   onDeleteSafe,
   googleDriveStatus,
-  backupDriveFolderIdInput,
+  backupDriveFolderIdInput: _backupDriveFolderIdInput,
+  backupDriveFolderName,
   backupActionLoading,
   onBackupDriveFolderIdInputChange: _onBackupDriveFolderIdInputChange,
   backupFolderPickerOpen,
@@ -291,7 +293,7 @@ export default function ClubSettingsSection({
               Choose Folder
             </button>
             <span style={{ color: 'var(--gray-600)' }}>
-              {backupDriveFolderIdInput ? `Selected folder ID: ${backupDriveFolderIdInput}` : 'No folder selected (auto-create managed folders)'}
+              {backupDriveFolderName ? `Selected folder: ${backupDriveFolderName}` : 'No folder selected (auto-create managed folders)'}
             </span>
           </div>
         </div>
@@ -381,8 +383,8 @@ export default function ClubSettingsSection({
           <dd>{googleDriveStatus?.connection?.status ?? 'UNKNOWN'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked</dt>
           <dd>{googleDriveStatus?.connection?.linked ? 'Yes' : 'No'}</dd>
-          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Drive Folder ID</dt>
-          <dd>{googleDriveStatus?.connection?.driveFolderId ?? 'Not set'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Drive Folder</dt>
+          <dd>{googleDriveStatus?.connection?.driveFolderName ?? 'Not set'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked At</dt>
           <dd>{googleDriveStatus?.connection?.linkedAt ? new Date(googleDriveStatus.connection.linkedAt).toLocaleString() : 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disconnected At</dt>
