@@ -78,7 +78,7 @@ export class GoogleDriveBackupClient {
   async upsertCsvFile(name: string, folderId: string, csv: string, existingFileId?: string | null): Promise<string> {
     const media = {
       mimeType: 'text/csv',
-      body: Buffer.from(csv, 'utf8'),
+      body: csv,
     };
 
     const fileId = existingFileId ?? await this.findCsvFileByName(name, folderId);
@@ -86,7 +86,7 @@ export class GoogleDriveBackupClient {
       const updated = await this.drive.files.update({
         fileId,
         media,
-        requestBody: { name, parents: [folderId] },
+        requestBody: { name },
         fields: 'id',
         supportsAllDrives: false,
       });
