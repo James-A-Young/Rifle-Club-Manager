@@ -24,6 +24,26 @@ import { getUserProfileHistorySince } from '../services/profileHistory';
 
 const router = Router();
 
+const DRIVE_FOLDER_NAME_CACHE_TTL_MS = 10 * 60 * 1000;
+const driveFolderNameCache = new Map<string, { name: string; expiresAt: number }>();
+
+function getCachedDriveFolderName(folderId: string): string | null {
+  const cached = driveFolderNameCache.get(folderId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    driveFolderNameCache.delete(folderId);
+    return null;
+  }
+  return cached.name;
+}
+
+function setCachedDriveFolderName(folderId: string, name: string): void {
+  driveFolderNameCache.set(folderId, {
+    name,
+    expiresAt: Date.now() + DRIVE_FOLDER_NAME_CACHE_TTL_MS,
+  });
+}
+
 const publicClubProfileParamsSchema = z.object({
   id: z.string().min(1),
 });
@@ -1100,13 +1120,19 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
     && connection.encryptedRefreshToken
     && connection.tokenIv
     && connection.tokenAuthTag) {
-    try {
-      const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
-      const drive = new GoogleDriveBackupClient(refreshToken);
-      const folder = await drive.getFolderMetadata(connection.driveFolderId);
-      driveFolderName = folder?.name ?? null;
-    } catch {
-      driveFolderName = null;
+    driveFolderName = getCachedDriveFolderName(connection.driveFolderId);
+    if (!driveFolderName) {
+      try {
+        const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+        const drive = new GoogleDriveBackupClient(refreshToken);
+        const folder = await drive.getFolderMetadata(connection.driveFolderId);
+        driveFolderName = folder?.name ?? null;
+        if (folder?.name) {
+          setCachedDriveFolderName(connection.driveFolderId, folder.name);
+        }
+      } catch {
+        driveFolderName = null;
+      }
     }
   }
 
@@ -1287,6 +1313,8 @@ router.post('/:id/settings/backups/google-drive/folder', async (req: AuthRequest
     where: { clubId },
     data: { driveFolderId: folder.id },
   });
+
+  setCachedDriveFolderName(folder.id, folder.name);
 
   res.json({
     driveFolderId: folder.id,
