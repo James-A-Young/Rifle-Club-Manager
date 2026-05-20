@@ -19,6 +19,7 @@ import {
   exchangeGoogleOAuthCode,
   revokeGoogleToken,
 } from '../services/backups/googleDriveOAuth';
+import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
 import { getUserProfileHistorySince } from '../services/profileHistory';
 
 const router = Router();
@@ -1032,6 +1033,14 @@ const backupOAuthStartSchema = z.object({
   driveFolderId: z.string().min(1).optional(),
 });
 
+const backupFolderListQuerySchema = z.object({
+  parentId: z.string().min(1).optional(),
+});
+
+const backupFolderSelectSchema = z.object({
+  driveFolderId: z.string().min(1),
+});
+
 router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -1161,6 +1170,106 @@ router.post('/:id/settings/backups/google-drive/link/start', async (req: AuthReq
   res.json({
     authUrl: buildGoogleDriveAuthUrl(state),
     expiresAt,
+  });
+});
+
+router.get('/:id/settings/backups/google-drive/folders', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = backupFolderListQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const connection = await prisma.googleDriveConnection.findUnique({
+    where: { clubId },
+    select: {
+      status: true,
+      encryptedRefreshToken: true,
+      tokenIv: true,
+      tokenAuthTag: true,
+    },
+  });
+
+  if (!connection || connection.status !== GoogleDriveConnectionStatus.ACTIVE) {
+    res.status(400).json({ error: 'Link Google Drive before browsing folders' });
+    return;
+  }
+
+  const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+  const drive = new GoogleDriveBackupClient(refreshToken);
+  const parentId = parsed.data.parentId;
+  const currentFolder = parentId ? await drive.getFolderMetadata(parentId) : null;
+
+  if (parentId && !currentFolder) {
+    res.status(404).json({ error: 'Folder not found' });
+    return;
+  }
+
+  const folders = await drive.listFolders(parentId ?? 'root');
+  res.json({
+    currentFolder: currentFolder
+      ? {
+          id: currentFolder.id,
+          name: currentFolder.name,
+          parentId: currentFolder.parentId,
+        }
+      : null,
+    folders,
+  });
+});
+
+router.post('/:id/settings/backups/google-drive/folder', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = backupFolderSelectSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const connection = await prisma.googleDriveConnection.findUnique({
+    where: { clubId },
+    select: {
+      status: true,
+      encryptedRefreshToken: true,
+      tokenIv: true,
+      tokenAuthTag: true,
+    },
+  });
+
+  if (!connection || connection.status !== GoogleDriveConnectionStatus.ACTIVE) {
+    res.status(400).json({ error: 'Link Google Drive before selecting a folder' });
+    return;
+  }
+
+  const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+  const drive = new GoogleDriveBackupClient(refreshToken);
+  const folder = await drive.getFolderMetadata(parsed.data.driveFolderId);
+  if (!folder) {
+    res.status(404).json({ error: 'Folder not found' });
+    return;
+  }
+
+  await prisma.googleDriveConnection.update({
+    where: { clubId },
+    data: { driveFolderId: folder.id },
+  });
+
+  res.json({
+    driveFolderId: folder.id,
+    folderName: folder.name,
   });
 });
 

@@ -75,6 +75,48 @@ export class GoogleDriveBackupClient {
     return listed.data.files?.[0]?.id ?? null;
   }
 
+  async listFolders(parentFolderId = 'root'): Promise<Array<{ id: string; name: string }>> {
+    const query = [
+      `mimeType='application/vnd.google-apps.folder'`,
+      `'${qEscape(parentFolderId)}' in parents`,
+      'trashed=false',
+    ].join(' and ');
+
+    const listed = await this.drive.files.list({
+      q: query,
+      fields: 'files(id,name)',
+      orderBy: 'name_natural',
+      pageSize: 200,
+      includeItemsFromAllDrives: false,
+      supportsAllDrives: false,
+    });
+
+    return (listed.data.files ?? [])
+      .filter((file): file is { id: string; name: string } => Boolean(file.id && file.name))
+      .map(file => ({ id: file.id, name: file.name }));
+  }
+
+  async getFolderMetadata(folderId: string): Promise<{ id: string; name: string; parentId: string | null } | null> {
+    const file = await this.drive.files.get({
+      fileId: folderId,
+      fields: 'id,name,mimeType,parents,trashed',
+      supportsAllDrives: false,
+    });
+
+    if (!file.data.id || !file.data.name) {
+      return null;
+    }
+    if (file.data.trashed || file.data.mimeType !== 'application/vnd.google-apps.folder') {
+      return null;
+    }
+
+    return {
+      id: file.data.id,
+      name: file.data.name,
+      parentId: file.data.parents?.[0] ?? null,
+    };
+  }
+
   async upsertCsvFile(name: string, folderId: string, csv: string, existingFileId?: string | null): Promise<string> {
     const media = {
       mimeType: 'text/csv',

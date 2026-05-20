@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus } from '../../types/club';
+import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus, GoogleDriveFolderItem } from '../../types/club';
 
 interface Props {
   settings: ClubSettings | null;
@@ -32,6 +32,17 @@ interface Props {
   backupDriveFolderIdInput: string;
   backupActionLoading: boolean;
   onBackupDriveFolderIdInputChange: (value: string) => void;
+  backupFolderPickerOpen: boolean;
+  backupFolderPickerLoading: boolean;
+  backupFolderPickerError: string;
+  backupFolderPickerCurrentName: string;
+  backupFolderPickerCanGoUp: boolean;
+  backupFolderPickerItems: GoogleDriveFolderItem[];
+  onOpenBackupFolderPicker: () => void;
+  onCloseBackupFolderPicker: () => void;
+  onOpenBackupFolder: (folderId: string) => void;
+  onGoUpBackupFolder: () => void;
+  onSelectBackupFolder: (folderId: string, folderName: string) => void;
   onStartGoogleDriveLink: () => void;
   onDisconnectGoogleDrive: () => void;
   onRefreshBackupStatus: () => void;
@@ -62,7 +73,18 @@ export default function ClubSettingsSection({
   googleDriveStatus,
   backupDriveFolderIdInput,
   backupActionLoading,
-  onBackupDriveFolderIdInputChange,
+  onBackupDriveFolderIdInputChange: _onBackupDriveFolderIdInputChange,
+  backupFolderPickerOpen,
+  backupFolderPickerLoading,
+  backupFolderPickerError,
+  backupFolderPickerCurrentName,
+  backupFolderPickerCanGoUp,
+  backupFolderPickerItems,
+  onOpenBackupFolderPicker,
+  onCloseBackupFolderPicker,
+  onOpenBackupFolder,
+  onGoUpBackupFolder,
+  onSelectBackupFolder,
   onStartGoogleDriveLink,
   onDisconnectGoogleDrive,
   onRefreshBackupStatus,
@@ -258,13 +280,82 @@ export default function ClubSettingsSection({
         </div>
 
         <div className="form-group">
-          <label>Target Drive Folder ID (optional)</label>
-          <input
-            value={backupDriveFolderIdInput}
-            onChange={e => onBackupDriveFolderIdInputChange(e.target.value)}
-            placeholder="Leave blank to auto-create managed folders"
-          />
+          <label>Target Drive Folder</label>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              onClick={onOpenBackupFolderPicker}
+              disabled={backupActionLoading || !googleDriveStatus?.connection?.linked}
+            >
+              Choose Folder
+            </button>
+            <span style={{ color: 'var(--gray-600)' }}>
+              {backupDriveFolderIdInput ? `Selected folder ID: ${backupDriveFolderIdInput}` : 'No folder selected (auto-create managed folders)'}
+            </span>
+          </div>
         </div>
+
+        {backupFolderPickerOpen && (
+          <div style={{ border: '1px solid var(--gray-200)', borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+              <strong>Browsing: {backupFolderPickerCurrentName}</strong>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={onGoUpBackupFolder}
+                disabled={backupFolderPickerLoading || !backupFolderPickerCanGoUp}
+              >
+                Up
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={onCloseBackupFolderPicker}
+                disabled={backupFolderPickerLoading}
+              >
+                Close
+              </button>
+            </div>
+
+            {backupFolderPickerError && (
+              <div style={{ color: 'var(--danger-600)', marginBottom: '0.5rem' }}>{backupFolderPickerError}</div>
+            )}
+
+            {backupFolderPickerLoading ? (
+              <div style={{ color: 'var(--gray-600)' }}>Loading folders…</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Folder</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backupFolderPickerItems.map(folder => (
+                    <tr key={folder.id}>
+                      <td>{folder.name}</td>
+                      <td style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenBackupFolder(folder.id)}>
+                          Open
+                        </button>
+                        <button className="btn btn-primary btn-sm" type="button" onClick={() => onSelectBackupFolder(folder.id, folder.name)}>
+                          Select
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {backupFolderPickerItems.length === 0 && (
+                    <tr>
+                      <td colSpan={2} style={{ color: 'var(--gray-600)', textAlign: 'center' }}>No subfolders found</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
           <button

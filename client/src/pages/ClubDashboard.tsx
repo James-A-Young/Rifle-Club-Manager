@@ -11,6 +11,8 @@ import {
   ClubInvite,
   ClubSettings,
   GoogleDriveBackupStatus,
+  GoogleDriveFolderItem,
+  GoogleDriveFolderListResponse,
   ClubFormData,
   MembershipRoleType,
   EditingRoleState,
@@ -132,6 +134,11 @@ export default function ClubDashboard() {
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
   const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
   const [backupActionLoading, setBackupActionLoading] = useState(false);
+  const [backupFolderPickerOpen, setBackupFolderPickerOpen] = useState(false);
+  const [backupFolderPickerLoading, setBackupFolderPickerLoading] = useState(false);
+  const [backupFolderPickerError, setBackupFolderPickerError] = useState('');
+  const [backupFolderPickerCurrent, setBackupFolderPickerCurrent] = useState<{ id: string; name: string; parentId: string | null } | null>(null);
+  const [backupFolderPickerItems, setBackupFolderPickerItems] = useState<GoogleDriveFolderItem[]>([]);
   const [ammunitionTypes, setAmmunitionTypes] = useState<AmmunitionType[]>([]);
   const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
   const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
@@ -552,6 +559,69 @@ export default function ClubDashboard() {
     }
   }
 
+  async function loadDriveFolderChoices(parentId?: string) {
+    if (!id) return;
+    setBackupFolderPickerLoading(true);
+    setBackupFolderPickerError('');
+    try {
+      const query = parentId ? `?parentId=${encodeURIComponent(parentId)}` : '';
+      const result = await api.get<GoogleDriveFolderListResponse>(`/api/clubs/${id}/settings/backups/google-drive/folders${query}`);
+      setBackupFolderPickerCurrent(result.currentFolder);
+      setBackupFolderPickerItems(result.folders);
+    } catch (e) {
+      setBackupFolderPickerError(e instanceof Error ? e.message : 'Error loading folders');
+    } finally {
+      setBackupFolderPickerLoading(false);
+    }
+  }
+
+  async function openBackupFolderPicker() {
+    if (!googleDriveStatus?.connection?.linked) {
+      setError('Link Google Drive before picking a folder.');
+      return;
+    }
+    setBackupFolderPickerOpen(true);
+    await loadDriveFolderChoices(backupDriveFolderIdInput.trim() || undefined);
+  }
+
+  function closeBackupFolderPicker() {
+    setBackupFolderPickerOpen(false);
+    setBackupFolderPickerError('');
+  }
+
+  async function openBackupFolder(folderId: string) {
+    await loadDriveFolderChoices(folderId);
+  }
+
+  async function goUpBackupFolder() {
+    const parentId = backupFolderPickerCurrent?.parentId;
+    if (!parentId) {
+      await loadDriveFolderChoices();
+      return;
+    }
+    await loadDriveFolderChoices(parentId);
+  }
+
+  async function selectBackupFolder(folderId: string, _folderName: string) {
+    if (!id) return;
+    setBackupActionLoading(true);
+    setError('');
+    try {
+      await api.post<{ driveFolderId: string; folderName: string }>(`/api/clubs/${id}/settings/backups/google-drive/folder`, {
+        driveFolderId: folderId,
+      });
+      setBackupDriveFolderIdInput(folderId);
+      setBackupFolderPickerOpen(false);
+      await reloadBackupStatus();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Error selecting backup folder';
+      setError(message);
+      setBackupFolderPickerError(message);
+    } finally {
+      setBackupActionLoading(false);
+    }
+  }
+
   async function disconnectGoogleDrive() {
     if (!id || !window.confirm('Disconnect Google Drive backup for this club?')) return;
     setBackupActionLoading(true);
@@ -853,6 +923,17 @@ export default function ClubDashboard() {
               backupDriveFolderIdInput={backupDriveFolderIdInput}
               backupActionLoading={backupActionLoading}
               onBackupDriveFolderIdInputChange={setBackupDriveFolderIdInput}
+              backupFolderPickerOpen={backupFolderPickerOpen}
+              backupFolderPickerLoading={backupFolderPickerLoading}
+              backupFolderPickerError={backupFolderPickerError}
+              backupFolderPickerCurrentName={backupFolderPickerCurrent?.name ?? 'My Drive'}
+              backupFolderPickerCanGoUp={Boolean(backupFolderPickerCurrent)}
+              backupFolderPickerItems={backupFolderPickerItems}
+              onOpenBackupFolderPicker={() => void openBackupFolderPicker()}
+              onCloseBackupFolderPicker={closeBackupFolderPicker}
+              onOpenBackupFolder={folderId => void openBackupFolder(folderId)}
+              onGoUpBackupFolder={() => void goUpBackupFolder()}
+              onSelectBackupFolder={(folderId, folderName) => void selectBackupFolder(folderId, folderName)}
               onStartGoogleDriveLink={startGoogleDriveLink}
               onDisconnectGoogleDrive={disconnectGoogleDrive}
               onRefreshBackupStatus={() => void reloadBackupStatus()}

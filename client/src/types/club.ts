@@ -98,6 +98,20 @@ export interface GoogleDriveBackupStatus {
   latestByDataset: Record<string, BackupDatasetRunStatus | null>;
 }
 
+export interface GoogleDriveFolderItem {
+  id: string;
+  name: string;
+}
+
+export interface GoogleDriveFolderListResponse {
+  currentFolder: {
+    id: string;
+    name: string;
+    parentId: string | null;
+  } | null;
+  folders: GoogleDriveFolderItem[];
+}
+
 export interface AmmunitionTypePriceHistory {
   id: string;
   pricePence: number;
