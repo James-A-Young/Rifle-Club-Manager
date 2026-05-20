@@ -1,27 +1,20 @@
+import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig';
+
 const GOOGLE_OAUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 
 export const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-}
-
 export function assertGoogleDriveOAuthConfigured(): void {
-  requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_ID');
-  requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET');
-  requiredEnv('GOOGLE_DRIVE_OAUTH_REDIRECT_URI');
+  getGoogleDriveOAuthConfig();
 }
 
 export function buildGoogleDriveAuthUrl(state: string): string {
+  const { clientId, redirectUri } = getGoogleDriveOAuthConfig();
   const params = new URLSearchParams({
-    client_id: requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_ID'),
-    redirect_uri: requiredEnv('GOOGLE_DRIVE_OAUTH_REDIRECT_URI'),
+    client_id: clientId,
+    redirect_uri: redirectUri,
     response_type: 'code',
     scope: GOOGLE_DRIVE_SCOPE,
     access_type: 'offline',
@@ -38,11 +31,12 @@ export async function exchangeGoogleOAuthCode(code: string): Promise<{
   scope?: string;
   expiryDate?: Date;
 }> {
+  const { clientId, clientSecret, redirectUri } = getGoogleDriveOAuthConfig();
   const body = new URLSearchParams({
     code,
-    client_id: requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_ID'),
-    client_secret: requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET'),
-    redirect_uri: requiredEnv('GOOGLE_DRIVE_OAUTH_REDIRECT_URI'),
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri,
     grant_type: 'authorization_code',
   });
 

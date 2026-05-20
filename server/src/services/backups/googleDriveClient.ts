@@ -1,12 +1,5 @@
 import { google, drive_v3 } from 'googleapis';
-
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} is required`);
-  }
-  return value;
-}
+import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig';
 
 function qEscape(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -16,10 +9,11 @@ export class GoogleDriveBackupClient {
   private drive: drive_v3.Drive;
 
   constructor(refreshToken: string) {
+    const { clientId, clientSecret, redirectUri } = getGoogleDriveOAuthConfig();
     const oauth2 = new google.auth.OAuth2(
-      requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_ID'),
-      requiredEnv('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET'),
-      requiredEnv('GOOGLE_DRIVE_OAUTH_REDIRECT_URI')
+      clientId,
+      clientSecret,
+      redirectUri
     );
     oauth2.setCredentials({ refresh_token: refreshToken });
     this.drive = google.drive({ version: 'v3', auth: oauth2 });

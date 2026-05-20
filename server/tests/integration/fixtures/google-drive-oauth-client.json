@@ -1,0 +1,9 @@
+{
+  "installed": {
+    "client_id": "json-client-id",
+    "client_secret": "json-client-secret",
+    "redirect_uris": [
+      "http://localhost:3000/api/clubs/settings/backups/google-drive/callback"
+    ]
+  }
+}

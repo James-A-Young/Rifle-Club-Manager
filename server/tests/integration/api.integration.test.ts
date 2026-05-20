@@ -1,6 +1,7 @@
 import './setup';
 
 import bcrypt from 'bcryptjs';
+import path from 'path';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
@@ -1207,6 +1208,42 @@ describe('club settings routes', () => {
       where: { clubId: club.id, userId: admin.id },
     });
     expect(states.length).toBe(1);
+  });
+
+  it('starts Google Drive OAuth link flow using GOOGLE_DRIVE_CREDS_JSON_PATH', async () => {
+    const prevClientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+    const prevClientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+    const prevRedirectUri = process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+    const prevCredsPath = process.env.GOOGLE_DRIVE_CREDS_JSON_PATH;
+
+    try {
+      delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+      delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+      delete process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+      process.env.GOOGLE_DRIVE_CREDS_JSON_PATH = path.join(__dirname, 'fixtures', 'google-drive-oauth-client.json');
+
+      const { club, admin } = await createClubWithAdmin();
+      const res = await request(app)
+        .post(`/api/clubs/${club.id}/settings/backups/google-drive/link/start`)
+        .set(authHeader(admin))
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(typeof res.body.authUrl).toBe('string');
+      expect(res.body.authUrl).toContain('json-client-id');
+    } finally {
+      if (prevClientId === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+      else process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = prevClientId;
+
+      if (prevClientSecret === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+      else process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = prevClientSecret;
+
+      if (prevRedirectUri === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+      else process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI = prevRedirectUri;
+
+      if (prevCredsPath === undefined) delete process.env.GOOGLE_DRIVE_CREDS_JSON_PATH;
+      else process.env.GOOGLE_DRIVE_CREDS_JSON_PATH = prevCredsPath;
+    }
   });
 
   it('rejects callback with invalid state', async () => {
