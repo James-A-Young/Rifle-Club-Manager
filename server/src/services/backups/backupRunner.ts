@@ -1,4 +1,4 @@
-import { BackupDataset, GoogleDriveConnectionStatus } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { prisma } from '../../prisma';
 import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport';
@@ -13,6 +13,13 @@ import {
   monthStartUtc,
   nextMonthStartUtc,
 } from './utils';
+import {
+  detectMemberPassDataChanges,
+  buildMemberDataFingerprint,
+  storePassMetadata,
+  shouldSkipDueToRecentDeletion,
+} from '../googleWalletPassMetadata';
+import { googleWalletService } from '../googleWallet';
 
 type DatasetConfig = {
   dataset: BackupDataset;
@@ -218,6 +225,150 @@ async function runDatasetForClub(params: {
   }
 }
 
+/**
+ * Re-issue Google Wallet membership passes for approved members whose pass
+ * data (visits, scores, club settings) has changed since the last issue.
+ *
+ * Members who recently deleted their pass are skipped to respect their choice.
+ * All outcomes are recorded in BackupRun for auditing.
+ */
+export async function reissueChangedMemberPasses(clubId: string): Promise<void> {
+  if (process.env.GOOGLE_WALLET_PASS_REISSUE_ENABLED === 'false') {
+    logInfo('WALLET_PASS_REISSUE_DISABLED', { clubId });
+    return;
+  }
+
+  const runStarted = Date.now();
+  const monthStart = monthStartUtc(new Date());
+
+  const [club, settings, members] = await Promise.all([
+    prisma.club.findUnique({ where: { id: clubId }, select: { id: true, name: true } }),
+    prisma.clubSettings.findUnique({
+      where: { clubId },
+      select: {
+        passIssuingEnabled: true,
+        secondaryColor: true,
+        accentColor: true,
+        logoUrl: true,
+      },
+    }),
+    prisma.clubMembership.findMany({
+      where: { clubId, status: MembershipStatus.APPROVED },
+      select: { userId: true, role: true },
+    }),
+  ]);
+
+  if (!club || !settings?.passIssuingEnabled) {
+    logInfo('WALLET_PASS_REISSUE_SKIPPED_NOT_ENABLED', { clubId });
+    return;
+  }
+
+  let processed = 0;
+  let changed = 0;
+  let skipped = 0;
+  let failures = 0;
+
+  for (const membership of members) {
+    const { userId } = membership;
+    try {
+      // Skip members who recently deleted their pass
+      const skip = await shouldSkipDueToRecentDeletion(userId, clubId);
+      if (skip) {
+        skipped++;
+        logInfo('WALLET_PASS_MEMBER_SKIPPED_DELETED', { clubId, userId });
+        continue;
+      }
+
+      const hasChanges = await detectMemberPassDataChanges(userId, clubId);
+      if (!hasChanges) {
+        skipped++;
+        continue;
+      }
+
+      // Fetch member details needed to build the pass
+      const [user, janVisits, scores] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+        prisma.visitLog.count({
+          where: { userId, clubId, timeIn: { gte: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)) } },
+        }),
+        prisma.score.findMany({
+          where: { userId, competition: { clubId }, score: { not: null } },
+          select: { score: true },
+        }),
+      ]);
+
+      if (!user) {
+        skipped++;
+        continue;
+      }
+
+      const roundsThisYear = scores.length;
+      const average = roundsThisYear > 0
+        ? scores.reduce((sum, s) => sum + (s.score ?? 0), 0) / roundsThisYear
+        : 0;
+
+      const result = await googleWalletService.issueMembershipPass({
+        userId,
+        clubId,
+        memberName: user.name,
+        membershipType: membership.role,
+        visitCount: janVisits,
+        roundsThisYear,
+        average,
+        clubName: club.name,
+        settings: {
+          secondaryColor: settings.secondaryColor ?? undefined,
+          accentColor: settings.accentColor ?? undefined,
+          logoUrl: settings.logoUrl ?? undefined,
+        },
+      });
+
+      if (result) {
+        const fingerprint = await buildMemberDataFingerprint(userId, clubId);
+        await storePassMetadata(userId, clubId, result.id, fingerprint);
+        changed++;
+        logInfo('WALLET_PASS_REISSUED', { clubId, userId, passObjectId: result.id });
+      } else {
+        failures++;
+        logWarn('WALLET_PASS_REISSUE_API_FAILED', { clubId, userId });
+      }
+    } catch (error) {
+      failures++;
+      logWarn('WALLET_PASS_REISSUE_ERROR', {
+        clubId,
+        userId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+    processed++;
+  }
+
+  const durationMs = Date.now() - runStarted;
+  const status = failures > 0 ? 'COMPLETED_WITH_ERRORS' : 'SUCCESS';
+
+  await prisma.backupRun.create({
+    data: {
+      clubId,
+      dataset: BackupDataset.GOOGLE_WALLET_PASSES,
+      monthStartUtc: monthStart,
+      status,
+      durationMs,
+      error: failures > 0 ? `${failures} member(s) failed to re-issue` : null,
+      finishedAt: new Date(),
+    },
+  });
+
+  logInfo('WALLET_PASS_REISSUE_COMPLETED', {
+    clubId,
+    membersTotal: members.length,
+    processed,
+    changed,
+    skipped,
+    failures,
+    durationMs,
+  });
+}
+
 export async function runBackupsForClub(clubId: string): Promise<void> {
   const lockAcquired = await acquireClubLock(clubId);
   if (!lockAcquired) {
@@ -290,6 +441,38 @@ export async function runBackupCycle(): Promise<void> {
       });
     }
   });
+
+  // After all Drive backups, run pass re-issuance for all clubs that have it
+  // enabled. We query all clubs (not just those with Drive connections) since
+  // pass re-issuance is independent.
+  const allClubs = await prisma.club.findMany({
+    where: {
+      settings: { passIssuingEnabled: true },
+    },
+    select: { id: true },
+  });
+  const passClubIds = [...new Set(allClubs.map(c => c.id))];
+
+  logInfo('WALLET_PASS_CYCLE_STARTED', { clubs: passClubIds.length });
+  await runWithConcurrency(passClubIds, concurrency, async clubId => {
+    const lockAcquired = await acquireClubLock(clubId);
+    if (!lockAcquired) {
+      logInfo('WALLET_PASS_CLUB_SKIPPED_LOCKED', { clubId });
+      return;
+    }
+    try {
+      await reissueChangedMemberPasses(clubId);
+    } catch (error) {
+      logWarn('WALLET_PASS_CLUB_RUN_FAILED', {
+        clubId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      await releaseClubLock(clubId);
+    }
+  });
+  logInfo('WALLET_PASS_CYCLE_FINISHED', { clubs: passClubIds.length });
+
   logInfo('BACKUP_CYCLE_FINISHED', { clubs: uniqueClubIds.length });
 }
 

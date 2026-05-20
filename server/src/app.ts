@@ -14,6 +14,7 @@ import signInLinksRouter from './routes/signInLinks';
 import ammunitionRouter from './routes/ammunition';
 import cashboxRouter from './routes/cashbox';
 import scoringRouter from './routes/scoring';
+import webhooksRouter from './routes/webhooks';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
 
@@ -105,6 +106,23 @@ export function createApp() {
 
   // Parse cookies before any route handler so auth middleware can read them.
   app.use(cookieParser());
+
+  // Webhook routes must capture the raw body for HMAC signature verification.
+  // We mount them before express.json() so the rawBody buffer is preserved.
+  app.use('/api/webhooks', express.raw({ type: 'application/json' }), (req, _res, next) => {
+    // Attach the raw buffer so the webhook handler can verify the signature,
+    // then re-parse the body as JSON for normal handler use.
+    (req as Request & { rawBody?: Buffer }).rawBody = req.body as Buffer;
+    if (Buffer.isBuffer(req.body)) {
+      try {
+        req.body = JSON.parse(req.body.toString('utf8')) as unknown;
+      } catch {
+        req.body = {};
+      }
+    }
+    next();
+  }, webhooksRouter);
+
   app.use(express.json());
 
   // CSRF protection must run after cookie-parser but before route handlers.
