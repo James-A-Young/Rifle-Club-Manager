@@ -9,3 +9,4 @@ server/dist/
 public/
 server/coverage/
 googlecreds.json
+gdrivecreds.json
