@@ -31,6 +31,7 @@ enum BackupDataset {
   SIGN_IN_HISTORY
   SALES_LEDGER
   COMPETITION_RESULTS
+  GOOGLE_WALLET_PASSES
 }
 
 enum GoogleDriveConnectionStatus {
@@ -87,6 +88,7 @@ model User {
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
   profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
   cashBoxTransactionsCreated CashBoxTransaction[] @relation("CashBoxTransactionCreatedBy")
+  walletPassMetadata         GoogleWalletPassMetadata[]
 }
 
 model Club {
@@ -120,6 +122,7 @@ model Club {
   backupRuns       BackupRun[]
   cashBox          CashBox?
   cashBoxTransactions CashBoxTransaction[]
+  walletPassMetadata  GoogleWalletPassMetadata[]
 }
 
 model ClubMembership {
@@ -561,4 +564,40 @@ model AmmunitionStockInput {
   inputBy        User           @relation(fields: [inputByUserId], references: [id], onDelete: Restrict)
 
   @@index([clubId, createdAt])
+}
+
+model GoogleWalletPassMetadata {
+  id                  String    @id @default(cuid())
+  userId              String
+  clubId              String
+  passObjectId        String    @unique
+  lastIssuedAt        DateTime?
+  lastPushedAt        DateTime?
+  lastInstalledAt     DateTime?
+  lastDeletedAt       DateTime?
+  lastDataFingerprint String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clubId])
+  @@index([clubId])
+  @@index([lastDeletedAt])
+}
+
+model GoogleWalletWebhookEvent {
+  id              String    @id @default(cuid())
+  externalEventId String    @unique
+  passObjectId    String?
+  clubId          String?
+  userId          String?
+  eventType       String
+  rawPayload      Json
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+
+  @@index([passObjectId])
+  @@index([receivedAt])
 }
