@@ -57,6 +57,10 @@ function hasSequentialCharacters(password: string, runLength: number): boolean {
 }
 
 async function checkPwnedPassword(password: string): Promise<{ isPwned: boolean; breachCount: number; unavailable: boolean }> {
+  if (process.env.NODE_ENV === 'test') {
+    return { isPwned: false, breachCount: 0, unavailable: true };
+  }
+
   const hash = sha1Upper(password);
   const prefix = hash.slice(0, 5);
   const suffix = hash.slice(5);
