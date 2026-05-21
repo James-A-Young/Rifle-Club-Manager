@@ -96,30 +96,34 @@ export async function submitDeclaration(
   const nextDueDate = new Date(now);
   nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
 
-  const declaration = await prisma.section21Declaration.create({
-    data: {
-      userId,
-      status: 'SIGNED',
-      allCheckboxesSigned:
-        confirmations.section1
-        && confirmations.section1_2
-        && confirmations.section1_3
-        && confirmations.section2
-        && confirmations.section3,
-      fullLegalName,
-      signedDate: now,
-      signedTimestamp: now,
-      ipAddress,
-      userAgent,
-      declarationText: generateDeclarationText(),
-      nextDueDate,
-    },
-  });
+  const declaration = await prisma.$transaction(async tx => {
+    const createdDeclaration = await tx.section21Declaration.create({
+      data: {
+        userId,
+        status: 'SIGNED',
+        allCheckboxesSigned:
+          confirmations.section1
+          && confirmations.section1_2
+          && confirmations.section1_3
+          && confirmations.section2
+          && confirmations.section3,
+        fullLegalName,
+        signedDate: now,
+        signedTimestamp: now,
+        ipAddress,
+        userAgent,
+        declarationText: generateDeclarationText(),
+        nextDueDate,
+      },
+    });
 
-  // Update user's denormalized field for quick lookups
-  await prisma.user.update({
-    where: { id: userId },
-    data: { section21DeclarationSignedAt: now },
+    // Keep denormalized user field in sync with declaration creation.
+    await tx.user.update({
+      where: { id: userId },
+      data: { section21DeclarationSignedAt: now },
+    });
+
+    return createdDeclaration;
   });
 
   return {
@@ -239,7 +243,7 @@ export async function getDeclarationForAdminView(
   }
 
   const parts = declaration.ipAddress.split('.');
-  const maskedIp = parts.length === 4 
+  const maskedIp = parts.length === 4
     ? `${parts[0]}.${parts[1]}.${parts[2]}.xxx`
     : declaration.ipAddress; // Fallback for IPv6 or unusual formats
 

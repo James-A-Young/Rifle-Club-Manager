@@ -18,6 +18,7 @@ import {
 } from '../middleware/auditLog';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 import { emailService, sanitizeUserAgent } from '../services/email';
+import { getDeclarationStatus } from '../services/section21Declaration';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
@@ -332,12 +333,14 @@ router.post('/login', async (req: Request, res: Response) => {
     { expiresIn: JWT_ACCESS_EXPIRES }
   );
 
+  const section21Status = await getDeclarationStatus(user.id);
+
   // Set the JWT as an HttpOnly cookie (same reasoning as register above).
   res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
   auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email },
+    user: { id: user.id, name: user.name, email: user.email, section21Status },
   });
 });
 
