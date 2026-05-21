@@ -94,10 +94,19 @@ export default function Profile() {
     setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
   }
 
-  function handleViewDeclaration() {
+
+  async function handleViewDeclaration(declarationId?: string) {
+    if (declarationId && currentDeclaration?.id !== declarationId) {
+      try {
+        const fullDeclaration = await api.get<any>(`/api/users/me/section21-declarations/${declarationId}`);
+        setCurrentDeclaration(fullDeclaration);
+      } catch (err) {
+        console.error('Failed to load declaration:', err);
+        return;
+      }
+    }
     setShowViewModal(true);
   }
-
   function getStatusBadgeColor(status?: string) {
     switch (status) {
       case 'SIGNED':

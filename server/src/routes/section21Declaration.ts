@@ -3,12 +3,14 @@ import { z } from 'zod';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { formatZodError } from '../utils/zodError';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { prisma } from '../prisma';
 import {
   submitDeclaration,
   getCurrentDeclaration,
   getDeclarationHistory,
   getDeclarationStatus,
   getDeclarationForAdminView,
+  generateDeclarationText,
 } from '../services/section21Declaration';
 
 const router = Router();
@@ -71,6 +73,13 @@ router.get('/users/me/section21-declaration', requireAuth, async (req: AuthReque
       status: declaration.status,
       fullLegalName: declaration.fullLegalName,
       signedDate: declaration.signedDate,
+      signedTimestamp: declaration.signedTimestamp,
+      ipAddress: declaration.ipAddress,
+      userAgent: declaration.userAgent,
+      declarationText:
+        declaration.declarationText && declaration.declarationText.trim().length > 0
+          ? declaration.declarationText
+          : generateDeclarationText(),
       nextDueDate: declaration.nextDueDate,
       createdAt: declaration.createdAt,
     });
@@ -102,6 +111,41 @@ router.get('/users/me/section21-declarations', requireAuth, async (req: AuthRequ
   } catch (err) {
     console.error('Error fetching Section 21 declaration history:', err);
     res.status(500).json({ error: 'Failed to fetch declaration history' });
+  }
+});
+
+// Get a specific Section 21 declaration by ID with full details
+router.get('/users/me/section21-declarations/:declarationId', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const declarationId = req.params.declarationId as string;
+
+    const declaration = await prisma.section21Declaration.findFirst({
+      where: {
+        id: declarationId,
+        userId: req.user!.id,
+      },
+    });
+
+    if (!declaration) {
+      res.status(404).json({ error: 'Declaration not found' });
+      return;
+    }
+
+    res.json({
+      id: declaration.id,
+      status: declaration.status,
+      fullLegalName: declaration.fullLegalName,
+      signedDate: declaration.signedDate,
+      signedTimestamp: declaration.signedTimestamp,
+      ipAddress: declaration.ipAddress,
+      userAgent: declaration.userAgent,
+      declarationText: declaration.declarationText,
+      nextDueDate: declaration.nextDueDate,
+      createdAt: declaration.createdAt,
+    });
+  } catch (err) {
+    console.error('Error fetching Section 21 declaration:', err);
+    res.status(500).json({ error: 'Failed to fetch declaration' });
   }
 });
 

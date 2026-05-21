@@ -19,6 +19,13 @@ export type Section21DeclarationDetail = Section21DeclarationResponse & {
 
 export type DeclarationStatus = 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
 
+function resolveDeclarationText(text: string | null | undefined): string {
+  if (typeof text === 'string' && text.trim().length > 0) {
+    return text;
+  }
+  return generateDeclarationText();
+}
+
 /**
  * Generate the full declaration text as signed by the user
  */
@@ -119,7 +126,7 @@ export async function getCurrentDeclaration(
     signedTimestamp: declaration.signedTimestamp,
     ipAddress: declaration.ipAddress,
     userAgent: declaration.userAgent,
-    declarationText: declaration.declarationText,
+    declarationText: resolveDeclarationText(declaration.declarationText),
     nextDueDate: declaration.nextDueDate,
     createdAt: declaration.createdAt,
   };

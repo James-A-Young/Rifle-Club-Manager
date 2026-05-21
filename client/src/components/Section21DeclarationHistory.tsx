@@ -6,8 +6,12 @@ interface Declaration {
   status: string;
   fullLegalName: string;
   signedDate: string;
+  signedTimestamp: string;
   nextDueDate: string;
   createdAt: string;
+  declarationText: string;
+  userAgent: string;
+  maskedIpAddress?: string;
 }
 
 interface Section21DeclarationHistoryProps {

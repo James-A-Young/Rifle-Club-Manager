@@ -5,6 +5,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
 }
 
 interface AuthContextValue {

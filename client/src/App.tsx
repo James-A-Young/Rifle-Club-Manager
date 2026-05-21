@@ -42,6 +42,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
 
+  // Redirect to declaration signup if user hasn't declared and isn't already on that page
+  if (user.section21Status === 'NOT_DECLARED' && location.pathname !== '/section21-declaration-signup') {
+    return <Navigate to="/section21-declaration-signup" replace />;
+  }
+
   return <>{children}</>;
 }
 
@@ -64,7 +69,15 @@ function RegisterRoute() {
 
 function HomeRoute() {
   const { user } = useAuth();
-  return user ? <Dashboard /> : <Landing />;
+  
+  if (!user) return <Landing />;
+  
+  // If user hasn't declared Section 21, redirect to signup
+  if (user.section21Status === 'NOT_DECLARED') {
+    return <Navigate to="/section21-declaration-signup" replace />;
+  }
+  
+  return <Dashboard />;
 }
 
 function AppRoutes() {
