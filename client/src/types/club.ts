@@ -42,6 +42,7 @@ export interface Member {
   userId: string;
   status: string;
   role: string;
+  section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
   user: MemberUser;
 }
 
