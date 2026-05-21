@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import DisableTwoFactor from './pages/DisableTwoFactor';
 import Bootstrap from './pages/Bootstrap';
 import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
@@ -100,6 +101,7 @@ function AppRoutes() {
           <Route path="/register" element={<RegisterRoute />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/disable-2fa" element={<DisableTwoFactor />} />
           <Route path="/setup" element={<Bootstrap />} />
           <Route path="/section21-declaration-signup" element={<ProtectedRoute><Section21DeclarationSignUp /></ProtectedRoute>} />
           <Route path="/" element={<HomeRoute />} />
