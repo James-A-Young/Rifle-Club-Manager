@@ -5,10 +5,9 @@ const ISSUER = 'Rifle Club Manager';
 const ENVELOPE_VERSION = 'v1';
 
 function resolveEncryptionKey(): Buffer {
-  const raw = process.env.TOTP_SECRET_ENCRYPTION_KEY?.trim()
-    || process.env.GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY?.trim();
+  const raw = process.env.TOTP_SECRET_ENCRYPTION_KEY?.trim();
   if (!raw) {
-    throw new Error('TOTP_SECRET_ENCRYPTION_KEY (or GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY) is required');
+    throw new Error('TOTP_SECRET_ENCRYPTION_KEY is required');
   }
 
   const asBase64 = Buffer.from(raw, 'base64');
