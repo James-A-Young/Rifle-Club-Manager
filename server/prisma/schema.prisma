@@ -55,12 +55,6 @@ enum CashBoxTransactionReason {
   BANKED_CASH
 }
 
-enum Section21DeclarationStatus {
-  SIGNED
-  EXPIRED
-  PENDING_RENEWAL
-}
-
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -575,7 +569,6 @@ model AmmunitionStockInput {
 model Section21Declaration {
   id                  String   @id @default(cuid())
   userId              String
-  status              Section21DeclarationStatus
   allCheckboxesSigned Boolean
   fullLegalName       String
   signedDate          DateTime
@@ -588,6 +581,5 @@ model Section21Declaration {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, status])
   @@index([userId, signedDate])
 }

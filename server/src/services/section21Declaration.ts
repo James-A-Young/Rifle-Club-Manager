@@ -1,9 +1,9 @@
-import { Section21DeclarationStatus } from '@prisma/client';
 import { prisma } from '../prisma';
+
 
 export type Section21DeclarationResponse = {
   id: string;
-  status: Section21DeclarationStatus;
+  status: DeclarationStatus;
   fullLegalName: string;
   signedDate: Date;
   nextDueDate: Date;
@@ -30,7 +30,7 @@ export type Section21DeclarationConfirmations = {
 export function deriveDeclarationStatusFromDueDate(
   nextDueDate: Date,
   now: Date = new Date(),
-): Section21DeclarationStatus {
+): DeclarationStatus {
   if (now > nextDueDate) {
     return 'EXPIRED';
   }
@@ -100,7 +100,6 @@ export async function submitDeclaration(
     const createdDeclaration = await tx.section21Declaration.create({
       data: {
         userId,
-        status: 'SIGNED',
         allCheckboxesSigned:
           confirmations.section1
           && confirmations.section1_2
@@ -184,7 +183,6 @@ export async function getDeclarationHistory(
       skip: offset,
       select: {
         id: true,
-        status: true,
         fullLegalName: true,
         signedDate: true,
         nextDueDate: true,
