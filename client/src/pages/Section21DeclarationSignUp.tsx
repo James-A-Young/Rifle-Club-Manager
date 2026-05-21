@@ -7,11 +7,21 @@ export default function Section21DeclarationSignUp() {
   const navigate = useNavigate();
   const [formError, setFormError] = useState('');
 
-  async function handleDeclarationSubmit(fullLegalName: string): Promise<void> {
+  async function handleDeclarationSubmit(
+    fullLegalName: string,
+    confirmations: {
+      section1: boolean;
+      section1_2: boolean;
+      section1_3: boolean;
+      section2: boolean;
+      section3: boolean;
+    },
+  ): Promise<void> {
     try {
       setFormError('');
       await api.post('/api/users/me/section21-declaration', {
         fullLegalName,
+        confirmations,
       });
       // On success, navigate to the dashboard after a short delay to show success message
       setTimeout(() => {

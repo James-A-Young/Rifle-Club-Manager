@@ -11,6 +11,7 @@ import {
   getDeclarationStatus,
   getDeclarationForAdminView,
   generateDeclarationText,
+  deriveDeclarationStatusFromDueDate,
 } from '../services/section21Declaration';
 
 const router = Router();
@@ -19,6 +20,13 @@ const router = Router();
 router.post('/users/me/section21-declaration', requireAuth, async (req: AuthRequest, res: Response) => {
   const submitSchema = z.object({
     fullLegalName: z.string().min(1, 'Full legal name is required').max(255),
+    confirmations: z.object({
+      section1: z.literal(true),
+      section1_2: z.literal(true),
+      section1_3: z.literal(true),
+      section2: z.literal(true),
+      section3: z.literal(true),
+    }),
   });
 
   const parsed = submitSchema.safeParse(req.body);
@@ -41,6 +49,7 @@ router.post('/users/me/section21-declaration', requireAuth, async (req: AuthRequ
     const declaration = await submitDeclaration(
       req.user!.id,
       parsed.data.fullLegalName,
+      parsed.data.confirmations,
       ipAddress,
       userAgent,
     );
@@ -133,13 +142,16 @@ router.get('/users/me/section21-declarations/:declarationId', requireAuth, async
 
     res.json({
       id: declaration.id,
-      status: declaration.status,
+      status: deriveDeclarationStatusFromDueDate(declaration.nextDueDate),
       fullLegalName: declaration.fullLegalName,
       signedDate: declaration.signedDate,
       signedTimestamp: declaration.signedTimestamp,
       ipAddress: declaration.ipAddress,
       userAgent: declaration.userAgent,
-      declarationText: declaration.declarationText,
+      declarationText:
+        declaration.declarationText && declaration.declarationText.trim().length > 0
+          ? declaration.declarationText
+          : generateDeclarationText(),
       nextDueDate: declaration.nextDueDate,
       createdAt: declaration.createdAt,
     });

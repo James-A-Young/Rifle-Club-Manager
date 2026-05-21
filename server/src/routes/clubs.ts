@@ -21,6 +21,7 @@ import {
 } from '../services/backups/googleDriveOAuth';
 import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
 import { getUserProfileHistorySince } from '../services/profileHistory';
+import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration';
 
 const router = Router();
 
@@ -317,13 +318,7 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
     let section21Status: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED' = 'NOT_DECLARED';
 
     if (latestDeclaration) {
-      if (now > latestDeclaration.nextDueDate) {
-        section21Status = 'EXPIRED';
-      } else if (now >= new Date(latestDeclaration.nextDueDate.getTime() - 90 * 24 * 60 * 60 * 1000)) {
-        section21Status = 'PENDING_RENEWAL';
-      } else {
-        section21Status = 'SIGNED';
-      }
+      section21Status = deriveDeclarationStatusFromDueDate(latestDeclaration.nextDueDate, now);
     }
 
     return {

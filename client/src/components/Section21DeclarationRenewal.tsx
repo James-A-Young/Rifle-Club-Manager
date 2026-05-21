@@ -15,11 +15,21 @@ export default function Section21DeclarationRenewal({
 }: Section21DeclarationRenewalProps) {
   const [formError, setFormError] = useState('');
 
-  async function handleRenewal(fullLegalName: string): Promise<void> {
+  async function handleRenewal(
+    fullLegalName: string,
+    confirmations: {
+      section1: boolean;
+      section1_2: boolean;
+      section1_3: boolean;
+      section2: boolean;
+      section3: boolean;
+    },
+  ): Promise<void> {
     try {
       setFormError('');
       await api.post('/api/users/me/section21-declaration', {
         fullLegalName,
+        confirmations,
       });
       // Wait for success message to display in form
       setTimeout(() => {

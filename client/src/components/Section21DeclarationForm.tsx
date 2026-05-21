@@ -2,7 +2,16 @@ import React, { useState } from 'react';
 import '../styles/global.css';
 
 interface Section21DeclarationFormProps {
-  onSubmit: (fullLegalName: string) => Promise<void>;
+  onSubmit: (
+    fullLegalName: string,
+    confirmations: {
+      section1: boolean;
+      section1_2: boolean;
+      section1_3: boolean;
+      section2: boolean;
+      section3: boolean;
+    },
+  ) => Promise<void>;
   onCancel?: () => void;
 }
 
@@ -42,7 +51,7 @@ export default function Section21DeclarationForm({
     setLoading(true);
     setError('');
     try {
-      await onSubmit(fullLegalName);
+      await onSubmit(fullLegalName, checkboxes);
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit declaration');

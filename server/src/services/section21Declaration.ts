@@ -19,6 +19,29 @@ export type Section21DeclarationDetail = Section21DeclarationResponse & {
 
 export type DeclarationStatus = 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
 
+export type Section21DeclarationConfirmations = {
+  section1: boolean;
+  section1_2: boolean;
+  section1_3: boolean;
+  section2: boolean;
+  section3: boolean;
+};
+
+export function deriveDeclarationStatusFromDueDate(
+  nextDueDate: Date,
+  now: Date = new Date(),
+): Section21DeclarationStatus {
+  if (now > nextDueDate) {
+    return 'EXPIRED';
+  }
+
+  if (now >= new Date(nextDueDate.getTime() - 90 * 24 * 60 * 60 * 1000)) {
+    return 'PENDING_RENEWAL';
+  }
+
+  return 'SIGNED';
+}
+
 function resolveDeclarationText(text: string | null | undefined): string {
   if (typeof text === 'string' && text.trim().length > 0) {
     return text;
@@ -65,6 +88,7 @@ By typing my name below and clicking "Submit", I confirm that all information pr
 export async function submitDeclaration(
   userId: string,
   fullLegalName: string,
+  confirmations: Section21DeclarationConfirmations,
   ipAddress: string,
   userAgent: string,
 ): Promise<Section21DeclarationResponse> {
@@ -76,7 +100,12 @@ export async function submitDeclaration(
     data: {
       userId,
       status: 'SIGNED',
-      allCheckboxesSigned: true,
+      allCheckboxesSigned:
+        confirmations.section1
+        && confirmations.section1_2
+        && confirmations.section1_3
+        && confirmations.section2
+        && confirmations.section3,
       fullLegalName,
       signedDate: now,
       signedTimestamp: now,
@@ -95,7 +124,7 @@ export async function submitDeclaration(
 
   return {
     id: declaration.id,
-    status: declaration.status,
+    status: deriveDeclarationStatusFromDueDate(declaration.nextDueDate),
     fullLegalName: declaration.fullLegalName,
     signedDate: declaration.signedDate,
     nextDueDate: declaration.nextDueDate,
@@ -120,7 +149,7 @@ export async function getCurrentDeclaration(
 
   return {
     id: declaration.id,
-    status: declaration.status,
+    status: deriveDeclarationStatusFromDueDate(declaration.nextDueDate),
     fullLegalName: declaration.fullLegalName,
     signedDate: declaration.signedDate,
     signedTimestamp: declaration.signedTimestamp,
@@ -161,7 +190,13 @@ export async function getDeclarationHistory(
     prisma.section21Declaration.count({ where: { userId } }),
   ]);
 
-  return { declarations, total };
+  return {
+    declarations: declarations.map(declaration => ({
+      ...declaration,
+      status: deriveDeclarationStatusFromDueDate(declaration.nextDueDate),
+    })),
+    total,
+  };
 }
 
 /**
@@ -188,18 +223,7 @@ export async function getDeclarationStatus(userId: string): Promise<DeclarationS
     return 'NOT_DECLARED';
   }
 
-  const now = new Date();
-
-  if (now > current.nextDueDate) {
-    return 'EXPIRED';
-  }
-
-  if (now >= new Date(current.nextDueDate.getTime() - 90 * 24 * 60 * 60 * 1000)) {
-    // Within 90 days of expiry
-    return 'PENDING_RENEWAL';
-  }
-
-  return 'SIGNED';
+  return current.status;
 }
 
 /**
