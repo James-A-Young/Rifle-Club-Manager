@@ -152,7 +152,6 @@ export default function AmmunitionSalesSection(props: Props) {
             <label>Quantity</label>
             <input
               type="number"
-              min={1}
               value={props.saleQuantity}
               onChange={e => props.onSaleQuantityChange(Number(e.target.value || '50'))}
               step={50}
