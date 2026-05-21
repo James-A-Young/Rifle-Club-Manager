@@ -2,6 +2,7 @@ import { BackupDataset, GoogleDriveConnectionStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { prisma } from '../../prisma';
 import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport';
+import { buildMonthlyMemberDemographicsCsv } from '../exports/memberDemographicsExport';
 import { buildSalesLedgerCsvForMonth } from '../exports/salesLedgerExport';
 import { buildSignInHistoryCsvForMonth } from '../exports/signInHistoryExport';
 import { decryptSecret } from './crypto';
@@ -16,7 +17,7 @@ import {
 
 type DatasetConfig = {
   dataset: BackupDataset;
-  filePrefix: 'sign-in-history' | 'sales-ledger' | 'competition-results';
+  filePrefix: 'sign-in-history' | 'sales-ledger' | 'competition-results' | 'member-demographics';
   buildCsv: (clubId: string, monthStart: Date, monthEndExclusive: Date) => Promise<string>;
   getRange: (clubId: string) => Promise<{ min?: Date | null; max?: Date | null }>;
 };
@@ -77,6 +78,16 @@ const DATASETS: DatasetConfig[] = [
         _max: { updatedAt: true },
       });
       return { min: agg._min.updatedAt, max: agg._max.updatedAt };
+    },
+  },
+  {
+    dataset: BackupDataset.MEMBER_DEMOGRAPHICS,
+    filePrefix: 'member-demographics',
+    buildCsv: buildMonthlyMemberDemographicsCsv,
+    getRange: async (_clubId: string) => {
+      // Demographics are a snapshot dataset, so back up the current month each cycle.
+      const now = new Date();
+      return { min: now, max: now };
     },
   },
 ];
