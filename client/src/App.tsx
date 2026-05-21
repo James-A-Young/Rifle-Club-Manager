@@ -2,6 +2,8 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Navbar from './components/Navbar';
+import GdprPolicyModal from './components/GdprPolicyModal';
+import { useConfig } from './context/ConfigContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -66,8 +68,10 @@ function HomeRoute() {
 
 function AppRoutes() {
   const { loading } = useAuth();
+  const { clientOrigin } = useConfig();
   const location = useLocation();
   const isKioskRoute = location.pathname.startsWith('/kiosk/');
+  const [policyOpen, setPolicyOpen] = React.useState(false);
   usePageTracking();
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
@@ -96,6 +100,15 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {!isKioskRoute && (
+        <footer className="site-footer">
+          <span>Rifle Club Manager</span>
+          <button type="button" className="link-button" onClick={() => setPolicyOpen(true)}>
+            Privacy Policy (UK GDPR)
+          </button>
+        </footer>
+      )}
+      <GdprPolicyModal open={policyOpen} onClose={() => setPolicyOpen(false)} clientOrigin={clientOrigin} />
     </>
   );
 }

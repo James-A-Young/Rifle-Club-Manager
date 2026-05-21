@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api';
 import { useAuth } from '../auth/AuthContext';
+import { useConfig } from '../context/ConfigContext';
+import GdprPolicyModal from '../components/GdprPolicyModal';
 
 interface BootstrapResponse {
   token: string;
@@ -12,6 +14,7 @@ interface BootstrapResponse {
 export default function Bootstrap() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
+  const { clientOrigin } = useConfig();
   const [checking, setChecking] = useState(true);
   const [available, setAvailable] = useState(false);
   const [form, setForm] = useState({
@@ -27,6 +30,7 @@ export default function Bootstrap() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -127,12 +131,19 @@ export default function Bootstrap() {
                 I consent to the processing of my personal data in accordance with GDPR regulations.
               </label>
             </div>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+              Read the GDPR policy before continuing:{' '}
+              <button type="button" className="link-button" onClick={() => setPolicyOpen(true)}>
+                View Privacy Policy
+              </button>
+            </div>
           </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
             {loading ? 'Setting up…' : 'Create Admin Account & Club'}
           </button>
         </form>
       </div>
+      <GdprPolicyModal open={policyOpen} onClose={() => setPolicyOpen(false)} clientOrigin={clientOrigin} />
     </div>
   );
 }

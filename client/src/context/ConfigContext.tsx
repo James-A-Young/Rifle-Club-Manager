@@ -5,6 +5,7 @@ export interface RuntimeConfig {
   apiUrl: string;
   turnstileSiteKey: string;
   gaMeasurementId: string;
+  clientOrigin: string;
 }
 
 const ConfigContext = createContext<RuntimeConfig | null>(null);
@@ -26,6 +27,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           apiUrl: data.apiUrl ?? '',
           turnstileSiteKey: data.turnstileSiteKey ?? '',
           gaMeasurementId: data.gaMeasurementId ?? '',
+          clientOrigin: data.clientOrigin ?? '',
         });
          // Initialize analytics here!
         if (data.gaMeasurementId) {
@@ -36,7 +38,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         console.error('Failed to load runtime config:', err);
         setError(err.message);
         // Fallback: empty config so app doesn't crash
-        setConfig({ apiUrl: '', turnstileSiteKey: '', gaMeasurementId: '' });
+        setConfig({ apiUrl: '', turnstileSiteKey: '', gaMeasurementId: '', clientOrigin: '' });
       })
       .finally(() => setLoading(false));
   }, []);
