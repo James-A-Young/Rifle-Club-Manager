@@ -44,7 +44,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   // Redirect to declaration signup if user hasn't declared and isn't already on that page
   if (user.section21Status === 'NOT_DECLARED' && location.pathname !== '/section21-declaration-signup') {
-    return <Navigate to="/section21-declaration-signup" replace />;
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`/section21-declaration-signup?next=${encodeURIComponent(next)}`} replace />;
   }
 
   return <>{children}</>;
@@ -74,7 +75,7 @@ function HomeRoute() {
   
   // If user hasn't declared Section 21, redirect to signup
   if (user.section21Status === 'NOT_DECLARED') {
-    return <Navigate to="/section21-declaration-signup" replace />;
+    return <Navigate to="/section21-declaration-signup?next=%2F" replace />;
   }
   
   return <Dashboard />;

@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Section21DeclarationForm from '../components/Section21DeclarationForm';
+import { useAuth } from '../auth/AuthContext';
 
 export default function Section21DeclarationSignUp() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { refreshUser } = useAuth();
   const [formError, setFormError] = useState('');
 
   async function handleDeclarationSubmit(
@@ -23,9 +26,14 @@ export default function Section21DeclarationSignUp() {
         fullLegalName,
         confirmations,
       });
+      await refreshUser();
+
+      const nextPath = searchParams.get('next')?.trim();
+      const destination = nextPath && nextPath.startsWith('/') ? nextPath : '/';
+
       // On success, navigate to the dashboard after a short delay to show success message
       setTimeout(() => {
-        navigate('/', { replace: true });
+        navigate(destination, { replace: true });
       }, 2000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to submit declaration';

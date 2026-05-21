@@ -13,6 +13,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -21,17 +22,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  async function refreshUser() {
+    const refreshed = await api.get<User>('/api/users/me');
+    setUser(refreshed);
+  }
+
   useEffect(() => {
     // Always attempt to restore session. The server will authenticate via
     // the HttpOnly cookie automatically; falling back to the localStorage
     // token via the Authorization header if present.
-    api.get<User>('/api/users/me')
-      .then(setUser)
+    refreshUser()
       .catch(() => {
         clearToken();
         setUser(null);
       })
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function login(email: string, password: string) {
@@ -50,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
