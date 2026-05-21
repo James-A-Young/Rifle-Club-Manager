@@ -188,6 +188,21 @@ router.get(
         return;
       }
 
+      const membership = await prisma.clubMembership.findUnique({
+        where: {
+          userId_clubId: {
+            userId,
+            clubId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!membership) {
+        res.status(404).json({ error: 'Member not found in this club' });
+        return;
+      }
+
       const declaration = await getDeclarationForAdminView(userId);
       if (!declaration) {
         res.json(null);
