@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import ArmorySection from '../components/dashboard/ArmorySection';
+import Section21DeclarationHistory from '../components/Section21DeclarationHistory';
+import Section21DeclarationViewModal from '../components/Section21DeclarationViewModal';
+import Section21DeclarationRenewal from '../components/Section21DeclarationRenewal';
 import { Firearm } from '../types/club';
 
 interface UserProfile {
@@ -15,6 +18,8 @@ interface UserProfile {
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
   shotgunCertificateExpiry?: string | null;
+  section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
+  section21DeclarationSignedAt?: string | null;
 }
 
 export default function Profile() {
@@ -22,6 +27,10 @@ export default function Profile() {
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [editing, setEditing] = useState(false);
   const [showFirearmForm, setShowFirearmForm] = useState(false);
+  const [showDeclarationHistory, setShowDeclarationHistory] = useState(false);
+  const [showDeclarationRenewal, setShowDeclarationRenewal] = useState(false);
+  const [currentDeclaration, setCurrentDeclaration] = useState<any>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [form, setForm] = useState({
     name: '',
     address: '',
@@ -51,6 +60,7 @@ export default function Profile() {
         shotgunCertificateExpiry: p.shotgunCertificateExpiry ? p.shotgunCertificateExpiry.split('T')[0] : '',
       });
     });
+    api.get<any>('/api/users/me/section21-declaration').then(setCurrentDeclaration).catch(() => {});
     api.get<Firearm[]>('/api/users/me/firearms').then(setFirearms);
   }, []);
 
@@ -82,6 +92,32 @@ export default function Profile() {
   async function editFirearm(id: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
     const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}`, data);
     setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
+  }
+
+
+  async function handleViewDeclaration(declarationId?: string) {
+    if (declarationId && currentDeclaration?.id !== declarationId) {
+      try {
+        const fullDeclaration = await api.get<any>(`/api/users/me/section21-declarations/${declarationId}`);
+        setCurrentDeclaration(fullDeclaration);
+      } catch (err) {
+        console.error('Failed to load declaration:', err);
+        return;
+      }
+    }
+    setShowViewModal(true);
+  }
+  function getStatusBadgeColor(status?: string) {
+    switch (status) {
+      case 'SIGNED':
+        return '#10b981'; // green
+      case 'EXPIRED':
+        return '#ef4444'; // red
+      case 'PENDING_RENEWAL':
+        return '#f59e0b'; // amber
+      default:
+        return '#6b7280'; // gray
+    }
   }
 
   if (!profile) return <div>Loading…</div>;
@@ -181,6 +217,113 @@ export default function Profile() {
           </dl>
         )}
       </section>
+
+      <section>
+        <div className="page-header">
+          <h2>Section 21 Firearms Act Declaration</h2>
+          {profile.section21Status && (
+            <span
+              style={{
+                padding: '6px 12px',
+                borderRadius: '4px',
+                backgroundColor: getStatusBadgeColor(profile.section21Status) + '20',
+                color: getStatusBadgeColor(profile.section21Status),
+                fontSize: '12px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+              }}
+            >
+              {profile.section21Status}
+            </span>
+          )}
+        </div>
+
+        {profile.section21Status === 'NOT_DECLARED' ? (
+          <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+            You have not yet completed the mandatory Section 21 declaration. Please complete this declaration to access firearms facilities.
+          </p>
+        ) : (
+          <>
+            <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+              {profile.section21DeclarationSignedAt ? (
+                <>
+                  Signed: <strong>{new Date(profile.section21DeclarationSignedAt).toLocaleDateString('en-GB')}</strong>
+                  {profile.section21Status === 'PENDING_RENEWAL' && (
+                    <span style={{ color: '#f59e0b', fontWeight: '600', marginLeft: '1rem' }}>
+                      ⚠️ Renewal due soon
+                    </span>
+                  )}
+                  {profile.section21Status === 'EXPIRED' && (
+                    <span style={{ color: '#ef4444', fontWeight: '600', marginLeft: '1rem' }}>
+                      ⚠️ Renewal overdue
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowDeclarationHistory(!showDeclarationHistory)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#e5e7eb',
+                  color: '#1f2937',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                }}
+              >
+                {showDeclarationHistory ? 'Hide' : 'View'} History
+              </button>
+              {(profile.section21Status === 'EXPIRED' || profile.section21Status === 'PENDING_RENEWAL') && (
+                <button
+                  onClick={() => setShowDeclarationRenewal(true)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                  }}
+                >
+                  Renew Now
+                </button>
+              )}
+            </div>
+
+            {showDeclarationHistory && (
+              <div style={{ marginTop: '20px' }}>
+                <Section21DeclarationHistory onViewClick={handleViewDeclaration} />
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <Section21DeclarationViewModal
+        isOpen={showViewModal}
+        onClose={() => setShowViewModal(false)}
+        declaration={currentDeclaration}
+      />
+
+      <Section21DeclarationRenewal
+        isOpen={showDeclarationRenewal}
+        onClose={() => {
+          setShowDeclarationRenewal(false);
+          // Refresh profile to get updated status
+          api.get<UserProfile>('/api/users/me').then(setProfile);
+        }}
+        onSuccess={() => {
+          setSuccess('Declaration renewed successfully');
+          api.get<UserProfile>('/api/users/me').then(setProfile);
+        }}
+      />
 
       <ArmorySection
         title="My Firearms"

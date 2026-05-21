@@ -21,6 +21,7 @@ import {
 } from '../services/backups/googleDriveOAuth';
 import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
 import { getUserProfileHistorySince } from '../services/profileHistory';
+import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration';
 
 const router = Router();
 
@@ -298,11 +299,36 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
           shotgunCertificateNumber: true,
           shotgunCertificateExpiry: true,
           gdprConsentDate: true,
+          section21Declarations: {
+            orderBy: { signedDate: 'desc' },
+            take: 1,
+            select: {
+              nextDueDate: true,
+            },
+          },
         },
       },
     },
   });
-  res.json(members);
+
+  const now = new Date();
+  const withSection21Status = members.map(member => {
+    const { section21Declarations, ...userWithoutDeclarations } = member.user;
+    const latestDeclaration = section21Declarations[0];
+    let section21Status: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED' = 'NOT_DECLARED';
+
+    if (latestDeclaration) {
+      section21Status = deriveDeclarationStatusFromDueDate(latestDeclaration.nextDueDate, now);
+    }
+
+    return {
+      ...member,
+      user: userWithoutDeclarations,
+      section21Status,
+    };
+  });
+
+  res.json(withSection21Status);
 });
 
 router.get('/:id/members/:userId/profile-history', async (req: AuthRequest, res: Response) => {

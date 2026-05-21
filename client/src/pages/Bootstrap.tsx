@@ -63,9 +63,9 @@ export default function Bootstrap() {
     try {
       const data = await api.post<BootstrapResponse>('/api/auth/bootstrap', form);
       setToken(data.token);
-      // Reload auth state and navigate to the club dashboard
+      // Reload auth state and navigate to Section 21 declaration signup
       await login(form.email, form.password);
-      navigate(`/clubs/${data.club.id}`, { replace: true });
+      navigate('/section21-declaration-signup', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bootstrap failed');
     } finally {

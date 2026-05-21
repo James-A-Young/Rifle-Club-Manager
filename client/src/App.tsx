@@ -22,6 +22,7 @@ import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
 import ClubPublicProfile from './pages/ClubPublicProfile';
+import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
 import { trackPageView } from './analytics';
 
 function usePageTracking(): void {
@@ -39,6 +40,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!user) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
+  }
+
+  // Redirect to declaration signup if user hasn't declared and isn't already on that page
+  if (user.section21Status === 'NOT_DECLARED' && location.pathname !== '/section21-declaration-signup') {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`/section21-declaration-signup?next=${encodeURIComponent(next)}`} replace />;
   }
 
   return <>{children}</>;
@@ -63,7 +70,15 @@ function RegisterRoute() {
 
 function HomeRoute() {
   const { user } = useAuth();
-  return user ? <Dashboard /> : <Landing />;
+  
+  if (!user) return <Landing />;
+  
+  // If user hasn't declared Section 21, redirect to signup
+  if (user.section21Status === 'NOT_DECLARED') {
+    return <Navigate to="/section21-declaration-signup?next=%2F" replace />;
+  }
+  
+  return <Dashboard />;
 }
 
 function AppRoutes() {
@@ -71,13 +86,14 @@ function AppRoutes() {
   const { clientOrigin } = useConfig();
   const location = useLocation();
   const isKioskRoute = location.pathname.startsWith('/kiosk/');
+  const isSection21SignUp = location.pathname === '/section21-declaration-signup';
   const [policyOpen, setPolicyOpen] = React.useState(false);
   usePageTracking();
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
   return (
     <>
-      {!isKioskRoute && <Navbar />}
+      {!isKioskRoute && !isSection21SignUp && <Navbar />}
       <main>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -85,6 +101,7 @@ function AppRoutes() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/setup" element={<Bootstrap />} />
+          <Route path="/section21-declaration-signup" element={<ProtectedRoute><Section21DeclarationSignUp /></ProtectedRoute>} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
@@ -100,7 +117,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      {!isKioskRoute && (
+      {!isKioskRoute && !isSection21SignUp && (
         <footer className="site-footer">
           <span>Rifle Club Manager</span>
           <button type="button" className="link-button" onClick={() => setPolicyOpen(true)}>

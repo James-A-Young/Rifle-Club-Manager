@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { DueCard, ScoringAverages } from '../types/club';
 import addToGWallet from '../assets/add_to_google_wallet.svg';
+import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
 interface Club { id: string; name: string; }
 interface VisitLog { id: string; clubId: string; purpose: string; timeIn: string; timeOut: string | null; club: Club; }
@@ -130,6 +131,8 @@ export default function Dashboard() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      <Section21RenewalPrompt />
 
       <div className="stats-grid">
         <div className="stat-card">

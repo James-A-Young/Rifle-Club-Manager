@@ -34,6 +34,7 @@ import InvitesSection from '../components/dashboard/InvitesSection';
 import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
 import AmmunitionSalesSection from '../components/dashboard/AmmunitionSalesSection';
 import MatchSecretarySection from '../components/dashboard/MatchSecretarySection';
+import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
 interface ActiveVisitor {
   id: string;
@@ -876,6 +877,8 @@ export default function ClubDashboard() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      <Section21RenewalPrompt />
 
       <DashboardTabNav activeTab={activeTab} isAdmin={isAdmin} onChange={setActiveTab} />
 
