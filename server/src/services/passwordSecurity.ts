@@ -56,7 +56,7 @@ function hasSequentialCharacters(password: string, runLength: number): boolean {
   return false;
 }
 
-async function checkPwnedPassword(password: string): Promise<{ isPwned: boolean; unavailable: boolean }> {
+async function checkPwnedPassword(password: string): Promise<{ isPwned: boolean; breachCount: number; unavailable: boolean }> {
   const hash = sha1Upper(password);
   const prefix = hash.slice(0, 5);
   const suffix = hash.slice(5);
@@ -75,22 +75,27 @@ async function checkPwnedPassword(password: string): Promise<{ isPwned: boolean;
     });
 
     if (!response.ok) {
-      return { isPwned: false, unavailable: true };
+      return { isPwned: false, breachCount: 0, unavailable: true };
     }
 
     const text = await response.text();
     const lines = text.split(/\r?\n/);
-    const matched = lines.some(line => {
+    const matchedLine = lines.find(line => {
       const [lineSuffix] = line.split(':');
       return (lineSuffix || '').trim().toUpperCase() === suffix;
     });
 
+    const breachCount = matchedLine
+      ? Number.parseInt((matchedLine.split(':')[1] || '0').trim(), 10) || 0
+      : 0;
+
     return {
-      isPwned: matched,
+      isPwned: breachCount > 0,
+      breachCount,
       unavailable: false,
     };
   } catch {
-    return { isPwned: false, unavailable: true };
+    return { isPwned: false, breachCount: 0, unavailable: true };
   } finally {
     clearTimeout(timeout);
   }
@@ -98,12 +103,11 @@ async function checkPwnedPassword(password: string): Promise<{ isPwned: boolean;
 
 export async function validatePasswordSecurity(password: string): Promise<PasswordValidationResult> {
   const pwnedResult = await checkPwnedPassword(password);
-  console.log('Password pwned check result:', pwnedResult);
   if (!pwnedResult.unavailable) {
     if (pwnedResult.isPwned) {
       return {
         isValid: false,
-        error: 'This password has appeared in known data breaches. Please choose a different password.',
+        error: `This password has appeared in known data breaches (${pwnedResult.breachCount.toLocaleString()} times). Please choose a different password.`,
       };
     }
 
