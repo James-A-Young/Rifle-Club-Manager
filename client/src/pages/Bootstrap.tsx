@@ -29,6 +29,7 @@ export default function Bootstrap() {
     clubName: '',
   });
   const [error, setError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
 
@@ -50,6 +51,19 @@ export default function Bootstrap() {
 
   function update(field: string, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }));
+    if (field === 'password') {
+      setPasswordError('');
+    }
+  }
+
+  function isPasswordValidationMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('password')
+      && (
+        normalized.includes('known data breaches')
+        || normalized.includes('sequential characters')
+        || normalized.includes('security requirements')
+      );
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -60,6 +74,7 @@ export default function Bootstrap() {
     }
     setLoading(true);
     setError('');
+    setPasswordError('');
     try {
       const data = await api.post<BootstrapResponse>('/api/auth/bootstrap', form);
       setToken(data.token);
@@ -67,7 +82,12 @@ export default function Bootstrap() {
       await login(form.email, form.password);
       navigate('/section21-declaration-signup', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bootstrap failed');
+      const message = err instanceof Error ? err.message : 'Bootstrap failed';
+      if (isPasswordValidationMessage(message)) {
+        setPasswordError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -97,6 +117,11 @@ export default function Bootstrap() {
           <div className="form-group">
             <label>Password</label>
             <input type="password" value={form.password} onChange={e => update('password', e.target.value)} required minLength={8} />
+            {passwordError && (
+              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+                {passwordError}
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Address</label>

@@ -19,6 +19,7 @@ import {
 import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 import { emailService, sanitizeUserAgent } from '../services/email';
 import { getDeclarationStatus } from '../services/section21Declaration';
+import { validatePasswordSecurity } from '../services/passwordSecurity';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
@@ -116,6 +117,13 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
   const {
     name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, clubName,
   } = parsed.data;
+
+  const passwordValidation = await validatePasswordSecurity(password);
+  if (!passwordValidation.isValid) {
+    res.status(400).json({ error: passwordValidation.error ?? 'Password does not meet security requirements' });
+    return;
+  }
+
   const normalizedEmail = email.toLowerCase();
 
   try {
@@ -185,6 +193,12 @@ router.post('/register', async (req: Request, res: Response) => {
     return;
   }
   const { name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, inviteToken, turnstileToken } = parsed.data;
+
+  const passwordValidation = await validatePasswordSecurity(password);
+  if (!passwordValidation.isValid) {
+    res.status(400).json({ error: passwordValidation.error ?? 'Password does not meet security requirements' });
+    return;
+  }
 
   if (isTurnstileEnabled()) {
     const turnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
@@ -404,6 +418,13 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
   const { token, password } = parsed.data;
   const userAgent = sanitizeUserAgent(req.get('user-agent'));
+
+  const passwordValidation = await validatePasswordSecurity(password);
+  if (!passwordValidation.isValid) {
+    res.status(400).json({ error: passwordValidation.error ?? 'Password does not meet security requirements' });
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
 
   try {

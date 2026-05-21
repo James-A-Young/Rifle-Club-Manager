@@ -8,8 +8,19 @@ export default function ResetPassword() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+
+  function isPasswordValidationMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('password')
+      && (
+        normalized.includes('known data breaches')
+        || normalized.includes('sequential characters')
+        || normalized.includes('security requirements')
+      );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +39,7 @@ export default function ResetPassword() {
 
     setLoading(true);
     setError('');
+    setPasswordError('');
     setSuccess('');
     try {
       const response = await api.post<{ message?: string }>('/api/auth/reset-password', {
@@ -38,7 +50,12 @@ export default function ResetPassword() {
       setPassword('');
       setConfirmPassword('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reset password');
+      const message = err instanceof Error ? err.message : 'Could not reset password';
+      if (isPasswordValidationMessage(message)) {
+        setPasswordError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -61,10 +78,18 @@ export default function ResetPassword() {
             <input
               type="password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={e => {
+                setPassword(e.target.value);
+                setPasswordError('');
+              }}
               minLength={8}
               required
             />
+            {passwordError && (
+              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+                {passwordError}
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Confirm Password</label>

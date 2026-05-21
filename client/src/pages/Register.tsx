@@ -83,6 +83,7 @@ export default function Register() {
     gdprConsent: false,
   });
   const [error, setError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
   const [inviteClubName, setInviteClubName] = useState('');
   const [invitePreviewLoading, setInvitePreviewLoading] = useState(false);
@@ -162,6 +163,19 @@ export default function Register() {
 
   function update(field: string, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }));
+    if (field === 'password') {
+      setPasswordError('');
+    }
+  }
+
+  function isPasswordValidationMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('password')
+      && (
+        normalized.includes('known data breaches')
+        || normalized.includes('sequential characters')
+        || normalized.includes('security requirements')
+      );
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -176,6 +190,7 @@ export default function Register() {
     }
     setLoading(true);
     setError('');
+    setPasswordError('');
     try {
       const data = await api.post<RegisterResponse>('/api/auth/register', {
         ...form,
@@ -187,7 +202,11 @@ export default function Register() {
       navigate('/section21-declaration-signup', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
-      setError(message);
+      if (isPasswordValidationMessage(message)) {
+        setPasswordError(message);
+      } else {
+        setError(message);
+      }
       if (turnstileSiteKey && window.turnstile && turnstileWidgetIdRef.current) {
         window.turnstile.reset(turnstileWidgetIdRef.current);
         setTurnstileToken('');
@@ -226,6 +245,11 @@ export default function Register() {
           <div className="form-group">
             <label>Password</label>
             <input type="password" value={form.password} onChange={e => update('password', e.target.value)} required minLength={8} />
+            {passwordError && (
+              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+                {passwordError}
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Address</label>
