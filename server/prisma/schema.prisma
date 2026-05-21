@@ -55,6 +55,12 @@ enum CashBoxTransactionReason {
   BANKED_CASH
 }
 
+enum Section21DeclarationStatus {
+  SIGNED
+  EXPIRED
+  PENDING_RENEWAL
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -69,6 +75,7 @@ model User {
   shotgunCertificateNumber String?
   shotgunCertificateExpiry DateTime?
   phoneNumber     String   @default("00000000000")
+  section21DeclarationSignedAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -88,6 +95,7 @@ model User {
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
   profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
   cashBoxTransactionsCreated CashBoxTransaction[] @relation("CashBoxTransactionCreatedBy")
+  section21Declarations Section21Declaration[]
 }
 
 model Club {
@@ -562,4 +570,24 @@ model AmmunitionStockInput {
   inputBy        User           @relation(fields: [inputByUserId], references: [id], onDelete: Restrict)
 
   @@index([clubId, createdAt])
+}
+
+model Section21Declaration {
+  id                  String   @id @default(cuid())
+  userId              String
+  status              Section21DeclarationStatus
+  allCheckboxesSigned Boolean
+  fullLegalName       String
+  signedDate          DateTime
+  signedTimestamp     DateTime
+  ipAddress           String
+  userAgent           String
+  declarationText     String   @db.Text
+  nextDueDate         DateTime
+  createdAt           DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, signedDate])
 }

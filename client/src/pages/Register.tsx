@@ -183,7 +183,8 @@ export default function Register() {
         turnstileToken: turnstileSiteKey ? turnstileToken : undefined,
       });
       setToken(data.token);
-      navigate(inviteToken ? '/' : nextPath, { replace: true });
+      // Redirect to Section 21 declaration signup after successful registration
+      navigate('/section21-declaration-signup', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
       setError(message);

@@ -6,6 +6,7 @@ import { OwnerType, MembershipStatus } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
+import { getDeclarationStatus } from '../services/section21Declaration';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       shotgunCertificateNumber: true,
       shotgunCertificateExpiry: true,
       gdprConsentDate: true,
+      section21DeclarationSignedAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -35,7 +37,14 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
     res.status(404).json({ error: 'User not found' });
     return;
   }
-  res.json(user);
+
+  // Get current declaration status
+  const section21Status = await getDeclarationStatus(req.user!.id);
+
+  res.json({
+    ...user,
+    section21Status,
+  });
 });
 
 const updateSchema = z.object({
