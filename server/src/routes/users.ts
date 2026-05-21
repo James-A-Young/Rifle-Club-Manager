@@ -7,7 +7,12 @@ import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
 import { getDeclarationStatus } from '../services/section21Declaration';
-import { generateTwoFactorSecret, verifyTwoFactorCode } from '../services/twoFactor';
+import {
+  decryptStoredTwoFactorSecret,
+  encryptStoredTwoFactorSecret,
+  generateTwoFactorSecret,
+  verifyTwoFactorCode,
+} from '../services/twoFactor';
 
 const router = Router();
 
@@ -202,7 +207,7 @@ router.post('/me/2fa/setup/start', requireAuth, async (req: AuthRequest, res: Re
   await prisma.user.update({
     where: { id: user.id },
     data: {
-      twoFactorPendingSecret: secret,
+      twoFactorPendingSecret: encryptStoredTwoFactorSecret(secret),
       twoFactorPendingExpiresAt: expiresAt,
     },
   });
@@ -242,7 +247,15 @@ router.post('/me/2fa/setup/verify', requireAuth, async (req: AuthRequest, res: R
     res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
     return;
   }
-  if (!verifyTwoFactorCode(user.twoFactorPendingSecret, parsed.data.code)) {
+  let pendingSecret: string;
+  try {
+    pendingSecret = decryptStoredTwoFactorSecret(user.twoFactorPendingSecret);
+  } catch {
+    res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
+    return;
+  }
+
+  if (!verifyTwoFactorCode(pendingSecret, parsed.data.code)) {
     res.status(400).json({ error: 'Invalid authenticator code' });
     return;
   }

@@ -20,7 +20,7 @@ import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 import { emailService, sanitizeUserAgent } from '../services/email';
 import { getDeclarationStatus } from '../services/section21Declaration';
 import { validatePasswordSecurity } from '../services/passwordSecurity';
-import { verifyTwoFactorCode } from '../services/twoFactor';
+import { decryptStoredTwoFactorSecret, verifyTwoFactorCode } from '../services/twoFactor';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
@@ -449,7 +449,15 @@ router.post('/login/2fa', async (req: Request, res: Response) => {
     return;
   }
 
-  if (!verifyTwoFactorCode(user.twoFactorSecret, parsed.data.code)) {
+  let decryptedSecret: string;
+  try {
+    decryptedSecret = decryptStoredTwoFactorSecret(user.twoFactorSecret);
+  } catch {
+    res.status(401).json({ error: 'Invalid authenticator code' });
+    return;
+  }
+
+  if (!verifyTwoFactorCode(decryptedSecret, parsed.data.code)) {
     res.status(401).json({ error: 'Invalid authenticator code' });
     return;
   }
@@ -490,7 +498,7 @@ router.post('/2fa/recovery/request', async (req: Request, res: Response) => {
 
   const passwordValid = await bcrypt.compare(parsed.data.password, user.passwordHash);
   if (!passwordValid) {
-    res.status(401).json({ error: 'Invalid email or password' });
+    res.json({ success: true, message: 'If the account is eligible, a recovery email has been sent.' });
     return;
   }
 
