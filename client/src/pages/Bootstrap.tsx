@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setToken } from '../api';
 import { useAuth } from '../auth/AuthContext';
@@ -32,6 +33,8 @@ export default function Bootstrap() {
   const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const gdprInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -70,6 +73,7 @@ export default function Bootstrap() {
     e.preventDefault();
     if (!form.gdprConsent) {
       setError('You must consent to data processing to continue.');
+      gdprInputRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -85,6 +89,7 @@ export default function Bootstrap() {
       const message = err instanceof Error ? err.message : 'Bootstrap failed';
       if (isPasswordValidationMessage(message)) {
         setPasswordError(message);
+        passwordInputRef.current?.focus();
       } else {
         setError(message);
       }
@@ -116,9 +121,19 @@ export default function Bootstrap() {
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input type="password" value={form.password} onChange={e => update('password', e.target.value)} required minLength={8} />
+            <input
+              ref={passwordInputRef}
+              type="password"
+              value={form.password}
+              onChange={e => update('password', e.target.value)}
+              required
+              minLength={8}
+              className={passwordError ? 'field-error-input' : undefined}
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={passwordError ? 'bootstrap-password-error' : undefined}
+            />
             {passwordError && (
-              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+              <div id="bootstrap-password-error" className="field-error-text" role="alert">
                 {passwordError}
               </div>
             )}
@@ -147,6 +162,7 @@ export default function Bootstrap() {
           <div className="form-group">
             <div className="checkbox-group">
               <input
+                ref={gdprInputRef}
                 type="checkbox"
                 id="gdpr"
                 checked={form.gdprConsent}

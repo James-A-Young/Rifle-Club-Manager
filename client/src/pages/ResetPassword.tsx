@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 
@@ -11,6 +12,8 @@ export default function ResetPassword() {
   const [passwordError, setPasswordError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmPasswordInputRef = useRef<HTMLInputElement | null>(null);
 
   function isPasswordValidationMessage(message: string): boolean {
     const normalized = message.toLowerCase();
@@ -30,10 +33,12 @@ export default function ResetPassword() {
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
+      passwordInputRef.current?.focus();
       return;
     }
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
+      confirmPasswordInputRef.current?.focus();
       return;
     }
 
@@ -53,6 +58,7 @@ export default function ResetPassword() {
       const message = err instanceof Error ? err.message : 'Could not reset password';
       if (isPasswordValidationMessage(message)) {
         setPasswordError(message);
+        passwordInputRef.current?.focus();
       } else {
         setError(message);
       }
@@ -76,6 +82,7 @@ export default function ResetPassword() {
           <div className="form-group">
             <label>New Password</label>
             <input
+              ref={passwordInputRef}
               type="password"
               value={password}
               onChange={e => {
@@ -84,9 +91,12 @@ export default function ResetPassword() {
               }}
               minLength={8}
               required
+              className={passwordError ? 'field-error-input' : undefined}
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={passwordError ? 'reset-password-error' : undefined}
             />
             {passwordError && (
-              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+              <div id="reset-password-error" className="field-error-text" role="alert">
                 {passwordError}
               </div>
             )}
@@ -94,6 +104,7 @@ export default function ResetPassword() {
           <div className="form-group">
             <label>Confirm Password</label>
             <input
+              ref={confirmPasswordInputRef}
               type="password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}

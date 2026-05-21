@@ -91,6 +91,8 @@ export default function Register() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const gdprInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!inviteToken) {
@@ -182,10 +184,12 @@ export default function Register() {
     e.preventDefault();
     if (!form.gdprConsent) {
       setError('You must consent to data processing to register.');
+      gdprInputRef.current?.focus();
       return;
     }
     if (turnstileSiteKey && !turnstileToken) {
       setError('Please complete the captcha challenge.');
+      turnstileContainerRef.current?.focus();
       return;
     }
     setLoading(true);
@@ -204,6 +208,7 @@ export default function Register() {
       const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
       if (isPasswordValidationMessage(message)) {
         setPasswordError(message);
+        passwordInputRef.current?.focus();
       } else {
         setError(message);
       }
@@ -244,9 +249,19 @@ export default function Register() {
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input type="password" value={form.password} onChange={e => update('password', e.target.value)} required minLength={8} />
+            <input
+              ref={passwordInputRef}
+              type="password"
+              value={form.password}
+              onChange={e => update('password', e.target.value)}
+              required
+              minLength={8}
+              className={passwordError ? 'field-error-input' : undefined}
+              aria-invalid={passwordError ? true : undefined}
+              aria-describedby={passwordError ? 'register-password-error' : undefined}
+            />
             {passwordError && (
-              <div style={{ marginTop: '0.5rem', color: '#b91c1c', fontSize: '0.9rem' }}>
+              <div id="register-password-error" className="field-error-text" role="alert">
                 {passwordError}
               </div>
             )}
@@ -270,6 +285,7 @@ export default function Register() {
           <div className="form-group">
             <div className="checkbox-group">
               <input
+                ref={gdprInputRef}
                 type="checkbox"
                 id="gdpr"
                 checked={form.gdprConsent}
@@ -288,7 +304,7 @@ export default function Register() {
           </div>
           {turnstileSiteKey && (
             <div className="form-group">
-              <div ref={turnstileContainerRef} />
+              <div ref={turnstileContainerRef} tabIndex={-1} />
             </div>
           )}
           <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading || !inviteToken}>

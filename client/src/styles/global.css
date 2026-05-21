@@ -148,6 +148,23 @@ input:focus, select:focus, textarea:focus {
 .alert-success { background: #eafaf1; color: #27ae60; border: 1px solid #2ecc71; }
 .alert-info { background: #eaf3fb; color: #2471a3; border: 1px solid #4a90d9; }
 
+.field-error-input {
+  border-color: #dc2626 !important;
+  background: #fff5f5;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+
+.field-error-text {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-left: 4px solid #dc2626;
+  border-radius: 6px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
