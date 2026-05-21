@@ -162,6 +162,11 @@ function normalizeDisciplines(value: string[] | null | undefined): string[] {
   return Array.from(deduped);
 }
 
+function escapeCsvCell(value: unknown): string {
+  const normalized = value === null || value === undefined ? '' : String(value);
+  return `"${normalized.replace(/"/g, '""')}"`;
+}
+
 router.post('/', async (req: AuthRequest, res: Response) => {
   const parsed = createClubSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -329,6 +334,103 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
   });
 
   res.json(withSection21Status);
+});
+
+router.get('/:id/members/export.csv', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const members = await prisma.clubMembership.findMany({
+    where: {
+      clubId,
+      status: { not: MembershipStatus.INACTIVE },
+    },
+    orderBy: [
+      { status: 'asc' },
+      { role: 'asc' },
+      { user: { name: 'asc' } },
+    ],
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          address: true,
+          placeOfBirth: true,
+          dateOfBirth: true,
+          phoneNumber: true,
+          firearmCertificateNumber: true,
+          firearmCertificateExpiry: true,
+          shotgunCertificateNumber: true,
+          shotgunCertificateExpiry: true,
+          gdprConsentDate: true,
+          section21Declarations: {
+            orderBy: { signedDate: 'desc' },
+            take: 1,
+            select: {
+              nextDueDate: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const now = new Date();
+  const headers = [
+    'memberId',
+    'userId',
+    'name',
+    'email',
+    'membershipStatus',
+    'membershipRole',
+    'section21Status',
+    'address',
+    'placeOfBirth',
+    'dateOfBirth',
+    'phoneNumber',
+    'firearmCertificateNumber',
+    'firearmCertificateExpiry',
+    'shotgunCertificateNumber',
+    'shotgunCertificateExpiry',
+    'gdprConsentDate',
+  ];
+
+  const lines = [headers.map(escapeCsvCell).join(',')];
+  for (const member of members) {
+    const latestDeclaration = member.user.section21Declarations[0];
+    const section21Status = latestDeclaration
+      ? deriveDeclarationStatusFromDueDate(latestDeclaration.nextDueDate, now)
+      : 'NOT_DECLARED';
+    const row = [
+      member.id,
+      member.userId,
+      member.user.name,
+      member.user.email,
+      member.status,
+      member.role,
+      section21Status,
+      member.user.address,
+      member.user.placeOfBirth,
+      member.user.dateOfBirth?.toISOString().slice(0, 10),
+      member.user.phoneNumber,
+      member.user.firearmCertificateNumber,
+      member.user.firearmCertificateExpiry?.toISOString().slice(0, 10),
+      member.user.shotgunCertificateNumber,
+      member.user.shotgunCertificateExpiry?.toISOString().slice(0, 10),
+      member.user.gdprConsentDate?.toISOString(),
+    ];
+    lines.push(row.map(escapeCsvCell).join(','));
+  }
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-members.csv"`);
+  res.send(lines.join('\n'));
 });
 
 router.get('/:id/members/:userId/profile-history', async (req: AuthRequest, res: Response) => {

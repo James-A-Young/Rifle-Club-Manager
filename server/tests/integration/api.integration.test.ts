@@ -549,6 +549,71 @@ describe('clubs routes', () => {
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
   });
 
+  it('exports member demographics CSV excluding inactive memberships', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const approvedMember = await createUser({ email: `${unique('member-approved')}@test.com` });
+    const pendingMember = await createUser({ email: `${unique('member-pending')}@test.com` });
+    const inactiveMember = await createUser({ email: `${unique('member-inactive')}@test.com` });
+
+    await prisma.clubMembership.createMany({
+      data: [
+        {
+          userId: approvedMember.id,
+          clubId: club.id,
+          role: MembershipRole.MEMBER,
+          status: MembershipStatus.APPROVED,
+          approvedAt: new Date(),
+        },
+        {
+          userId: pendingMember.id,
+          clubId: club.id,
+          role: MembershipRole.JUNIOR,
+          status: MembershipStatus.PENDING,
+        },
+        {
+          userId: inactiveMember.id,
+          clubId: club.id,
+          role: MembershipRole.MEMBER,
+          status: MembershipStatus.INACTIVE,
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/export.csv`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.text).toContain('"membershipStatus"');
+    expect(res.text).toContain(`"${approvedMember.email}"`);
+    expect(res.text).toContain(`"${pendingMember.email}"`);
+    expect(res.text).not.toContain(`"${inactiveMember.email}"`);
+  });
+
+  it('forbids non-admin from exporting member demographics CSV', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('member-export-no-admin')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/export.csv`)
+      .set(authHeader(member));
+
+    expect(res.status).toBe(403);
+
+    // Keep admin variable used for context consistency and future assertions.
+    expect(admin.id).toBeTruthy();
+  });
+
   it('admin can view member profile history from acceptance onward in newest-first order', async () => {
     const { club, admin } = await createClubWithAdmin();
     const member = await createUser({ email: `${unique('member-history')}@test.com` });

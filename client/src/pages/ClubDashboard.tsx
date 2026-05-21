@@ -829,6 +829,32 @@ export default function ClubDashboard() {
     }
   }
 
+  async function exportMembershipCsv() {
+    if (!id) return;
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/clubs/${id}/members/export.csv`, {
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error((body as { error?: string }).error ?? response.statusText);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `club-${id}-members.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error exporting membership list');
+    }
+  }
+
   if (!club) return <div>Loading…</div>;
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
@@ -995,6 +1021,7 @@ export default function ClubDashboard() {
             clubId={id ?? ''}
             isAdmin={isAdmin}
             currentUserId={user?.id}
+            onExportMembersCsv={exportMembershipCsv}
             editingRole={editingRole}
             savingRole={savingRole}
             removingUserId={removingMemberId}

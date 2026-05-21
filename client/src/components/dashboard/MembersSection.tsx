@@ -6,6 +6,7 @@ interface Props {
   clubId: string;
   isAdmin: boolean;
   currentUserId?: string;
+  onExportMembersCsv?: () => void;
   editingRole: EditingRoleState | null;
   savingRole: boolean;
   removingUserId: string | null;
@@ -22,6 +23,7 @@ export default function MembersSection({
   clubId,
   isAdmin,
   currentUserId,
+  onExportMembersCsv,
   editingRole,
   savingRole,
   removingUserId,
@@ -49,6 +51,13 @@ export default function MembersSection({
     <section>
       <div className="page-header">
         <h2>Members</h2>
+        {isAdmin && onExportMembersCsv && (
+          <div className="actions">
+            <button className="btn btn-secondary btn-sm" onClick={onExportMembersCsv}>
+              Export Membership CSV
+            </button>
+          </div>
+        )}
       </div>
       <table>
         <thead>
