@@ -29,6 +29,7 @@ export interface MemberUser {
   address?: string;
   placeOfBirth?: string;
   dateOfBirth?: string;
+  phoneNumber?: string;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;

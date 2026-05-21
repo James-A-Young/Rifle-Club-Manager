@@ -40,6 +40,7 @@ const registerSchema = z.object({
   address: z.string().min(5),
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  phoneNumber: z.string().min(1),
   inviteToken: z.string().min(1),
   turnstileToken: z.string().min(1).optional(),
 }).superRefine((data, ctx) => {
@@ -74,6 +75,7 @@ const bootstrapSchema = z.object({
   address: z.string().min(5),
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  phoneNumber: z.string().min(1),
   clubName: z.string().min(2),
 });
 
@@ -111,7 +113,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
   }
 
   const {
-    name, email, password, address, placeOfBirth, dateOfBirth, clubName,
+    name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, clubName,
   } = parsed.data;
   const normalizedEmail = email.toLowerCase();
 
@@ -133,6 +135,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
           address,
           placeOfBirth,
           dateOfBirth: new Date(dateOfBirth),
+          phoneNumber,
         },
         select: { id: true, name: true, email: true, createdAt: true },
       });
@@ -180,7 +183,7 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { name, email, password, address, placeOfBirth, dateOfBirth, inviteToken, turnstileToken } = parsed.data;
+  const { name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, inviteToken, turnstileToken } = parsed.data;
 
   if (isTurnstileEnabled()) {
     const turnstileValid = await verifyTurnstileToken(turnstileToken, req.ip);
@@ -223,6 +226,7 @@ router.post('/register', async (req: Request, res: Response) => {
           address,
           placeOfBirth,
           dateOfBirth: new Date(dateOfBirth),
+          phoneNumber,
         },
         select: { id: true, name: true, email: true, createdAt: true },
       });

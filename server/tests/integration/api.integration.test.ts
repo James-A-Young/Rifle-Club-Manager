@@ -121,6 +121,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -146,6 +147,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
       });
 
     expect(res.status).toBe(400);
@@ -166,6 +168,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -194,6 +197,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'invalid-token',
       });
@@ -223,6 +227,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'valid-token',
       });
@@ -1885,6 +1890,7 @@ describe('bootstrap routes', () => {
         address: '1 Bootstrap Lane',
         placeOfBirth: 'London',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         clubName: 'Bootstrap Club',
       });
 
@@ -1908,6 +1914,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: 'nonexistent-token',
       });
 
@@ -1928,6 +1935,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -1959,6 +1967,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: expiredToken,
       });
 
@@ -2067,6 +2076,7 @@ describe('probationary member', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 

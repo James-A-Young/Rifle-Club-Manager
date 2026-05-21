@@ -78,6 +78,7 @@ export default function Register() {
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    phoneNumber: '',
     gdprConsent: false,
   });
   const [error, setError] = useState('');
@@ -234,6 +235,10 @@ export default function Register() {
           <div className="form-group">
             <label>Date of Birth</label>
             <input type="date" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label>Phone Number</label>
+            <input type="tel" value={form.phoneNumber} onChange={e => update('phoneNumber', e.target.value)} required />
           </div>
           <div className="form-group">
             <div className="checkbox-group">

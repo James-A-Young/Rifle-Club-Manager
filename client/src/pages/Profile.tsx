@@ -10,6 +10,7 @@ interface UserProfile {
   address: string;
   placeOfBirth: string;
   dateOfBirth: string;
+  phoneNumber: string;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
@@ -26,6 +27,7 @@ export default function Profile() {
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    phoneNumber: '',
     firearmCertificateNumber: '',
     firearmCertificateExpiry: '',
     shotgunCertificateNumber: '',
@@ -42,6 +44,7 @@ export default function Profile() {
         address: p.address,
         placeOfBirth: p.placeOfBirth,
         dateOfBirth: p.dateOfBirth.split('T')[0],
+        phoneNumber: p.phoneNumber,
         firearmCertificateNumber: p.firearmCertificateNumber ?? '',
         firearmCertificateExpiry: p.firearmCertificateExpiry ? p.firearmCertificateExpiry.split('T')[0] : '',
         shotgunCertificateNumber: p.shotgunCertificateNumber ?? '',
@@ -116,6 +119,10 @@ export default function Profile() {
               <input type="date" value={form.dateOfBirth} onChange={e => setForm(f => ({ ...f, dateOfBirth: e.target.value }))} required />
             </div>
             <div className="form-group">
+              <label>Phone Number</label>
+              <input value={form.phoneNumber} onChange={e => setForm(f => ({ ...f, phoneNumber: e.target.value }))} required />
+            </div>
+            <div className="form-group">
               <label>Firearm Certificate Number</label>
               <input
                 value={form.firearmCertificateNumber}
@@ -161,6 +168,8 @@ export default function Profile() {
             <dd>{profile.placeOfBirth}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Date of Birth</dt>
             <dd>{new Date(profile.dateOfBirth).toLocaleDateString()}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Phone Number</dt>
+            <dd>{profile.phoneNumber}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate #</dt>
             <dd>{profile.firearmCertificateNumber ?? 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate Expiry</dt>

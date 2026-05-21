@@ -21,6 +21,7 @@ export default function Bootstrap() {
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    phoneNumber: '',
     gdprConsent: false,
     clubName: '',
   });
@@ -104,6 +105,10 @@ export default function Bootstrap() {
           <div className="form-group">
             <label>Date of Birth</label>
             <input type="date" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label>Phone Number</label>
+            <input type="tel" value={form.phoneNumber} onChange={e => update('phoneNumber', e.target.value)} required />
           </div>
           <h2 style={{ fontSize: '1rem', margin: '1rem 0 0.75rem' }}>Your Club</h2>
           <div className="form-group">
