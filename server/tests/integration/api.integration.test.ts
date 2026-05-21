@@ -3,12 +3,14 @@ import './setup';
 import bcrypt from 'bcryptjs';
 import path from 'path';
 import jwt from 'jsonwebtoken';
+import speakeasy from 'speakeasy';
 import request from 'supertest';
 import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
 import { emailService } from '../../src/services/email';
+import { encryptStoredTwoFactorSecret } from '../../src/services/twoFactor';
 
 const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
@@ -76,6 +78,18 @@ async function createClubWithAdmin() {
   });
 
   return { admin, club };
+}
+
+async function enableTwoFactorForUser(userId: string, secret: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      twoFactorEnabled: true,
+      twoFactorSecret: encryptStoredTwoFactorSecret(secret),
+      twoFactorPendingSecret: null,
+      twoFactorPendingExpiresAt: null,
+    },
+  });
 }
 
 /** Create an invite and use it to register a new user via the API. */
@@ -246,6 +260,146 @@ describe('auth routes', () => {
       .send({ email, password: 'wrong' });
 
     expect(res.status).toBe(401);
+  });
+
+  it('returns requiresTwoFactor on login when 2FA is enabled', async () => {
+    const password = 'Password123!';
+    const email = `${unique('login-2fa-required')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+
+    expect(res.status).toBe(200);
+    expect(res.body.requiresTwoFactor).toBe(true);
+    expect(typeof res.body.twoFactorToken).toBe('string');
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.user).toBeUndefined();
+  });
+
+  it('accepts valid code on /api/auth/login/2fa and rejects invalid code', async () => {
+    const password = 'Password123!';
+    const email = `${unique('login-2fa-verify')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+
+    expect(login.status).toBe(200);
+    expect(login.body.requiresTwoFactor).toBe(true);
+
+    const invalid = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ twoFactorToken: login.body.twoFactorToken, code: '000000' });
+
+    expect(invalid.status).toBe(401);
+
+    const validCode = speakeasy.totp({ secret, encoding: 'base32' });
+    const valid = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ twoFactorToken: login.body.twoFactorToken, code: validCode });
+
+    expect(valid.status).toBe(200);
+    expect(valid.body.token).toBeTruthy();
+    expect(valid.body.user.email).toBe(email);
+  });
+
+  it('normalizes /api/auth/2fa/recovery/request responses and only issues tokens for valid credentials', async () => {
+    const emailSpy = vi.spyOn(emailService, 'sendTwoFactorDisableEmail').mockResolvedValue(true);
+    const email = `${unique('2fa-recovery')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const wrongPassword = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'wrong-password' });
+
+    expect(wrongPassword.status).toBe(200);
+    expect(wrongPassword.body.success).toBe(true);
+
+    const afterWrongPassword = await prisma.twoFactorDisableToken.findMany({ where: { userId: user.id } });
+    expect(afterWrongPassword.length).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    const missingUser = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email: `${unique('missing-2fa-recovery')}@test.com`, password: 'Password123!' });
+
+    expect(missingUser.status).toBe(200);
+    expect(missingUser.body.success).toBe(true);
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    const valid = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'Password123!' });
+
+    expect(valid.status).toBe(200);
+    expect(valid.body.success).toBe(true);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    const issuedToken = await prisma.twoFactorDisableToken.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(issuedToken?.token).toBeTruthy();
+  });
+
+  it('allows single-use /api/auth/2fa/recovery/disable tokens and disables 2FA', async () => {
+    const emailSpy = vi.spyOn(emailService, 'sendTwoFactorDisableEmail').mockResolvedValue(true);
+    const email = `${unique('2fa-disable')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const requestRecovery = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'Password123!' });
+
+    expect(requestRecovery.status).toBe(200);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    const issuedToken = await prisma.twoFactorDisableToken.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(issuedToken).toBeTruthy();
+
+    const disable = await request(app)
+      .post('/api/auth/2fa/recovery/disable')
+      .set('User-Agent', 'VitestAgent/2FA')
+      .send({ token: issuedToken!.token });
+
+    expect(disable.status).toBe(200);
+    expect(disable.body.success).toBe(true);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        twoFactorEnabled: true,
+        twoFactorSecret: true,
+        twoFactorPendingSecret: true,
+      },
+    });
+    expect(updatedUser?.twoFactorEnabled).toBe(false);
+    expect(updatedUser?.twoFactorSecret).toBeNull();
+    expect(updatedUser?.twoFactorPendingSecret).toBeNull();
+
+    const tokenState = await prisma.twoFactorDisableToken.findUnique({ where: { token: issuedToken!.token } });
+    expect(tokenState?.usedAt).toBeTruthy();
+
+    const reuse = await request(app)
+      .post('/api/auth/2fa/recovery/disable')
+      .send({ token: issuedToken!.token });
+
+    expect(reuse.status).toBe(400);
+    expect(reuse.body.error).toBe('Invalid or expired recovery token');
   });
 
   it('forgot-password returns success and sends email for existing user', async () => {

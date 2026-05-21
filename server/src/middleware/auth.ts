@@ -20,10 +20,15 @@ export const AUTH_COOKIE_OPTIONS = {
 
 function decodeToken(token: string): { id: string; email: string } | null {
   try {
-    return jwt.verify(token, jwtSecret) as {
+    const payload = jwt.verify(token, jwtSecret) as {
       id: string;
       email: string;
+      purpose?: string;
     };
+    if (payload.purpose && payload.purpose !== 'auth') {
+      return null;
+    }
+    return { id: payload.id, email: payload.email };
   } catch {
     return null;
   }

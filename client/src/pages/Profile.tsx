@@ -5,6 +5,7 @@ import Section21DeclarationHistory from '../components/Section21DeclarationHisto
 import Section21DeclarationViewModal from '../components/Section21DeclarationViewModal';
 import Section21DeclarationRenewal from '../components/Section21DeclarationRenewal';
 import { Firearm } from '../types/club';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface UserProfile {
   id: string;
@@ -14,6 +15,7 @@ interface UserProfile {
   placeOfBirth: string;
   dateOfBirth: string;
   phoneNumber: string;
+  twoFactorEnabled?: boolean;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
@@ -31,6 +33,13 @@ export default function Profile() {
   const [showDeclarationRenewal, setShowDeclarationRenewal] = useState(false);
   const [currentDeclaration, setCurrentDeclaration] = useState<any>(null);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState<null | {
+    otpauthUrl: string;
+    manualKey: string;
+    expiresAt: string;
+  }>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
   const [form, setForm] = useState({
     name: '',
     address: '',
@@ -82,6 +91,40 @@ export default function Profile() {
     const f = await api.post<Firearm>('/api/users/me/firearms', data);
     setFirearms(prev => [...prev, f]);
     setShowFirearmForm(false);
+  }
+
+  async function startTwoFactorSetup() {
+    setTwoFactorLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const setup = await api.post<{ otpauthUrl: string; manualKey: string; expiresAt: string }>('/api/users/me/2fa/setup/start', {});
+      setTwoFactorSetup(setup);
+      setTwoFactorCode('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start 2FA setup');
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  }
+
+  async function verifyTwoFactorSetup(e: React.FormEvent) {
+    e.preventDefault();
+    setTwoFactorLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.post('/api/users/me/2fa/setup/verify', { code: twoFactorCode });
+      const refreshed = await api.get<UserProfile>('/api/users/me');
+      setProfile(refreshed);
+      setTwoFactorSetup(null);
+      setTwoFactorCode('');
+      setSuccess('Two-factor authentication enabled successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to verify 2FA code');
+    } finally {
+      setTwoFactorLoading(false);
+    }
   }
 
   async function removeFirearm(id: string) {
@@ -215,6 +258,71 @@ export default function Profile() {
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Shotgun Certificate Expiry</dt>
             <dd>{profile.shotgunCertificateExpiry ? new Date(profile.shotgunCertificateExpiry).toLocaleDateString() : 'N/A'}</dd>
           </dl>
+        )}
+      </section>
+
+      <section>
+        <div className="page-header">
+          <h2>Two-Factor Authentication</h2>
+        </div>
+
+        {profile.twoFactorEnabled ? (
+          <div className="alert alert-success">Authenticator-based 2FA is enabled for your account.</div>
+        ) : (
+          <>
+            <p style={{ color: 'var(--gray-600)', marginBottom: '0.75rem' }}>
+              Protect your account with an authenticator app (TOTP).
+            </p>
+            {!twoFactorSetup ? (
+              <button className="btn btn-primary" onClick={() => void startTwoFactorSetup()} disabled={twoFactorLoading}>
+                {twoFactorLoading ? 'Preparing…' : 'Set Up Authenticator App'}
+              </button>
+            ) : (
+              <div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <QRCodeSVG value={twoFactorSetup.otpauthUrl} size={180} includeMargin />
+                </div>
+                <p style={{ marginBottom: '0.5rem' }}>
+                  If you can&apos;t scan the QR code, enter this setup key manually:
+                </p>
+                <p style={{ fontFamily: 'monospace', fontWeight: 600, letterSpacing: '0.04em' }}>{twoFactorSetup.manualKey}</p>
+                <p style={{ color: 'var(--gray-600)' }}>
+                  Setup expires at {new Date(twoFactorSetup.expiresAt).toLocaleTimeString()}.
+                </p>
+
+                <form onSubmit={verifyTwoFactorSetup}>
+                  <div className="form-group">
+                    <label>Enter 6-digit code from your app</label>
+                    <input
+                      inputMode="numeric"
+                      pattern="\d{6}"
+                      maxLength={6}
+                      value={twoFactorCode}
+                      onChange={e => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456"
+                      required
+                    />
+                  </div>
+                  <div className="actions">
+                    <button className="btn btn-primary" type="submit" disabled={twoFactorLoading}>
+                      {twoFactorLoading ? 'Verifying…' : 'Enable 2FA'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        setTwoFactorSetup(null);
+                        setTwoFactorCode('');
+                      }}
+                      disabled={twoFactorLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </>
         )}
       </section>
 

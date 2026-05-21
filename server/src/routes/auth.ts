@@ -20,9 +20,12 @@ import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
 import { emailService, sanitizeUserAgent } from '../services/email';
 import { getDeclarationStatus } from '../services/section21Declaration';
 import { validatePasswordSecurity } from '../services/passwordSecurity';
+import { decryptStoredTwoFactorSecret, verifyTwoFactorCode } from '../services/twoFactor';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+const TWO_FACTOR_LOGIN_TOKEN_TTL = '10m';
+const TWO_FACTOR_DISABLE_TOKEN_TTL_MINUTES = 15;
 type ResetTokenFailureReason = 'not_found' | 'expired' | 'used';
 
 class ResetTokenStateError extends Error {
@@ -60,6 +63,20 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const loginTwoFactorSchema = z.object({
+  twoFactorToken: z.string().min(1),
+  code: z.string().regex(/^\d{6}$/),
+});
+
+const twoFactorRecoveryRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+const twoFactorRecoveryDisableSchema = z.object({
+  token: z.string().min(1),
+});
+
 const forgotPasswordSchema = z.object({
   email: z.string().email(),
 });
@@ -80,6 +97,50 @@ const bootstrapSchema = z.object({
   phoneNumber: z.string().min(1),
   clubName: z.string().min(2),
 });
+
+type AccessJwtPayload = {
+  id: string;
+  email: string;
+  purpose: 'auth';
+};
+
+type TwoFactorLoginJwtPayload = {
+  id: string;
+  email: string;
+  purpose: '2fa-login';
+};
+
+function issueAccessToken(user: { id: string; email: string }): string {
+  return jwt.sign(
+    { id: user.id, email: user.email, purpose: 'auth' } satisfies AccessJwtPayload,
+    jwtSecret,
+    { expiresIn: JWT_ACCESS_EXPIRES }
+  );
+}
+
+function issueTwoFactorLoginToken(user: { id: string; email: string }): string {
+  return jwt.sign(
+    { id: user.id, email: user.email, purpose: '2fa-login' } satisfies TwoFactorLoginJwtPayload,
+    jwtSecret,
+    { expiresIn: TWO_FACTOR_LOGIN_TOKEN_TTL }
+  );
+}
+
+function verifyTwoFactorLoginToken(token: string): TwoFactorLoginJwtPayload | null {
+  try {
+    const payload = jwt.verify(token, jwtSecret) as Partial<TwoFactorLoginJwtPayload>;
+    if (payload.purpose !== '2fa-login' || !payload.id || !payload.email) {
+      return null;
+    }
+    return {
+      id: payload.id,
+      email: payload.email,
+      purpose: '2fa-login',
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** Returns true when no users exist — bootstrap mode is active. */
 async function isBootstrapAvailable(): Promise<boolean> {
@@ -167,11 +228,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
       return { user: createdUser, club: createdClub };
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      jwtSecret,
-      { expiresIn: JWT_ACCESS_EXPIRES }
-    );
+    const token = issueAccessToken(user);
 
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
     auditAuthRegisterSuccess(req.ip, user.id, user.email);
@@ -283,11 +340,7 @@ router.post('/register', async (req: Request, res: Response) => {
       return createdUser;
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      jwtSecret,
-      { expiresIn: JWT_ACCESS_EXPIRES }
-    );
+    const token = issueAccessToken(user);
 
     // Set the JWT as an HttpOnly cookie so it is inaccessible to JavaScript
     // (mitigates XSS-based token theft). The token is also returned in the
@@ -325,27 +378,37 @@ router.post('/login', async (req: Request, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { email, password } = parsed.data;
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const { password } = parsed.data;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user) {
-    auditAuthLoginFailed(req.ip, email);
+    auditAuthLoginFailed(req.ip, normalizedEmail);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
-    auditAuthLoginFailed(req.ip, email);
+    auditAuthLoginFailed(req.ip, normalizedEmail);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
-  const token = jwt.sign(
-    { id: user.id, email: user.email },
-    jwtSecret,
-    { expiresIn: JWT_ACCESS_EXPIRES }
-  );
+  if (user.twoFactorEnabled) {
+    if (!user.twoFactorSecret) {
+      res.status(403).json({ error: 'Two-factor authentication is enabled but not configured. Use account recovery.' });
+      return;
+    }
+    const twoFactorToken = issueTwoFactorLoginToken({ id: user.id, email: user.email });
+    res.json({
+      requiresTwoFactor: true,
+      twoFactorToken,
+    });
+    return;
+  }
+
+  const token = issueAccessToken({ id: user.id, email: user.email });
 
   const section21Status = await getDeclarationStatus(user.id);
 
@@ -356,6 +419,183 @@ router.post('/login', async (req: Request, res: Response) => {
     token,
     user: { id: user.id, name: user.name, email: user.email, section21Status },
   });
+});
+
+router.post('/login/2fa', async (req: Request, res: Response) => {
+  const parsed = loginTwoFactorSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const payload = verifyTwoFactorLoginToken(parsed.data.twoFactorToken);
+  if (!payload) {
+    res.status(401).json({ error: 'Invalid or expired 2FA session' });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.id },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      twoFactorEnabled: true,
+      twoFactorSecret: true,
+    },
+  });
+  if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+    res.status(401).json({ error: '2FA is not enabled for this account' });
+    return;
+  }
+
+  let decryptedSecret: string;
+  try {
+    decryptedSecret = decryptStoredTwoFactorSecret(user.twoFactorSecret);
+  } catch {
+    res.status(401).json({ error: 'Invalid authenticator code' });
+    return;
+  }
+
+  if (!verifyTwoFactorCode(decryptedSecret, parsed.data.code)) {
+    res.status(401).json({ error: 'Invalid authenticator code' });
+    return;
+  }
+
+  const token = issueAccessToken({ id: user.id, email: user.email });
+  const section21Status = await getDeclarationStatus(user.id);
+  res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
+  auditAuthLoginSuccess(req.ip, user.id, user.email);
+  res.json({
+    token,
+    user: { id: user.id, name: user.name, email: user.email, section21Status },
+  });
+});
+
+router.post('/2fa/recovery/request', async (req: Request, res: Response) => {
+  const parsed = twoFactorRecoveryRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const user = await prisma.user.findUnique({
+    where: { email: normalizedEmail },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      passwordHash: true,
+      twoFactorEnabled: true,
+    },
+  });
+
+  if (!user || !user.twoFactorEnabled) {
+    res.json({ success: true, message: 'If the account is eligible, a recovery email has been sent.' });
+    return;
+  }
+
+  const passwordValid = await bcrypt.compare(parsed.data.password, user.passwordHash);
+  if (!passwordValid) {
+    res.json({ success: true, message: 'If the account is eligible, a recovery email has been sent.' });
+    return;
+  }
+
+  const recoveryToken = `2fa_disable_${crypto.randomBytes(32).toString('hex')}`;
+  const expiresAt = new Date(Date.now() + TWO_FACTOR_DISABLE_TOKEN_TTL_MINUTES * 60 * 1000);
+
+  await prisma.$transaction(async tx => {
+    await tx.twoFactorDisableToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: {
+        usedAt: new Date(),
+        usedByIp: req.ip,
+        usedByUserAgent: 'superseded',
+      },
+    });
+
+    await tx.twoFactorDisableToken.create({
+      data: {
+        userId: user.id,
+        token: recoveryToken,
+        expiresAt,
+      },
+    });
+  });
+
+  await emailService.sendTwoFactorDisableEmail({
+    to: user.email,
+    name: user.name,
+    disableToken: recoveryToken,
+    expiresInMinutes: TWO_FACTOR_DISABLE_TOKEN_TTL_MINUTES,
+  });
+
+  res.json({ success: true, message: 'If the account is eligible, a recovery email has been sent.' });
+});
+
+router.post('/2fa/recovery/disable', async (req: Request, res: Response) => {
+  const parsed = twoFactorRecoveryDisableSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const userAgent = sanitizeUserAgent(req.get('user-agent'));
+
+  const tokenRow = await prisma.twoFactorDisableToken.findUnique({
+    where: { token: parsed.data.token },
+    select: {
+      id: true,
+      userId: true,
+      expiresAt: true,
+      usedAt: true,
+    },
+  });
+
+  if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
+    res.status(400).json({ error: 'Invalid or expired recovery token' });
+    return;
+  }
+
+  const consumedAt = new Date();
+  await prisma.$transaction(async tx => {
+    const consumed = await tx.twoFactorDisableToken.updateMany({
+      where: {
+        id: tokenRow.id,
+        usedAt: null,
+        expiresAt: { gte: consumedAt },
+      },
+      data: {
+        usedAt: consumedAt,
+        usedByIp: req.ip,
+        usedByUserAgent: userAgent,
+      },
+    });
+
+    if (consumed.count !== 1) {
+      throw new Error('TOKEN_CONSUMPTION_FAILED');
+    }
+
+    await tx.user.update({
+      where: { id: tokenRow.userId },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+        twoFactorPendingSecret: null,
+        twoFactorPendingExpiresAt: null,
+      },
+    });
+  }).catch(() => {
+    res.status(400).json({ error: 'Invalid or expired recovery token' });
+  });
+
+  if (res.headersSent) {
+    return;
+  }
+
+  res.clearCookie(AUTH_COOKIE_NAME, { ...AUTH_COOKIE_OPTIONS, maxAge: 0 });
+  res.json({ success: true, message: 'Two-factor authentication has been disabled.' });
 });
 
 router.post('/forgot-password', async (req: Request, res: Response) => {

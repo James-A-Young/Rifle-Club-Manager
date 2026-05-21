@@ -7,6 +7,12 @@ import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
 import { getDeclarationStatus } from '../services/section21Declaration';
+import {
+  decryptStoredTwoFactorSecret,
+  encryptStoredTwoFactorSecret,
+  generateTwoFactorSecret,
+  verifyTwoFactorCode,
+} from '../services/twoFactor';
 
 const router = Router();
 
@@ -19,6 +25,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       id: true,
       name: true,
       email: true,
+      twoFactorEnabled: true,
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
@@ -174,6 +181,96 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   });
 
   res.json(user);
+});
+
+const twoFactorCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/),
+});
+
+router.post('/me/2fa/setup/start', requireAuth, async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { id: true, email: true, twoFactorEnabled: true },
+  });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  if (user.twoFactorEnabled) {
+    res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+    return;
+  }
+
+  const { secret, otpauthUrl } = generateTwoFactorSecret(user.email);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      twoFactorPendingSecret: encryptStoredTwoFactorSecret(secret),
+      twoFactorPendingExpiresAt: expiresAt,
+    },
+  });
+
+  res.json({
+    otpauthUrl,
+    manualKey: secret,
+    expiresAt,
+  });
+});
+
+router.post('/me/2fa/setup/verify', requireAuth, async (req: AuthRequest, res: Response) => {
+  const parsed = twoFactorCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      id: true,
+      twoFactorEnabled: true,
+      twoFactorPendingSecret: true,
+      twoFactorPendingExpiresAt: true,
+    },
+  });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  if (user.twoFactorEnabled) {
+    res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+    return;
+  }
+  if (!user.twoFactorPendingSecret || !user.twoFactorPendingExpiresAt || user.twoFactorPendingExpiresAt < new Date()) {
+    res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
+    return;
+  }
+  let pendingSecret: string;
+  try {
+    pendingSecret = decryptStoredTwoFactorSecret(user.twoFactorPendingSecret);
+  } catch {
+    res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
+    return;
+  }
+
+  if (!verifyTwoFactorCode(pendingSecret, parsed.data.code)) {
+    res.status(400).json({ error: 'Invalid authenticator code' });
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      twoFactorEnabled: true,
+      twoFactorSecret: user.twoFactorPendingSecret,
+      twoFactorPendingSecret: null,
+      twoFactorPendingExpiresAt: null,
+    },
+  });
+
+  res.json({ success: true });
 });
 
 router.get('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {

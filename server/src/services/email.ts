@@ -66,6 +66,13 @@ export interface SendInviteEmailParams {
   inviteToken: string;
 }
 
+export interface SendTwoFactorDisableEmailParams {
+  to: string;
+  name?: string | null;
+  disableToken: string;
+  expiresInMinutes: number;
+}
+
 function buildResetUrl(resetToken: string): string {
   const params = new URLSearchParams({ token: resetToken });
   return `${getAppOrigin()}/reset-password?${params.toString()}`;
@@ -73,6 +80,11 @@ function buildResetUrl(resetToken: string): string {
 
 function buildInviteUrl(inviteToken: string): string {
   return `${getAppOrigin()}/invites/${encodeURIComponent(inviteToken)}/accept`;
+}
+
+function buildTwoFactorDisableUrl(disableToken: string): string {
+  const params = new URLSearchParams({ token: disableToken });
+  return `${getAppOrigin()}/disable-2fa?${params.toString()}`;
 }
 
 async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Promise<boolean> {
@@ -162,6 +174,50 @@ async function sendInviteEmail(params: SendInviteEmailParams): Promise<boolean> 
   }
 }
 
+async function sendTwoFactorDisableEmail(params: SendTwoFactorDisableEmailParams): Promise<boolean> {
+  const resend = createResendClient();
+  const from = getResendFromEmail();
+  if (!resend || !from) {
+    return false;
+  }
+
+  const disableUrl = buildTwoFactorDisableUrl(params.disableToken);
+  const safeDisableUrl = escapeHtml(disableUrl);
+  const greeting = params.name?.trim() ? `Hi ${params.name.trim()},` : 'Hello,';
+  const safeGreeting = escapeHtml(greeting);
+  const subject = 'Disable two-factor authentication for your account';
+  const text = [
+    greeting,
+    '',
+    'We received a request to disable authenticator-based 2FA on your account.',
+    `Use this one-time link to disable 2FA: ${disableUrl}`,
+    '',
+    `This link expires in ${params.expiresInMinutes} minutes.`,
+    'If you did not request this, you can ignore this email.',
+  ].join('\n');
+  const html = [
+    `<p>${safeGreeting}</p>`,
+    '<p>We received a request to disable authenticator-based 2FA on your account.</p>',
+    `<p><a href="${safeDisableUrl}">Disable 2FA</a></p>`,
+    `<p>This one-time link expires in ${params.expiresInMinutes} minutes.</p>`,
+    '<p>If you did not request this, you can ignore this email.</p>',
+  ].join('');
+
+  try {
+    await resend.emails.send({
+      from,
+      to: params.to,
+      subject,
+      text,
+      html,
+    });
+    return true;
+  } catch (error) {
+    console.error('Failed to send 2FA disable email:', error);
+    return false;
+  }
+}
+
 export function sanitizeUserAgent(userAgent: string | null | undefined): string | null {
   const normalized = (userAgent ?? '').trim();
   const trimmed = normalized.length > 512 ? normalized.slice(0, 512) : normalized;
@@ -171,4 +227,5 @@ export function sanitizeUserAgent(userAgent: string | null | undefined): string 
 export const emailService = {
   sendPasswordResetEmail,
   sendInviteEmail,
+  sendTwoFactorDisableEmail,
 };
