@@ -76,15 +76,20 @@ export interface IssueMembershipPassResult {
   addToWalletLink: string;
 }
 
+const WALLET_CALLBACK_PATH = '/api/webhooks/google-wallet';
+
 export class GoogleWalletService {
   private auth?: GoogleAuth;
   private walletClient?: walletobjects_v1.Walletobjects;
   private issuerId: string;
   private walletEnabled: boolean;
+  private callbackUrl: string;
   private classIdCache = new Set<string>();
 
   constructor() {
     this.issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '';
+    const clientOrigin = process.env.CLIENT_ORIGIN || '';
+    this.callbackUrl = clientOrigin ? `${clientOrigin}${WALLET_CALLBACK_PATH}` : '';
 
     const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     const privateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -167,6 +172,10 @@ export class GoogleWalletService {
     return passResult.addToWalletLink;
   }
 
+  buildMembershipObjectId(clubId: string, userId: string): string {
+    return this.buildObjectId(clubId, userId);
+  }
+
   private buildPassObject(
     params: CreatePassParams & { classId: string; objectId: string }
   ): PassObject {
@@ -246,6 +255,17 @@ export class GoogleWalletService {
 
     try {
       await this.walletClient.genericclass.get({ resourceId: classId });
+      if (this.callbackUrl) {
+        await this.walletClient.genericclass.patch({
+          resourceId: classId,
+          requestBody: {
+            id: classId,
+            callbackOptions: {
+              url: this.callbackUrl,
+            },
+          } as walletobjects_v1.Schema$GenericClass,
+        });
+      }
       this.classIdCache.add(classId);
       return;
     } catch (error) {
@@ -257,6 +277,11 @@ export class GoogleWalletService {
 
     const newClass: walletobjects_v1.Schema$GenericClass = {
       id: classId,
+      callbackOptions: this.callbackUrl
+        ? {
+            url: this.callbackUrl,
+          }
+        : undefined,
       classTemplateInfo: {
         cardTemplateOverride: {
           cardRowTemplateInfos: [

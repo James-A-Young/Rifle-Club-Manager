@@ -15,6 +15,7 @@ import ammunitionRouter from './routes/ammunition';
 import cashboxRouter from './routes/cashbox';
 import scoringRouter from './routes/scoring';
 import section21DeclarationRouter from './routes/section21Declaration';
+import walletWebhooksRouter from './routes/walletWebhooks';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
 
@@ -146,6 +147,7 @@ export function createApp() {
   app.use('/api/sign-in-links', signInLinksRouter);
   app.use('/api/ammunition', ammunitionRouter);
   app.use('/api/cashbox', cashboxRouter);
+  app.use('/api/webhooks', walletWebhooksRouter);
   app.use('/api', scoringRouter);
   app.use('/api', section21DeclarationRouter);
 

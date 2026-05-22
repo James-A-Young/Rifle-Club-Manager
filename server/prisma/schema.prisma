@@ -135,6 +135,7 @@ model ClubMembership {
   id        String           @id @default(cuid())
   userId    String
   clubId    String
+  installedPassId String?    @unique
   status    MembershipStatus @default(PENDING)
   role      MembershipRole   @default(MEMBER)
   approvedAt DateTime?
