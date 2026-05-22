@@ -82,6 +82,7 @@ export default function ClubDashboard() {
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [membershipResolved, setMembershipResolved] = useState(false);
   const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings'>('operations');
 
   // Club profile edit
@@ -173,6 +174,7 @@ export default function ClubDashboard() {
 
   useEffect(() => {
     if (!id) return;
+    setMembershipResolved(false);
     api.get<Club>(`/api/clubs/${id}`).then(clubData => {
       setClub(clubData);
       setClubForm({
@@ -191,8 +193,14 @@ export default function ClubDashboard() {
         const me = ms.find(m => m.userId === user?.id);
         setIsAdmin(me?.role === 'ADMIN');
       })
-      .catch(() => setIsAdmin(false));
+      .catch(() => setIsAdmin(false))
+      .finally(() => setMembershipResolved(true));
   }, [id, user?.id]);
+
+  useEffect(() => {
+    if (!id || !membershipResolved || isAdmin) return;
+    navigate(`/clubs/profile/${id}`, { replace: true });
+  }, [id, isAdmin, membershipResolved, navigate]);
 
   function applyBackupStatus(status: GoogleDriveBackupStatus) {
     setGoogleDriveStatus(status);
@@ -855,7 +863,8 @@ export default function ClubDashboard() {
     }
   }
 
-  if (!club) return <div>Loading…</div>;
+  if (!club || !membershipResolved) return <div>Loading…</div>;
+  if (!isAdmin) return null;
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
     signOutId: v.id,
