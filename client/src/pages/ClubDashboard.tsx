@@ -454,6 +454,46 @@ export default function ClubDashboard() {
     }
   }
 
+  async function createBulkInvites(emails: string[]) {
+    if (!id || emails.length === 0) return;
+
+    setError('');
+
+    const results = await Promise.allSettled(
+      emails.map(email => api.post<ClubInvite>(`/api/clubs/${id}/invites`, {
+        email,
+        role: inviteRole,
+        expiresInDays: inviteExpiresInDays,
+      })),
+    );
+
+    const createdInvites: ClubInvite[] = [];
+    const failedEmails: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        createdInvites.push(result.value);
+      } else {
+        failedEmails.push(emails[index] as string);
+      }
+    });
+
+    if (createdInvites.length > 0) {
+      setInvites(prev => [...createdInvites, ...prev]);
+    }
+
+    if (failedEmails.length > 0) {
+      setError(
+        `Created ${createdInvites.length} invite(s). Failed ${failedEmails.length}: ${failedEmails.join(', ')}`,
+      );
+      return;
+    }
+
+    if (createdInvites.some(invite => invite.emailSent === false)) {
+      setError('Invites created, but email sending is disabled or failed for one or more invites.');
+    }
+  }
+
   function getInviteUrl(token: string): string {
     return `${inviteBaseUrl}/${token}/accept`;
   }
@@ -1081,6 +1121,7 @@ export default function ClubDashboard() {
               onRoleChange={setInviteRole}
               onExpiresChange={setInviteExpiresInDays}
               onCreate={createInvite}
+              onCreateBulk={createBulkInvites}
               onCopyUrl={copyInviteUrl}
               onSendEmail={resendInviteEmail}
               onCancel={cancelInvite}
