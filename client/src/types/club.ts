@@ -78,6 +78,7 @@ export interface ClubSettings {
   ammoSalesLookbackDays: number;
   ammoDefaultLeadTimeDays: number;
   ammoDefaultSafetyStockDays: number;
+  ammoDefaultSalesSafeId?: string | null;
 }
 
 export interface BackupDatasetRunStatus {

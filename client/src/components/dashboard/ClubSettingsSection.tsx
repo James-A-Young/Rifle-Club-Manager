@@ -91,6 +91,10 @@ export default function ClubSettingsSection({
   onDisconnectGoogleDrive,
   onRefreshBackupStatus,
 }: Props) {
+  const defaultSalesSafeName = settings?.ammoDefaultSalesSafeId
+    ? ammunitionSafes.find(safe => safe.id === settings.ammoDefaultSalesSafeId)?.name ?? 'Not set'
+    : 'Not set';
+
   return (
     <section>
       <div className="page-header">
@@ -198,6 +202,19 @@ export default function ClubSettingsSection({
                 onChange={e => onFormChange({ ammoDefaultSafetyStockDays: Number(e.target.value || '7') })}
               />
             </div>
+
+            <div className="form-group">
+              <label>Default Sales Safe</label>
+              <select
+                value={form.ammoDefaultSalesSafeId ?? ''}
+                onChange={e => onFormChange({ ammoDefaultSalesSafeId: e.target.value || null })}
+              >
+                <option value="">None</option>
+                {ammunitionSafes.map(safe => (
+                  <option key={safe.id} value={safe.id}>{safe.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
@@ -270,6 +287,8 @@ export default function ClubSettingsSection({
           <dd>{settings?.ammoDefaultLeadTimeDays ?? 14} days</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Safety Stock</dt>
           <dd>{settings?.ammoDefaultSafetyStockDays ?? 7} days</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Sales Safe</dt>
+          <dd>{defaultSalesSafeName}</dd>
         </dl>
       )}
 

@@ -1290,6 +1290,7 @@ describe('club settings routes', () => {
     expect(res.body.primaryColor).toBe('#1f2937');
     expect(res.body.passIssuingEnabled).toBe(false);
     expect(res.body.memberCardSignInEnabled).toBe(false);
+    expect(res.body.ammoDefaultSalesSafeId).toBeNull();
   });
 
   it('requires admin to get club settings', async () => {
@@ -1387,6 +1388,43 @@ describe('club settings routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.backupEnabled).toBe(true);
+  });
+
+  it('updates default sales safe when safe belongs to club', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const safe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: club.id,
+        name: 'Sales Safe',
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: safe.id });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ammoDefaultSalesSafeId).toBe(safe.id);
+  });
+
+  it('rejects default sales safe when it does not belong to club', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { club: otherClub } = await createClubWithAdmin();
+    const otherSafe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: otherClub.id,
+        name: 'Other Club Safe',
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: otherSafe.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Default sales safe must belong to this club');
   });
 
   it('returns backup status for admin and blocks non-admin', async () => {
@@ -1688,6 +1726,33 @@ describe('ammunition routes', () => {
       .set(authHeader(admin));
 
     expect(deleteRes.status).toBe(204);
+  });
+
+  it('clears club default sales safe when deleting that safe', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const safe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: club.id,
+        name: 'Default Sales Safe',
+      },
+    });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: safe.id });
+
+    const deleteRes = await request(app)
+      .delete(`/api/ammunition/club/${club.id}/safes/${safe.id}`)
+      .set(authHeader(admin));
+    expect(deleteRes.status).toBe(204);
+
+    const settingsRes = await request(app)
+      .get(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin));
+
+    expect(settingsRes.status).toBe(200);
+    expect(settingsRes.body.ammoDefaultSalesSafeId).toBeNull();
   });
 
   it('returns 409 when deleting a safe with existing sales', async () => {

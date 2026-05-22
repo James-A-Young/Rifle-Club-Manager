@@ -280,6 +280,7 @@ model ClubSettings {
   ammoSalesLookbackDays    Int      @default(30)
   ammoDefaultLeadTimeDays  Int      @default(14)
   ammoDefaultSafetyStockDays Int    @default(7)
+  ammoDefaultSalesSafeId   String?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 

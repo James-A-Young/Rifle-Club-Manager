@@ -132,6 +132,7 @@ export default function ClubDashboard() {
     ammoSalesLookbackDays: 30,
     ammoDefaultLeadTimeDays: 14,
     ammoDefaultSafetyStockDays: 7,
+    ammoDefaultSalesSafeId: null,
   });
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
   const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
@@ -279,6 +280,21 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading ammunition data'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isAdmin]);
+
+  useEffect(() => {
+    if (!saleSafeId) return;
+    if (!ammunitionSafes.some(safe => safe.id === saleSafeId)) {
+      setSaleSafeId('');
+    }
+  }, [saleSafeId, ammunitionSafes]);
+
+  useEffect(() => {
+    if (saleSafeId || ammunitionSafes.length === 0) return;
+
+    if (settingsForm.ammoDefaultSalesSafeId && ammunitionSafes.some(safe => safe.id === settingsForm.ammoDefaultSalesSafeId)) {
+      setSaleSafeId(settingsForm.ammoDefaultSalesSafeId);
+    }
+  }, [saleSafeId, ammunitionSafes, settingsForm.ammoDefaultSalesSafeId]);
 
   useEffect(() => {
     if (!id || !isAdmin) return;
@@ -539,6 +555,7 @@ export default function ClubDashboard() {
         ammoSalesLookbackDays: settingsForm.ammoSalesLookbackDays,
         ammoDefaultLeadTimeDays: settingsForm.ammoDefaultLeadTimeDays,
         ammoDefaultSafetyStockDays: settingsForm.ammoDefaultSafetyStockDays,
+        ammoDefaultSalesSafeId: settingsForm.ammoDefaultSalesSafeId || null,
       });
       setSettings(updated);
       setSettingsForm(updated);

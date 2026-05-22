@@ -976,6 +976,7 @@ const updateClubSettingsSchema = z.object({
   ammoSalesLookbackDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultLeadTimeDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultSafetyStockDays: z.number().int().min(0).max(365).optional(),
+  ammoDefaultSalesSafeId: z.string().min(1).optional().nullable(),
 });
 
 router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
@@ -1004,6 +1005,7 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         ammoSalesLookbackDays: 30,
         ammoDefaultLeadTimeDays: 14,
         ammoDefaultSafetyStockDays: 7,
+        ammoDefaultSalesSafeId: null,
       },
     });
   }
@@ -1036,6 +1038,7 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     ammoSalesLookbackDays?: number;
     ammoDefaultLeadTimeDays?: number;
     ammoDefaultSafetyStockDays?: number;
+    ammoDefaultSalesSafeId?: string | null;
   } = {};
 
   if ('logoUrl' in parsed.data) {
@@ -1067,6 +1070,23 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
   if ('ammoDefaultSafetyStockDays' in parsed.data && typeof parsed.data.ammoDefaultSafetyStockDays === 'number') {
     updateData.ammoDefaultSafetyStockDays = parsed.data.ammoDefaultSafetyStockDays;
+  }
+  if ('ammoDefaultSalesSafeId' in parsed.data) {
+    updateData.ammoDefaultSalesSafeId = parsed.data.ammoDefaultSalesSafeId ?? null;
+  }
+
+  if (typeof updateData.ammoDefaultSalesSafeId === 'string') {
+    const safe = await prisma.ammunitionSafe.findFirst({
+      where: {
+        id: updateData.ammoDefaultSalesSafeId,
+        clubId,
+      },
+      select: { id: true },
+    });
+    if (!safe) {
+      res.status(400).json({ error: 'Default sales safe must belong to this club' });
+      return;
+    }
   }
 
   let settings = await prisma.clubSettings.findUnique({
