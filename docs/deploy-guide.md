@@ -28,6 +28,7 @@ PostgreSQL is the system database. The app image runs on `gcr.io/distroless/node
 | `NODE_ENV` | Yes | Use `production` in production deployments. |
 | `PORT` | Yes | Server listen port (default `3000`). |
 | `CLIENT_ORIGIN` | Yes | Allowed browser origin for CORS + CSRF origin checks. |
+| `VITE_API_URL` | Optional | Frontend API base URL, served via `/api/config`. Leave blank when the frontend and API share the same origin (same-origin deployments). |
 | `TURNSTILE_SECRET_KEY` | Optional | Enables server-side Turnstile verification on registration. |
 | `VITE_TURNSTILE_SITE_KEY` | Optional | Enables Turnstile widget on the register page. |
 | `VITE_GA_MEASUREMENT_ID` | Optional | GA4 measurement ID for client-side analytics. |

@@ -1,15 +1,17 @@
 # Admin User Guide (Club Administrators)
 
 ## Who Is a Club Admin?
-Rifle Club Manager has two role layers:
+Rifle Club Manager uses two role layers:
 
 - **System user role** (`User.role`): `MEMBER`, `ADMIN`, `OWNER`
+  - Set to `OWNER` automatically when a user creates a club.
 - **Per-club membership role** (`ClubMembership.role`): `MEMBER` or `ADMIN`
+  - Controls what a user can do within a specific club.
 
 In practice:
-- A user who creates a club becomes that club's **approved ADMIN** membership.
-- Their system role is set to `OWNER`.
-- Club administration actions are authorized by approved **club ADMIN** membership.
+- A user who creates a club becomes that club's **approved ADMIN** member and their system role becomes `OWNER`.
+- Club administration actions (approving members, managing invites, editing club settings, etc.) are authorized by having an **approved ADMIN** club membership — not the system-level role.
+- Multiple users can hold club ADMIN role in the same club.
 
 ## How-To: Approve or Reject Membership Requests
 1. Open your club page (`/clubs/:id`).
@@ -29,12 +31,13 @@ Operational note:
    - Role (`MEMBER` or `ADMIN`)
    - Expiry (1–90 days, default 14)
 3. Click **Create Invite**.
-4. Use **Copy Link** or **Send Email**.
+4. Share the invite link using **Copy Link** (copies to clipboard) or **Send Email** (opens your default mail client with a pre-filled invite message).
 
 Important behaviors:
 - Invite links are token-based and single-use.
-- Invite acceptance requires the logged-in account email to match the invite email.
-- Accepted invites place membership in `PENDING` for admin approval.
+- Invite acceptance requires the logged-in account email to match the invite email exactly.
+- When an invite is accepted, the membership is created in `PENDING` status and must be approved by a club admin.
+- If the recipient does not yet have an account, they should register using the same email address the invite was sent to.
 
 ## How-To: Promote or Demote a Member
 1. In **Members**, find an `APPROVED` user.

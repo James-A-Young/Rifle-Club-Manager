@@ -74,7 +74,7 @@ From your Dashboard:
 - See whether you have an active visit.
 - Sign out from the active visit panel.
 - Review your visit history list.
-- View total visits and visits in the last 30 days.
+- View total visits and visits this month.
 
 ## Your Dashboard
 Dashboard provides:
