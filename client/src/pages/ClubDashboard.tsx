@@ -668,12 +668,17 @@ export default function ClubDashboard() {
     }
   }
 
-  async function createAmmunitionType() {
+  async function createAmmunitionType(pricePenceOverride?: number) {
     if (!id || !newAmmunitionTypeName.trim()) return;
+    const pricePence = pricePenceOverride ?? newAmmunitionTypePricePence;
+    if (!Number.isFinite(pricePence) || pricePence <= 0) {
+      setError('Please provide a valid ammunition price greater than 0');
+      return;
+    }
     try {
       await api.post(`/api/ammunition/club/${id}/types`, {
         name: newAmmunitionTypeName.trim(),
-        pricePence: newAmmunitionTypePricePence,
+        pricePence,
       });
       setNewAmmunitionTypeName('');
       setNewAmmunitionTypePricePence(0);

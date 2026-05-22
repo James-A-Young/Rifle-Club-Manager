@@ -1,6 +1,8 @@
 import React from 'react';
 import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus, GoogleDriveFolderItem } from '../../types/club';
 
+type AmmunitionTypeCreateMode = 'ROUND' | 'BOX';
+
 interface Props {
   settings: ClubSettings | null;
   editing: boolean;
@@ -17,7 +19,7 @@ interface Props {
   onNewAmmunitionTypeNameChange: (value: string) => void;
   onNewAmmunitionTypePricePenceChange: (value: number) => void;
   onNewAmmunitionSafeNameChange: (value: string) => void;
-  onCreateAmmunitionType: () => void;
+  onCreateAmmunitionType: (pricePenceOverride?: number) => void;
   onCreateAmmunitionSafe: () => void;
   onUpdateAmmunitionTypePrice: (typeId: string, pricePence: number) => void;
   onUpdateAmmunitionTypeReorderConfig: (typeId: string, config: {
@@ -91,9 +93,29 @@ export default function ClubSettingsSection({
   onDisconnectGoogleDrive,
   onRefreshBackupStatus,
 }: Props) {
+  const [createMode, setCreateMode] = React.useState<AmmunitionTypeCreateMode>('ROUND');
+  const [newAmmunitionTypeBoxSize, setNewAmmunitionTypeBoxSize] = React.useState(50);
+  const [newAmmunitionTypeBoxPriceGbp, setNewAmmunitionTypeBoxPriceGbp] = React.useState('0.00');
+
   const defaultSalesSafeName = settings?.ammoDefaultSalesSafeId
     ? ammunitionSafes.find(safe => safe.id === settings.ammoDefaultSalesSafeId)?.name ?? 'Not set'
     : 'Not set';
+
+  const boxPricePence = Math.round(Number(newAmmunitionTypeBoxPriceGbp || '0') * 100);
+  const calculatedBoxModePricePence = newAmmunitionTypeBoxSize > 0 && boxPricePence > 0
+    ? Math.round(boxPricePence / newAmmunitionTypeBoxSize)
+    : 0;
+
+  function handleCreateAmmunitionTypeClick() {
+    if (createMode === 'BOX') {
+      if (!Number.isFinite(newAmmunitionTypeBoxSize) || newAmmunitionTypeBoxSize <= 0) return;
+      if (!Number.isFinite(boxPricePence) || boxPricePence <= 0) return;
+      onCreateAmmunitionType(calculatedBoxModePricePence);
+      return;
+    }
+
+    onCreateAmmunitionType();
+  }
 
   return (
     <section>
@@ -454,19 +476,57 @@ export default function ClubSettingsSection({
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Price Per Round (£)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={(newAmmunitionTypePricePence / 100)}
-              onChange={e => onNewAmmunitionTypePricePenceChange(Math.round(Number(e.target.value || '0') * 100))}
-            />
+            <label>Pricing Mode</label>
+            <select value={createMode} onChange={e => setCreateMode(e.target.value as AmmunitionTypeCreateMode)}>
+              <option value="ROUND">By Round</option>
+              <option value="BOX">By Box</option>
+            </select>
           </div>
-          <button className="btn btn-primary" type="button" onClick={onCreateAmmunitionType}>
+          <button className="btn btn-primary" type="button" onClick={handleCreateAmmunitionTypeClick}>
             Add Type
           </button>
         </div>
+
+        {createMode === 'ROUND' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Price Per Round (£)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={(newAmmunitionTypePricePence / 100)}
+                onChange={e => onNewAmmunitionTypePricePenceChange(Math.round(Number(e.target.value || '0') * 100))}
+              />
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Box Size (Rounds)</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={newAmmunitionTypeBoxSize}
+                onChange={e => setNewAmmunitionTypeBoxSize(Math.max(1, Number(e.target.value || '1')))}
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Box Price (£)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newAmmunitionTypeBoxPriceGbp}
+                onChange={e => setNewAmmunitionTypeBoxPriceGbp(e.target.value)}
+              />
+            </div>
+            <div style={{ gridColumn: '1 / -1', color: 'var(--gray-600)', fontSize: '0.9rem' }}>
+              Calculated price per round: <strong>£{(calculatedBoxModePricePence / 100).toFixed(2)}</strong>
+            </div>
+          </div>
+        )}
 
         <table>
           <thead>
