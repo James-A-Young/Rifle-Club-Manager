@@ -341,7 +341,37 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
 });
 
 // Google Wallet Membership Pass endpoints
-async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
+async function handleMembershipPassStatusRequest(req: AuthRequest, res: Response) {
+  const clubId = req.params.clubId as string;
+
+  try {
+    const membership = await prisma.clubMembership.findFirst({
+      where: {
+        userId: req.user!.id,
+        clubId,
+        status: MembershipStatus.APPROVED,
+      },
+      select: { id: true },
+    });
+
+    if (!membership) {
+      res.json({ passIssuingEnabled: false });
+      return;
+    }
+
+    const settings = await prisma.clubSettings.findUnique({
+      where: { clubId },
+      select: { passIssuingEnabled: true },
+    });
+
+    res.json({ passIssuingEnabled: Boolean(settings?.passIssuingEnabled) });
+  } catch (error) {
+    console.error('Error loading membership pass status:', error);
+    res.status(500).json({ error: 'Failed to load membership pass status' });
+  }
+}
+
+async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Response) {
   const clubId = req.params.clubId as string;
 
   try {
@@ -450,7 +480,7 @@ async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
   }
 }
 
-router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
-router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
+router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassStatusRequest);
+router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 
 export default router;
