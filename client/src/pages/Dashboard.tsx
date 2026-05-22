@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { DueCard, ScoringAverages } from '../types/club';
+import { DueCard, RecentScore, ScoringAverages } from '../types/club';
 import addToGWallet from '../assets/add_to_google_wallet.svg';
 import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
@@ -37,6 +37,7 @@ export default function Dashboard() {
   // Scoring — keyed by clubId so stale cards are replaced on each load
   const [dueCardsByClub, setDueCardsByClub] = useState<Record<string, DueCard[]>>({});
   const [avgsByClub, setAvgsByClub] = useState<Record<string, ScoringAverages & { clubName: string }>>({});
+  const [recentScoresByClub, setRecentScoresByClub] = useState<Record<string, RecentScore[]>>({});
 
   useEffect(() => {
     Promise.all([
@@ -62,6 +63,10 @@ export default function Dashboard() {
               ...prev,
               [club.id]: { ...avgs, clubName: club.name },
             })))
+            .catch(() => { /* silently ignore */ });
+
+          api.get<RecentScore[]>(`/api/clubs/${club.id}/scoring/mine/recent`)
+            .then(scores => setRecentScoresByClub(prev => ({ ...prev, [club.id]: scores })))
             .catch(() => { /* silently ignore */ });
 
           api.get<MembershipPassResponse>(`/api/users/me/membership-passes/${club.id}`)
@@ -120,6 +125,14 @@ export default function Dashboard() {
   const sortedDueCards = Object.values(dueCardsByClub)
     .flat()
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  const recentScores = clubs
+    .flatMap(club => (recentScoresByClub[club.id] ?? []).map(score => ({
+      ...score,
+      clubName: club.name,
+    })))
+    .sort((a, b) => new Date(b.scoredAt).getTime() - new Date(a.scoredAt).getTime())
+    .slice(0, 10);
 
   if (loading) return <div>Loading…</div>;
 
@@ -198,6 +211,30 @@ export default function Dashboard() {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {recentScores.length > 0 && (
+        <section>
+          <h2>Recent Scores</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Club</th>
+                <th>Competition</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentScores.map(row => (
+                <tr key={row.scoreId}>
+                  <td>{row.clubName}</td>
+                  <td>{row.competitionName}</td>
+                  <td>{row.score}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </section>

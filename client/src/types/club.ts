@@ -360,3 +360,11 @@ export interface ScoringAverages {
   last10Average: number | null;
   totalCardsShot: number;
 }
+
+export interface RecentScore {
+  scoreId: string;
+  competitionId: string;
+  competitionName: string;
+  score: number;
+  scoredAt: string;
+}
