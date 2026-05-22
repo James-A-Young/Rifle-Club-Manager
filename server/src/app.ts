@@ -91,7 +91,14 @@ export function createApp() {
       directives: {
         scriptSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://www.googletagmanager.com','https://static.cloudflareinsights.com'],
         frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
-        connectSrc: ["'self'", 'https://*.analytics.google.com', 'https://cloudflareinsights.com'],
+        connectSrc: [
+          "'self'",
+          'https://*.analytics.google.com',
+          'https://*.google-analytics.com',
+          'https://www.googletagmanager.com',
+          'https://cloudflareinsights.com',
+        ],
+        imgSrc: ["'self'", 'data:', 'https://*.google-analytics.com', 'https://www.googletagmanager.com'],
       },
     },
   }));
