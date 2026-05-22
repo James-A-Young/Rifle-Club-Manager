@@ -450,7 +450,7 @@ export default function ClubSettingsSection({
             <input
               value={newAmmunitionTypeName}
               onChange={e => onNewAmmunitionTypeNameChange(e.target.value)}
-              placeholder="e.g. .22LR"
+              placeholder="e.g. Eley Club"
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -459,7 +459,7 @@ export default function ClubSettingsSection({
               type="number"
               min="0"
               step="0.01"
-              value={(newAmmunitionTypePricePence / 100).toFixed(2)}
+              value={(newAmmunitionTypePricePence / 100)}
               onChange={e => onNewAmmunitionTypePricePenceChange(Math.round(Number(e.target.value || '0') * 100))}
             />
           </div>
