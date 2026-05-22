@@ -137,6 +137,11 @@ export default function Profile() {
     setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
   }
 
+  async function toggleFavoriteFirearm(id: string, isFavorite: boolean) {
+    const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}/favorite`, { isFavorite });
+    setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
+  }
+
 
   async function handleViewDeclaration(declarationId?: string) {
     if (declarationId && currentDeclaration?.id !== declarationId) {
@@ -443,6 +448,7 @@ export default function Profile() {
         onAdd={addFirearm}
         onEdit={editFirearm}
         onRemove={removeFirearm}
+        onToggleFavorite={toggleFavoriteFirearm}
       />
     </>
   );

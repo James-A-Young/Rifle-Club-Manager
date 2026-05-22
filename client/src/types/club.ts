@@ -5,6 +5,7 @@ export interface SimpleFirearm {
   make: string;
   model: string;
   caliber: string;
+  isFavorite?: boolean;
 }
 
 export interface Firearm extends SimpleFirearm {

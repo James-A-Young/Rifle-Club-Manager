@@ -510,6 +510,12 @@ export default function ClubDashboard() {
     setFirearms(prev => prev.filter(f => f.id !== firearmId));
   }
 
+  async function toggleFavoriteFirearm(firearmId: string, isFavorite: boolean) {
+    if (!id) return;
+    const updated = await api.patch<Firearm>(`/api/clubs/${id}/firearms/${firearmId}/favorite`, { isFavorite });
+    setFirearms(prev => prev.map(f => (f.id === firearmId ? updated : f)));
+  }
+
   async function handleSignOut(visitId: string) {
     if (!id) return;
     setSignoutLoading(visitId);
@@ -1025,6 +1031,7 @@ export default function ClubDashboard() {
               onAdd={addFirearm}
               onEdit={editFirearm}
               onRemove={removeFirearm}
+              onToggleFavorite={toggleFavoriteFirearm}
             />
           )}
         </>

@@ -19,6 +19,7 @@ interface Props {
   onAdd: (data: FirearmData) => Promise<void>;
   onEdit: (firearmId: string, data: FirearmData) => Promise<void>;
   onRemove: (firearmId: string) => Promise<void>;
+  onToggleFavorite: (firearmId: string, isFavorite: boolean) => Promise<void>;
 }
 
 export default function ArmorySection({
@@ -31,11 +32,13 @@ export default function ArmorySection({
   onAdd,
   onEdit,
   onRemove,
+  onToggleFavorite,
 }: Props) {
   const [editingFirearmId, setEditingFirearmId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<FirearmData>({ make: '', model: '', caliber: '', serialNumber: '' });
   const [savingEdit, setSavingEdit] = useState(false);
   const [removingFirearmId, setRemovingFirearmId] = useState<string | null>(null);
+  const [updatingFavoriteFirearmId, setUpdatingFavoriteFirearmId] = useState<string | null>(null);
   const [tableError, setTableError] = useState('');
 
   function startEditing(firearm: Firearm) {
@@ -81,6 +84,18 @@ export default function ArmorySection({
     }
   }
 
+  async function handleToggleFavorite(firearm: Firearm) {
+    setTableError('');
+    setUpdatingFavoriteFirearmId(firearm.id);
+    try {
+      await onToggleFavorite(firearm.id, !Boolean(firearm.isFavorite));
+    } catch (err) {
+      setTableError(err instanceof Error ? err.message : 'Failed to update favorite');
+    } finally {
+      setUpdatingFavoriteFirearmId(null);
+    }
+  }
+
   return (
     <section>
       <div className="page-header">
@@ -98,6 +113,7 @@ export default function ArmorySection({
       <table>
         <thead>
           <tr>
+            <th>Favorite</th>
             <th>Make</th>
             <th>Model</th>
             <th>Caliber</th>
@@ -110,6 +126,7 @@ export default function ArmorySection({
             <tr key={f.id}>
               {editingFirearmId === f.id ? (
                 <>
+                  <td>{Boolean(f.isFavorite) ? 'Yes' : 'No'}</td>
                   <td>
                     <input
                       value={editingForm.make}
@@ -151,12 +168,22 @@ export default function ArmorySection({
                 </>
               ) : (
                 <>
+                  <td>{Boolean(f.isFavorite) ? 'Yes' : 'No'}</td>
                   <td>{f.make}</td>
                   <td>{f.model}</td>
                   <td>{f.caliber}</td>
                   <td>{f.serialNumber}</td>
                   <td>
                     <div className="actions">
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => void handleToggleFavorite(f)}
+                        disabled={updatingFavoriteFirearmId === f.id}
+                      >
+                        {updatingFavoriteFirearmId === f.id
+                          ? 'Saving…'
+                          : (Boolean(f.isFavorite) ? 'Unfavorite' : 'Favorite')}
+                      </button>
                       <button className="btn btn-secondary btn-sm" onClick={() => startEditing(f)}>
                         Edit
                       </button>
@@ -175,7 +202,7 @@ export default function ArmorySection({
           ))}
           {firearms.length === 0 && (
             <tr>
-              <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+              <td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                 {emptyMessage}
               </td>
             </tr>

@@ -873,6 +873,11 @@ const firearmSchema = z.object({
   caliber: z.string().min(1),
   serialNumber: z.string().min(1),
 });
+
+const firearmFavoriteSchema = z.object({
+  isFavorite: z.boolean(),
+});
+
 router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -882,6 +887,7 @@ router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
   }
   const firearms = await prisma.firearm.findMany({
     where: { clubId, ownerType: OwnerType.CLUB },
+    orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
 });
@@ -957,6 +963,37 @@ router.patch('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response)
   const updated = await prisma.firearm.update({
     where: { id: firearmId },
     data: parsed.data,
+  });
+
+  res.json(updated);
+});
+
+router.patch('/:id/firearms/:firearmId/favorite', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const firearmId = req.params.firearmId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = firearmFavoriteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { isFavorite: parsed.data.isFavorite },
   });
 
   res.json(updated);

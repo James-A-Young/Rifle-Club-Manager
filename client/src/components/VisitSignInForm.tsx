@@ -37,6 +37,7 @@ export interface VisitFormPayload {
 
 interface Props {
   clubFirearms: SimpleFirearm[];
+  myFirearms?: SimpleFirearm[];
   /** When true, guest-detail fields are hidden (authenticated user is signing in). */
   isAuthenticated: boolean;
   /** Called with the built payload. Should throw on API error so the form can stay populated. */
@@ -46,6 +47,7 @@ interface Props {
 
 export default function VisitSignInForm({
   clubFirearms,
+  myFirearms = [],
   isAuthenticated,
   onSubmit,
   submitLabel = 'Sign In',
@@ -56,6 +58,11 @@ export default function VisitSignInForm({
   const [guestDetails, setGuestDetails] = useState<GuestDetails>(EMPTY_GUEST_DETAILS);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFullDeclaration, setShowFullDeclaration] = useState(false);
+
+  const myFavoriteFirearms = myFirearms.filter(f => Boolean(f.isFavorite));
+  const clubFavoriteFirearms = clubFirearms.filter(f => Boolean(f.isFavorite));
+  const myArmoryFirearms = myFirearms.filter(f => !Boolean(f.isFavorite));
+  const clubArmoryFirearms = clubFirearms.filter(f => !Boolean(f.isFavorite));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,9 +188,36 @@ export default function VisitSignInForm({
         <label>Firearm Used (optional)</label>
         <select value={firearmUsedId} onChange={e => setFirearmUsedId(e.target.value)}>
           <option value="">None / Not applicable</option>
-          {clubFirearms.length > 0 && (
-            <optgroup label="Club Firearms">
-              {clubFirearms.map(f => (
+          {myFavoriteFirearms.length > 0 && (
+            <optgroup label="My Favorites">
+              {myFavoriteFirearms.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.make} {f.model} ({f.caliber})
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {clubFavoriteFirearms.length > 0 && (
+            <optgroup label="Club Favorites">
+              {clubFavoriteFirearms.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.make} {f.model} ({f.caliber})
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {myArmoryFirearms.length > 0 && (
+            <optgroup label="My Armory">
+              {myArmoryFirearms.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.make} {f.model} ({f.caliber})
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {clubArmoryFirearms.length > 0 && (
+            <optgroup label="Club Armory">
+              {clubArmoryFirearms.map(f => (
                 <option key={f.id} value={f.id}>
                   {f.make} {f.model} ({f.caliber})
                 </option>

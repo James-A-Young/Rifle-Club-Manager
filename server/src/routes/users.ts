@@ -276,8 +276,13 @@ router.post('/me/2fa/setup/verify', requireAuth, async (req: AuthRequest, res: R
 router.get('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearms = await prisma.firearm.findMany({
     where: { userId: req.user!.id, ownerType: OwnerType.USER },
+    orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
+});
+
+const firearmFavoriteSchema = z.object({
+  isFavorite: z.boolean(),
 });
 
 const firearmSchema = z.object({
@@ -335,6 +340,30 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
   const updated = await prisma.firearm.update({
     where: { id: firearmId },
     data: parsed.data,
+  });
+
+  res.json(updated);
+});
+
+router.patch('/me/firearms/:id/favorite', requireAuth, async (req: AuthRequest, res: Response) => {
+  const firearmId = req.params.id as string;
+  const parsed = firearmFavoriteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { isFavorite: parsed.data.isFavorite },
   });
 
   res.json(updated);

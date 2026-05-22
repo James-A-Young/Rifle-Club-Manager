@@ -167,6 +167,7 @@ model Firearm {
   model        String
   caliber      String
   serialNumber String
+  isFavorite   Boolean   @default(false)
   ownerType    OwnerType
   userId       String?
   clubId       String?
