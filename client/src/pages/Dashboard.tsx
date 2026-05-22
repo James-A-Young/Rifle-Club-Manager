@@ -308,12 +308,12 @@ export default function Dashboard() {
                     {passIssuingEnabled ? (
                       <button
                         type="button"
-                        className="btn btn-secondary btn-sm"
+                        className="wallet-pass-button"
                         onClick={() => void handleAddToWallet(club.id)}
                         disabled={isGeneratingPass}
                         title="Generate and add your membership pass to Google Wallet"
                       >
-                        <img src={addToGWallet} alt="Add to Google Wallet" />
+                        <img className="wallet-pass-image" src={addToGWallet} alt="Add to Google Wallet" />
                       </button>
                     ) : null}
                   </td>

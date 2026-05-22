@@ -137,6 +137,27 @@ input:focus, select:focus, textarea:focus {
 .btn-danger { background: var(--danger); color: var(--white); }
 .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.85rem; }
 
+.wallet-pass-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.wallet-pass-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wallet-pass-image {
+  display: block;
+  width: auto;
+  height: 44px;
+  max-width: 100%;
+}
+
 .alert {
   padding: 0.75rem 1rem;
   border-radius: var(--radius);
