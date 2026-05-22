@@ -1,6 +1,7 @@
 import { BackupDataset, GoogleDriveConnectionStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { prisma } from '../../prisma';
+import { googleWalletService } from '../googleWallet';
 import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport';
 import { buildMonthlyMemberDemographicsCsv } from '../exports/memberDemographicsExport';
 import { buildSalesLedgerCsvForMonth } from '../exports/salesLedgerExport';
@@ -282,7 +283,117 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, runner: (i
   await Promise.all(workers);
 }
 
+async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
+  try {
+    // Find all memberships with installed passes for this club
+    const membershipsWithPasses = await prisma.clubMembership.findMany({
+      where: {
+        clubId,
+        installedPassId: { not: null },
+        status: 'APPROVED',
+      },
+      include: {
+        user: { select: { id: true } },
+      },
+    });
+
+    if (membershipsWithPasses.length === 0) {
+      return;
+    }
+
+    // Fetch club settings once for all memberships
+    const settings = await prisma.clubSettings.findUnique({
+      where: { clubId },
+      select: {
+        secondaryColor: true,
+        logoUrl: true,
+      },
+    });
+
+    const currentYear = new Date().getFullYear();
+
+    for (const membership of membershipsWithPasses) {
+      const userId = membership.user.id;
+      const objectId = membership.installedPassId!;
+
+      try {
+        // Calculate updated stats for this membership
+        const visitCount = await prisma.visitLog.count({
+          where: {
+            userId,
+            clubId,
+            timeIn: {
+              gte: new Date(`${currentYear}-01-01`),
+              lte: new Date(`${currentYear}-12-31T23:59:59Z`),
+            },
+          },
+        });
+
+        const roundsThisYear = await prisma.ammunitionSale.aggregate({
+          where: {
+            buyerUserId: userId,
+            clubId,
+            createdAt: {
+              gte: new Date(`${currentYear}-01-01`),
+              lte: new Date(`${currentYear}-12-31T23:59:59Z`),
+            },
+          },
+          _sum: { quantity: true },
+        });
+
+        const averageScore = await prisma.score.aggregate({
+          where: { userId },
+          take: 10,
+          orderBy: { updatedAt: 'desc' },
+          _avg: { score: true },
+        });
+
+        // Refresh the pass on Google Wallet with updated stats and colors
+        await googleWalletService.refreshMembershipPass(
+          objectId,
+          visitCount,
+          roundsThisYear._sum.quantity || 0,
+          averageScore._avg.score || 0,
+          settings?.secondaryColor || '#374151',
+          settings?.logoUrl || undefined
+        );
+      } catch (error) {
+        logWarn('MEMBERSHIP_PASS_REFRESH_FAILED', {
+          clubId,
+          userId,
+          objectId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    logInfo('MEMBERSHIP_PASSES_REFRESHED', { clubId, count: membershipsWithPasses.length });
+  } catch (error) {
+    logWarn('MEMBERSHIP_PASS_REFRESH_CYCLE_FAILED', {
+      clubId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
 export async function runBackupCycle(): Promise<void> {
+  // Refresh all membership passes
+  try {
+    const allClubs = await prisma.club.findMany({
+      select: { id: true },
+    });
+    logInfo('MEMBERSHIP_PASS_REFRESH_CYCLE_STARTED', { clubs: allClubs.length });
+    await runWithConcurrency(allClubs, 5, async club => {
+      await refreshMembershipPassesForClub(club.id);
+    });
+    logInfo('MEMBERSHIP_PASS_REFRESH_CYCLE_FINISHED', { clubs: allClubs.length });
+  } catch (error) {
+    logWarn('MEMBERSHIP_PASS_REFRESH_CYCLE_ERROR', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+
+  // Run backup cycle for clubs with active backup connections
   const candidates = await prisma.googleDriveConnection.findMany({
     where: { status: GoogleDriveConnectionStatus.ACTIVE },
     select: { clubId: true },
