@@ -78,7 +78,13 @@ export async function buildRawSeasonCompetitionResultsCsv(params: {
     },
   });
 
-  const sorted = [...scoreRows].sort(compareRows);
+  // Filter to rows that have the required relations (old-system scores only)
+  const validRows = scoreRows.filter(
+    (r): r is typeof r & { competition: { name: string }; round: { roundNumber: number; dueDate: Date }; user: { name: string; email: string } } =>
+      r.competition != null && r.round != null && r.user != null,
+  );
+
+  const sorted = [...validRows].sort(compareRows);
   const rows = sorted.map(row => rowToCsv(season.name, row));
   return {
     csv: [COMPETITION_RESULTS_HEADERS.map(h => csvCell(h)).join(','), ...rows].join('\n'),
@@ -109,7 +115,16 @@ export async function buildMonthlyCompetitionResultsCsv(
     },
   });
 
-  const sorted = [...rows].sort((a, b) => {
+  // Filter to rows that have all required relations (old-system scores only)
+  const validRows = rows.filter(
+    (r): r is typeof r & {
+      competition: { name: string; season: { name: string } };
+      round: { roundNumber: number; dueDate: Date };
+      user: { name: string; email: string };
+    } => r.competition != null && r.round != null && r.user != null,
+  );
+
+  const sorted = [...validRows].sort((a, b) => {
     const bySeason = a.competition.season.name.localeCompare(b.competition.season.name);
     if (bySeason !== 0) return bySeason;
     const byComp = a.competition.name.localeCompare(b.competition.name);

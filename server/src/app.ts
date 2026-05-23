@@ -14,6 +14,7 @@ import signInLinksRouter from './routes/signInLinks';
 import ammunitionRouter from './routes/ammunition';
 import cashboxRouter from './routes/cashbox';
 import scoringRouter from './routes/scoring';
+import competitionsRouter from './routes/competitions';
 import section21DeclarationRouter from './routes/section21Declaration';
 import walletWebhooksRouter from './routes/walletWebhooks';
 import { errorHandler } from './middleware/error';
@@ -149,6 +150,7 @@ export function createApp() {
   app.use('/api/cashbox', cashboxRouter);
   app.use('/api/webhooks', walletWebhooksRouter);
   app.use('/api', scoringRouter);
+  app.use('/api', competitionsRouter);
   app.use('/api', section21DeclarationRouter);
 
   if (process.env.NODE_ENV === 'production') {

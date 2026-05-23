@@ -23,6 +23,11 @@ import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
 import ClubPublicProfile from './pages/ClubPublicProfile';
+import CompetitionWizard from './pages/CompetitionWizard';
+import CompetitionDivisionSetup from './pages/CompetitionDivisionSetup';
+import CompetitionMatchScoring from './pages/CompetitionMatchScoring';
+import CompetitionDetail from './pages/CompetitionDetail';
+import CompetitionsList from './pages/CompetitionsList';
 import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
 import { trackPageView } from './analytics';
 
@@ -112,6 +117,11 @@ function AppRoutes() {
           <Route path="/clubs/:id/cashbox" element={<ProtectedRoute><Cashbox /></ProtectedRoute>} />
           <Route path="/clubs/:id/scores-report" element={<ProtectedRoute><ScoresReport /></ProtectedRoute>} />
           <Route path="/clubs/:id/members/:userId" element={<ProtectedRoute><ClubMemberProfile /></ProtectedRoute>} />
+          <Route path="/competitions" element={<ProtectedRoute><CompetitionsList /></ProtectedRoute>} />
+          <Route path="/competitions/new" element={<ProtectedRoute><CompetitionWizard /></ProtectedRoute>} />
+          <Route path="/competitions/:id" element={<ProtectedRoute><CompetitionDetail /></ProtectedRoute>} />
+          <Route path="/competitions/:id/divisions" element={<ProtectedRoute><CompetitionDivisionSetup /></ProtectedRoute>} />
+          <Route path="/competitions/:id/matches/:matchId" element={<ProtectedRoute><CompetitionMatchScoring /></ProtectedRoute>} />
           <Route path="/invites/:token/accept" element={<ProtectedRoute><InviteAccept /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/sign-in/:token" element={<SignIn />} />

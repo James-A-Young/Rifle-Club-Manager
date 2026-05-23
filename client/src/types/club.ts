@@ -363,6 +363,105 @@ export interface ScoringAverages {
   totalCardsShot: number;
 }
 
+// ---------------------------------------------------------------------------
+// Competition Event feature types (League / Knockout)
+// ---------------------------------------------------------------------------
+
+export type CompetitionFormat = 'LEAGUE' | 'KNOCKOUT';
+export type CompetitionType = 'TEAM' | 'INDIVIDUAL';
+export type AdminRole = 'OWNER' | 'EDITOR';
+
+export interface CompetitionEventSummary {
+  id: string;
+  name: string;
+  format: CompetitionFormat;
+  type: CompetitionType;
+  owningClubId: string | null;
+  owningUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  admins: { role: AdminRole }[];
+  _count: { divisions: number; rounds: number };
+}
+
+export interface CompetitionParticipant {
+  id: string;
+  divisionId: string;
+  clubId: string | null;
+  userId: string | null;
+  displayName: string;
+  declaredAverage: number;
+  isBogey: boolean;
+  bogeyScore: number | null;
+  club?: { id: string; name: string } | null;
+  user?: { id: string; name: string; email: string } | null;
+}
+
+export interface CompetitionDivision {
+  id: string;
+  competitionId: string;
+  name: string;
+  participants: CompetitionParticipant[];
+}
+
+export interface CompetitionRound {
+  id: string;
+  competitionId: string;
+  name: string;
+  deadline: string;
+}
+
+export interface CompetitionMatchScore {
+  id: string;
+  matchId: string;
+  userId: string | null;
+  unregisteredName: string | null;
+  rawScore: number;
+  cardNumber: number;
+  submittedByClubId: string | null;
+  user?: { id: string; name: string; email: string } | null;
+}
+
+export interface CompetitionMatch {
+  id: string;
+  roundId: string;
+  homeParticipantId: string;
+  awayParticipantId: string;
+  homeParticipant: CompetitionParticipant;
+  awayParticipant: CompetitionParticipant;
+  scores: CompetitionMatchScore[];
+  round?: { id: string; name: string; deadline: string };
+}
+
+export interface CompetitionEventDetail {
+  id: string;
+  name: string;
+  format: CompetitionFormat;
+  type: CompetitionType;
+  owningClubId: string | null;
+  owningUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  admins: Array<{ userId: string; role: AdminRole; user: { id: string; name: string; email: string } }>;
+  divisions: CompetitionDivision[];
+  rounds: Array<CompetitionRound & { matches: CompetitionMatch[] }>;
+}
+
+export interface SuggestedDivisionEntry {
+  id?: string;
+  displayName: string;
+  declaredAverage: number;
+  clubId?: string | null;
+  userId?: string | null;
+  isBogey?: boolean;
+  bogeyScore?: number | null;
+}
+
+export interface SuggestedDivision {
+  name: string;
+  entries: SuggestedDivisionEntry[];
+}
+
 export interface RecentScore {
   scoreId: string;
   competitionId: string;

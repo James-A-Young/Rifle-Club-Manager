@@ -34,6 +34,21 @@ enum BackupDataset {
   MEMBER_DEMOGRAPHICS
 }
 
+enum CompetitionFormat {
+  LEAGUE
+  KNOCKOUT
+}
+
+enum CompetitionType {
+  TEAM
+  INDIVIDUAL
+}
+
+enum AdminRole {
+  OWNER
+  EDITOR
+}
+
 enum GoogleDriveConnectionStatus {
   ACTIVE
   DISCONNECTED
@@ -90,6 +105,9 @@ model User {
   competitionEntries CompetitionEntry[]
   scores             Score[]
   passwordResetTokens PasswordResetToken[]
+  ownedCompetitionEvents CompetitionEvent[]
+  competitionAdminRoles  CompetitionAdmin[]
+  competitionParticipants CompetitionParticipant[]
   twoFactorDisableTokens TwoFactorDisableToken[]
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
@@ -124,6 +142,9 @@ model Club {
   settings         ClubSettings?
   seasons          Season[]
   competitions     Competition[]
+  ownedCompetitionEvents CompetitionEvent[]
+  competitionParticipants CompetitionParticipant[]
+  competitionScoresSubmitted Score[] @relation("ScoreSubmittedByClub")
   googleDriveConnection GoogleDriveConnection?
   backupJobStates  BackupJobState[]
   backupRuns       BackupRun[]
@@ -556,22 +577,28 @@ model CompetitionEntry {
 }
 
 model Score {
-  id            String   @id @default(cuid())
-  competitionId String
-  roundId       String
-  userId        String
-  cardNumber    Int
-  score         Int?
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(cuid())
+  competitionId     String?
+  roundId           String?
+  matchId           String?
+  userId            String?
+  cardNumber        Int
+  score             Int?
+  rawScore          Int?
+  unregisteredName  String?
+  submittedByClubId String?
+  updatedAt         DateTime @updatedAt
 
-  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  round       Round       @relation(fields: [roundId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competition       Competition?     @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  round             Round?           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  match             CompetitionMatch? @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user              User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submittedByClub   Club?            @relation("ScoreSubmittedByClub", fields: [submittedByClubId], references: [id], onDelete: SetNull)
 
-  @@unique([roundId, userId, cardNumber])
   @@index([userId])
   @@index([roundId])
   @@index([competitionId])
+  @@index([matchId])
 }
 
 model AmmunitionStockInput {
@@ -590,6 +617,107 @@ model AmmunitionStockInput {
   inputBy        User           @relation(fields: [inputByUserId], references: [id], onDelete: Restrict)
 
   @@index([clubId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Competition Event Feature (League / Knockout competition management)
+// ---------------------------------------------------------------------------
+
+model CompetitionEvent {
+  id             String            @id @default(cuid())
+  name           String
+  format         CompetitionFormat
+  type           CompetitionType
+  owningClubId   String?
+  owningUserId   String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  owningClub     Club?                  @relation(fields: [owningClubId], references: [id], onDelete: SetNull)
+  owningUser     User?                  @relation(fields: [owningUserId], references: [id], onDelete: SetNull)
+  admins         CompetitionAdmin[]
+  divisions      CompetitionDivision[]
+  rounds         CompetitionRound[]
+
+  @@index([owningClubId])
+  @@index([owningUserId])
+}
+
+model CompetitionAdmin {
+  id            String      @id @default(cuid())
+  competitionId String
+  userId        String
+  role          AdminRole
+
+  competition   CompetitionEvent @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, userId])
+  @@index([userId])
+}
+
+model CompetitionDivision {
+  id            String   @id @default(cuid())
+  competitionId String
+  name          String
+  createdAt     DateTime @default(now())
+
+  competition   CompetitionEvent         @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  participants  CompetitionParticipant[]
+
+  @@index([competitionId])
+}
+
+model CompetitionParticipant {
+  id               String   @id @default(cuid())
+  divisionId       String
+  clubId           String?
+  userId           String?
+  displayName      String
+  declaredAverage  Float    @default(0)
+  isBogey          Boolean  @default(false)
+  bogeyScore       Int?
+  createdAt        DateTime @default(now())
+
+  division         CompetitionDivision    @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+  club             Club?                  @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  user             User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  homeMatches      CompetitionMatch[]     @relation("MatchHomeParticipant")
+  awayMatches      CompetitionMatch[]     @relation("MatchAwayParticipant")
+
+  @@index([divisionId])
+  @@index([clubId])
+  @@index([userId])
+}
+
+model CompetitionRound {
+  id            String   @id @default(cuid())
+  competitionId String
+  name          String
+  deadline      DateTime
+  createdAt     DateTime @default(now())
+
+  competition   CompetitionEvent   @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  matches       CompetitionMatch[]
+
+  @@index([competitionId])
+}
+
+model CompetitionMatch {
+  id                  String   @id @default(cuid())
+  roundId             String
+  homeParticipantId   String
+  awayParticipantId   String
+  createdAt           DateTime @default(now())
+
+  round               CompetitionRound       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  homeParticipant     CompetitionParticipant @relation("MatchHomeParticipant", fields: [homeParticipantId], references: [id], onDelete: Restrict)
+  awayParticipant     CompetitionParticipant @relation("MatchAwayParticipant", fields: [awayParticipantId], references: [id], onDelete: Restrict)
+  scores              Score[]
+
+  @@index([roundId])
+  @@index([homeParticipantId])
+  @@index([awayParticipantId])
 }
 
 model Section21Declaration {
