@@ -21,7 +21,7 @@
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
+    "express": "^4.22.2",
     "express-rate-limit": "^7.4.1",
     "google-auth-library": "^10.6.2",
     "googleapis": "^154.0.0",
