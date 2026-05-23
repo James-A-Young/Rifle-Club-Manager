@@ -4,10 +4,10 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { MembershipRole, MembershipStatus } from '../generated/client.js';
-import { prisma } from '../prisma';
-import { formatZodError } from '../utils/zodError';
-import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
-import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
+import { prisma } from '../prisma.js';
+import { formatZodError } from '../utils/zodError.js';
+import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt.js';
+import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth.js';
 import {
   auditAuthLoginFailed,
   auditAuthLoginSuccess,
@@ -15,12 +15,12 @@ import {
   auditAuthPasswordResetSuccess,
   auditAuthPasswordResetTokenInvalid,
   auditAuthRegisterSuccess,
-} from '../middleware/auditLog';
-import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile';
-import { emailService, sanitizeUserAgent } from '../services/email';
-import { getDeclarationStatus } from '../services/section21Declaration';
-import { validatePasswordSecurity } from '../services/passwordSecurity';
-import { decryptStoredTwoFactorSecret, verifyTwoFactorCode } from '../services/twoFactor';
+} from '../middleware/auditLog.js';
+import { isTurnstileEnabled, verifyTurnstileToken } from '../utils/turnstile.js';
+import { emailService, sanitizeUserAgent } from '../services/email.js';
+import { getDeclarationStatus } from '../services/section21Declaration.js';
+import { validatePasswordSecurity } from '../services/passwordSecurity.js';
+import { decryptStoredTwoFactorSecret, verifyTwoFactorCode } from '../services/twoFactor.js';
 
 const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;

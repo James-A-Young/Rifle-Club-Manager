@@ -1,10 +1,10 @@
 import { Router, Response } from 'express';
 import { CashBoxTransactionReason } from '../generated/client.js';
 import { z } from 'zod';
-import { prisma } from '../prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
-import { ensureAdminForClub } from '../utils/clubAccess';
-import { formatZodError } from '../utils/zodError';
+import { prisma } from '../prisma.js';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { ensureAdminForClub } from '../utils/clubAccess.js';
+import { formatZodError } from '../utils/zodError.js';
 
 const router = Router();
 

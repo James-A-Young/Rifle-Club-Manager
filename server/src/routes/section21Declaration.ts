@@ -1,9 +1,9 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { requireAuth, AuthRequest } from '../middleware/auth';
-import { formatZodError } from '../utils/zodError';
-import { ensureAdminForClub } from '../utils/clubAccess';
-import { prisma } from '../prisma';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
+import { formatZodError } from '../utils/zodError.js';
+import { ensureAdminForClub } from '../utils/clubAccess.js';
+import { prisma } from '../prisma.js';
 import {
   submitDeclaration,
   getCurrentDeclaration,
@@ -12,7 +12,7 @@ import {
   getDeclarationForAdminView,
   generateDeclarationText,
   deriveDeclarationStatusFromDueDate,
-} from '../services/section21Declaration';
+} from '../services/section21Declaration.js';
 
 const router = Router();
 

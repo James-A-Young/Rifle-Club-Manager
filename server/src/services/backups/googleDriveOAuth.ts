@@ -1,4 +1,4 @@
-import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig';
+import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig.js';
 
 const GOOGLE_OAUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';

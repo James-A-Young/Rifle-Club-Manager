@@ -1,5 +1,5 @@
 import { google, drive_v3 } from 'googleapis';
-import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig';
+import { getGoogleDriveOAuthConfig } from './googleDriveOAuthConfig.js';
 
 function qEscape(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");

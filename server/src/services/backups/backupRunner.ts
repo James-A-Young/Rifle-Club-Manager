@@ -1,20 +1,20 @@
 import { BackupDataset, GoogleDriveConnectionStatus } from '../../generated/client.js';
 import { createHash } from 'crypto';
-import { prisma } from '../../prisma';
-import { googleWalletService } from '../googleWallet';
-import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport';
-import { buildMonthlyMemberDemographicsCsv } from '../exports/memberDemographicsExport';
-import { buildSalesLedgerCsvForMonth } from '../exports/salesLedgerExport';
-import { buildSignInHistoryCsvForMonth } from '../exports/signInHistoryExport';
-import { decryptSecret } from './crypto';
-import { GoogleDriveBackupClient } from './googleDriveClient';
+import { prisma } from '../../prisma.js';
+import { googleWalletService } from '../googleWallet.js';
+import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport.js';
+import { buildMonthlyMemberDemographicsCsv } from '../exports/memberDemographicsExport.js';
+import { buildSalesLedgerCsvForMonth } from '../exports/salesLedgerExport.js';
+import { buildSignInHistoryCsvForMonth } from '../exports/signInHistoryExport.js';
+import { decryptSecret } from './crypto.js';
+import { GoogleDriveBackupClient } from './googleDriveClient.js';
 import {
   buildBackupFileName,
   fingerprintCsv,
   listMonthsBetweenInclusive,
   monthStartUtc,
   nextMonthStartUtc,
-} from './utils';
+} from './utils.js';
 
 type DatasetConfig = {
   dataset: BackupDataset;

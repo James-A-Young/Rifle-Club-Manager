@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { jwtSecret } from '../config/jwt';
+import { jwtSecret } from '../config/jwt.js';
 
 export interface AuthRequest extends Request {
   user?: { id: string; email: string };

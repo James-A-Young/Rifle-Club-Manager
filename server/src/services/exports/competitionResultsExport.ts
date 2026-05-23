@@ -1,5 +1,5 @@
-import { prisma } from '../../prisma';
-import { csvCell } from './signInHistoryExport';
+import { prisma } from '../../prisma.js';
+import { csvCell } from './signInHistoryExport.js';
 
 export const COMPETITION_RESULTS_HEADERS = [
   'Season',

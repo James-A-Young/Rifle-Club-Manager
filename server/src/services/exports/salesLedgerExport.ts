@@ -1,7 +1,7 @@
 import { Prisma } from '../../generated/client.js';
 import { Response } from 'express';
-import { prisma } from '../../prisma';
-import { csvCell } from './signInHistoryExport';
+import { prisma } from '../../prisma.js';
+import { csvCell } from './signInHistoryExport.js';
 
 const CSV_BATCH_SIZE = 1000;
 

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { MembershipStatus } from '../generated/client.js';
-import { prisma } from '../prisma';
-import { getGoogleWalletService } from '../services/googleWallet';
+import { prisma } from '../prisma.js';
+import { getGoogleWalletService } from '../services/googleWallet.js';
 
 const router = Router();
 

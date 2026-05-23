@@ -5,19 +5,19 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 
-import authRouter from './routes/auth';
-import usersRouter from './routes/users';
-import clubsRouter from './routes/clubs';
-import firearmsRouter from './routes/firearms';
-import visitsRouter from './routes/visits';
-import signInLinksRouter from './routes/signInLinks';
-import ammunitionRouter from './routes/ammunition';
-import cashboxRouter from './routes/cashbox';
-import scoringRouter from './routes/scoring';
-import section21DeclarationRouter from './routes/section21Declaration';
-import walletWebhooksRouter from './routes/walletWebhooks';
-import { errorHandler } from './middleware/error';
-import { AUTH_COOKIE_NAME } from './middleware/auth';
+import authRouter from './routes/auth.js';
+import usersRouter from './routes/users.js';
+import clubsRouter from './routes/clubs.js';
+import firearmsRouter from './routes/firearms.js';
+import visitsRouter from './routes/visits.js';
+import signInLinksRouter from './routes/signInLinks.js';
+import ammunitionRouter from './routes/ammunition.js';
+import cashboxRouter from './routes/cashbox.js';
+import scoringRouter from './routes/scoring.js';
+import section21DeclarationRouter from './routes/section21Declaration.js';
+import walletWebhooksRouter from './routes/walletWebhooks.js';
+import { errorHandler } from './middleware/error.js';
+import { AUTH_COOKIE_NAME } from './middleware/auth.js';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 

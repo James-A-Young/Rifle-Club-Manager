@@ -1,5 +1,5 @@
 import { MembershipRole, MembershipStatus } from '../generated/client.js';
-import { prisma } from '../prisma';
+import { prisma } from '../prisma.js';
 
 export async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {
   const membership = await prisma.clubMembership.findFirst({

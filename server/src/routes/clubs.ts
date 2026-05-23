@@ -1,28 +1,28 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
 import { z } from 'zod';
-import { prisma } from '../prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { prisma } from '../prisma.js';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, OwnerType } from '../generated/client.js';
-import { formatZodError } from '../utils/zodError';
+import { formatZodError } from '../utils/zodError.js';
 import {
   auditFirearmDeleteDenied,
   auditMemberStatusChange,
   auditMemberRoleChange,
-} from '../middleware/auditLog';
-import { emailService } from '../services/email';
-import { ensureAdminForClub } from '../utils/clubAccess';
-import { decryptSecret, encryptSecret } from '../services/backups/crypto';
+} from '../middleware/auditLog.js';
+import { emailService } from '../services/email.js';
+import { ensureAdminForClub } from '../utils/clubAccess.js';
+import { decryptSecret, encryptSecret } from '../services/backups/crypto.js';
 import {
   assertGoogleDriveOAuthConfigured,
   buildGoogleDriveAuthUrl,
   exchangeGoogleOAuthCode,
   revokeGoogleToken,
-} from '../services/backups/googleDriveOAuth';
-import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
-import { buildMemberDemographicsCsv } from '../services/exports/memberDemographicsExport';
-import { getUserProfileHistorySince } from '../services/profileHistory';
-import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration';
+} from '../services/backups/googleDriveOAuth.js';
+import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient.js';
+import { buildMemberDemographicsCsv } from '../services/exports/memberDemographicsExport.js';
+import { getUserProfileHistorySince } from '../services/profileHistory.js';
+import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration.js';
 
 const router = Router();
 

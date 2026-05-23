@@ -16,7 +16,7 @@ RUN npm ci
 FROM deps AS builder
 COPY server ./server
 COPY client ./client
-RUN npm run db:generate --workspace=server
+RUN DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres npm run db:generate --workspace=server
 RUN npm run build
 
 # Stage 4: Install production runtime deps for server workspace
@@ -30,22 +30,24 @@ RUN npm ci --omit=dev --workspace=server \
 # Stage 5: Prisma migrator
 FROM base AS migrator
 ENV NODE_ENV=production
+WORKDIR /app/server
 
-COPY package*.json ./
-COPY server/package*.json ./server/
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/server/prisma ./server/prisma
+COPY package*.json /app/
+COPY server/package*.json ./
+COPY server/prisma.config.ts ./
+COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=builder /app/server/prisma ./prisma
 
-ENTRYPOINT ["npx", "prisma", "migrate", "deploy", "--schema=server/prisma/schema.prisma"]
+ENTRYPOINT ["npx", "prisma", "migrate", "deploy"]
 
 # Stage 6: Distroless production runtime
 FROM gcr.io/distroless/nodejs24-debian12 AS app
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NODE_OPTIONS=--experimental-specifier-resolution=node
 
 COPY --from=production-deps /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/server/dist ./server/dist
 COPY --from=builder /app/client/dist ./public
@@ -58,9 +60,9 @@ CMD ["server/dist/index.js"]
 FROM gcr.io/distroless/nodejs24-debian12 AS backup-worker
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--experimental-specifier-resolution=node
 
 COPY --from=production-deps /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/server/dist ./server/dist
 

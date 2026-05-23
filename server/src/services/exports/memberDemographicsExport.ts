@@ -1,7 +1,7 @@
 import { MembershipStatus } from '../../generated/client.js';
-import { prisma } from '../../prisma';
-import { deriveDeclarationStatusFromDueDate } from '../section21Declaration';
-import { csvCell } from './signInHistoryExport';
+import { prisma } from '../../prisma.js';
+import { deriveDeclarationStatusFromDueDate } from '../section21Declaration.js';
+import { csvCell } from './signInHistoryExport.js';
 
 export const MEMBER_DEMOGRAPHICS_HEADERS = [
   'memberId',

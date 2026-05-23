@@ -1,5 +1,5 @@
 import { Prisma } from '../generated/client.js';
-import { prisma } from '../prisma';
+import { prisma } from '../prisma.js';
 
 export type TrackedProfile = {
   name: string;

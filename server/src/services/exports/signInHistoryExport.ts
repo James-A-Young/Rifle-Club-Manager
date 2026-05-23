@@ -1,6 +1,6 @@
 import { Prisma } from '../../generated/client.js';
 import { Response } from 'express';
-import { prisma } from '../../prisma';
+import { prisma } from '../../prisma.js';
 
 const CSV_BATCH_SIZE = 1000;
 

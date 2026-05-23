@@ -1,15 +1,15 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { prisma } from '../prisma';
-import { requireAuth, AuthRequest, attachOptionalAuth } from '../middleware/auth';
+import { prisma } from '../prisma.js';
+import { requireAuth, AuthRequest, attachOptionalAuth } from '../middleware/auth.js';
 import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '../generated/client.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { formatZodError } from '../utils/zodError';
-import { jwtSecret } from '../config/jwt';
-import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
-import { ensureAdminForClub } from '../utils/clubAccess';
-import { streamSignInHistoryCsv } from '../services/exports/signInHistoryExport';
+import { formatZodError } from '../utils/zodError.js';
+import { jwtSecret } from '../config/jwt.js';
+import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog.js';
+import { ensureAdminForClub } from '../utils/clubAccess.js';
+import { streamSignInHistoryCsv } from '../services/exports/signInHistoryExport.js';
 
 const router = Router();
 

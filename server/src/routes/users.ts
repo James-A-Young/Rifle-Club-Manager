@@ -1,18 +1,18 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { prisma } from '../prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { prisma } from '../prisma.js';
+import { requireAuth, AuthRequest } from '../middleware/auth.js';
 import { OwnerType, MembershipStatus } from '../generated/client.js';
-import { formatZodError } from '../utils/zodError';
-import { googleWalletService, CreatePassParams } from '../services/googleWallet';
-import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
-import { getDeclarationStatus } from '../services/section21Declaration';
+import { formatZodError } from '../utils/zodError.js';
+import { googleWalletService, CreatePassParams } from '../services/googleWallet.js';
+import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory.js';
+import { getDeclarationStatus } from '../services/section21Declaration.js';
 import {
   decryptStoredTwoFactorSecret,
   encryptStoredTwoFactorSecret,
   generateTwoFactorSecret,
   verifyTwoFactorCode,
-} from '../services/twoFactor';
+} from '../services/twoFactor.js';
 
 const router = Router();
 

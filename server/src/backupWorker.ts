@@ -1,4 +1,4 @@
-import { runBackupCycle, msUntilNextNightlyRunUtc } from './services/backups/backupRunner';
+import { runBackupCycle, msUntilNextNightlyRunUtc } from './services/backups/backupRunner.js';
 
 function log(event: string, details: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...details }));
