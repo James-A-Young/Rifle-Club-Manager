@@ -460,6 +460,8 @@ export interface SuggestedDivisionEntry {
 export interface SuggestedDivision {
   name: string;
   entries: SuggestedDivisionEntry[];
+}
+
 export interface RecentScore {
   scoreId: string;
   competitionId: string;

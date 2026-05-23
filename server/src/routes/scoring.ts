@@ -925,7 +925,7 @@ router.get('/clubs/:clubId/scoring/mine/recent', async (req: AuthRequest, res: R
   res.json(scores.map(s => ({
     scoreId: s.id,
     competitionId: s.competitionId,
-    competitionName: s.competition.name,
+    competitionName: s.competition?.name,
     score: s.score,
     scoredAt: s.updatedAt,
   })));

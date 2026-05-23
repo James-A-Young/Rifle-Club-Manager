@@ -718,6 +718,8 @@ model CompetitionMatch {
   @@index([roundId])
   @@index([homeParticipantId])
   @@index([awayParticipantId])
+}
+
 model Section21Declaration {
   id                  String   @id @default(cuid())
   userId              String
