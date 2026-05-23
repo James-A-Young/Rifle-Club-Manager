@@ -1,4 +1,4 @@
-import { MembershipStatus } from '@prisma/client';
+import { MembershipStatus } from '../../generated/client.js';
 import { prisma } from '../../prisma';
 import { deriveDeclarationStatusFromDueDate } from '../section21Declaration';
 import { csvCell } from './signInHistoryExport';

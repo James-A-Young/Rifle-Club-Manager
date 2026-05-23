@@ -1,4 +1,4 @@
-import { MembershipRole, MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus } from '../generated/client.js';
 import { prisma } from '../prisma';
 
 export async function ensureAdminForClub(userId: string, clubId: string): Promise<boolean> {

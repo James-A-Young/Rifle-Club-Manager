@@ -1,4 +1,4 @@
-import { MembershipRole } from '@prisma/client';
+import { MembershipRole } from '../generated/client.js';
 import { Resend } from 'resend';
 
 const DEFAULT_APP_ORIGIN = 'http://localhost:5173';

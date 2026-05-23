@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, OwnerType } from '../generated/client.js';
 import { formatZodError } from '../utils/zodError';
 import {
   auditFirearmDeleteDenied,

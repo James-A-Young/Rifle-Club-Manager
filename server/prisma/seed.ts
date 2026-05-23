@@ -1,7 +1,15 @@
-import { PrismaClient, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import "dotenv/config";
+import { PrismaClient, MembershipStatus, MembershipRole, OwnerType } from "../src/generated/client.js";
+import { PrismaPg } from "@prisma/adapter-pg";
+import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const prisma = new PrismaClient({
+  adapter,
+});
 
 async function main() {
   const ownerPasswordHash = await bcrypt.hash('Password123!', 10);

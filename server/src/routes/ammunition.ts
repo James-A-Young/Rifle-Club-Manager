@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { CashBoxTransactionReason, MembershipStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { CashBoxTransactionReason, MembershipStatus, PaymentMethod, Prisma } from '../generated/client.js';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';

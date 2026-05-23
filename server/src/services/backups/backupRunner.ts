@@ -1,4 +1,4 @@
-import { BackupDataset, GoogleDriveConnectionStatus } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus } from '../../generated/client.js';
 import { createHash } from 'crypto';
 import { prisma } from '../../prisma';
 import { googleWalletService } from '../googleWallet';

@@ -9,7 +9,7 @@ import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditSignInLinkInvalid } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
-import { OwnerType } from '@prisma/client';
+import { OwnerType } from '../generated/client.js';
 
 const router = Router();
 

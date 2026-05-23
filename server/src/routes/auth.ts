@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { MembershipRole, MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus } from '../generated/client.js';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';

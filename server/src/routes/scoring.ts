@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { MembershipStatus, Prisma } from '@prisma/client';
+import { MembershipStatus, Prisma } from '../generated/client.js';
 import { formatZodError } from '../utils/zodError';
 import { ensureAdminForClub, ensureMemberOfClub } from '../utils/clubAccess';
 import { buildRawSeasonCompetitionResultsCsv } from '../services/exports/competitionResultsExport';

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { OwnerType, MembershipStatus } from '@prisma/client';
+import { OwnerType, MembershipStatus } from '../generated/client.js';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';

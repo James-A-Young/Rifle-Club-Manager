@@ -10,3 +10,4 @@ public/
 server/coverage/
 googlecreds.json
 gdrivecreds.json
+server/src/generated/

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest, attachOptionalAuth } from '../middleware/auth';
-import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '@prisma/client';
+import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '../generated/client.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';

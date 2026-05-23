@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { MembershipStatus } from '@prisma/client';
+import { MembershipStatus } from '../generated/client.js';
 import { prisma } from '../prisma';
 import { getGoogleWalletService } from '../services/googleWallet';
 

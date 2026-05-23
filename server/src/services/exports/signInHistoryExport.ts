@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../generated/client.js';
 import { Response } from 'express';
 import { prisma } from '../../prisma';
 
