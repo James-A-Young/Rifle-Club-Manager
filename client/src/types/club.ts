@@ -5,6 +5,7 @@ export interface SimpleFirearm {
   make: string;
   model: string;
   caliber: string;
+  isFavorite?: boolean;
 }
 
 export interface Firearm extends SimpleFirearm {
@@ -29,6 +30,7 @@ export interface MemberUser {
   address?: string;
   placeOfBirth?: string;
   dateOfBirth?: string;
+  phoneNumber?: string;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
@@ -41,6 +43,7 @@ export interface Member {
   userId: string;
   status: string;
   role: string;
+  section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
   user: MemberUser;
 }
 
@@ -76,6 +79,7 @@ export interface ClubSettings {
   ammoSalesLookbackDays: number;
   ammoDefaultLeadTimeDays: number;
   ammoDefaultSafetyStockDays: number;
+  ammoDefaultSalesSafeId?: string | null;
 }
 
 export interface BackupDatasetRunStatus {
@@ -91,11 +95,26 @@ export interface GoogleDriveBackupStatus {
     linked: boolean;
     status: string;
     driveFolderId: string | null;
+    driveFolderName: string | null;
     linkedAt: string | null;
     disconnectedAt: string | null;
     updatedAt: string | null;
   };
   latestByDataset: Record<string, BackupDatasetRunStatus | null>;
+}
+
+export interface GoogleDriveFolderItem {
+  id: string;
+  name: string;
+}
+
+export interface GoogleDriveFolderListResponse {
+  currentFolder: {
+    id: string;
+    name: string;
+    parentId: string | null;
+  } | null;
+  folders: GoogleDriveFolderItem[];
 }
 
 export interface AmmunitionTypePriceHistory {
@@ -441,4 +460,10 @@ export interface SuggestedDivisionEntry {
 export interface SuggestedDivision {
   name: string;
   entries: SuggestedDivisionEntry[];
+export interface RecentScore {
+  scoreId: string;
+  competitionId: string;
+  competitionName: string;
+  score: number;
+  scoredAt: string;
 }

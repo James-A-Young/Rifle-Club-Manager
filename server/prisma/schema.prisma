@@ -31,6 +31,7 @@ enum BackupDataset {
   SIGN_IN_HISTORY
   SALES_LEDGER
   COMPETITION_RESULTS
+  MEMBER_DEMOGRAPHICS
 }
 
 enum CompetitionFormat {
@@ -83,6 +84,12 @@ model User {
   firearmCertificateExpiry DateTime?
   shotgunCertificateNumber String?
   shotgunCertificateExpiry DateTime?
+  phoneNumber     String   @default("00000000000")
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  twoFactorPendingSecret String?
+  twoFactorPendingExpiresAt DateTime?
+  section21DeclarationSignedAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -101,10 +108,12 @@ model User {
   ownedCompetitionEvents CompetitionEvent[]
   competitionAdminRoles  CompetitionAdmin[]
   competitionParticipants CompetitionParticipant[]
+  twoFactorDisableTokens TwoFactorDisableToken[]
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
   profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
   cashBoxTransactionsCreated CashBoxTransaction[] @relation("CashBoxTransactionCreatedBy")
+  section21Declarations Section21Declaration[]
 }
 
 model Club {
@@ -147,6 +156,7 @@ model ClubMembership {
   id        String           @id @default(cuid())
   userId    String
   clubId    String
+  installedPassId String?    @unique
   status    MembershipStatus @default(PENDING)
   role      MembershipRole   @default(MEMBER)
   approvedAt DateTime?
@@ -178,6 +188,7 @@ model Firearm {
   model        String
   caliber      String
   serialNumber String
+  isFavorite   Boolean   @default(false)
   ownerType    OwnerType
   userId       String?
   clubId       String?
@@ -261,6 +272,23 @@ model PasswordResetToken {
   @@index([usedAt])
 }
 
+model TwoFactorDisableToken {
+  id                String   @id @default(cuid())
+  userId            String
+  token             String   @unique
+  expiresAt         DateTime
+  usedAt            DateTime?
+  usedByIp          String?
+  usedByUserAgent   String?
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
+}
+
 model ClubSettings {
   id                       String   @id @default(cuid())
   clubId                   String   @unique
@@ -274,6 +302,7 @@ model ClubSettings {
   ammoSalesLookbackDays    Int      @default(30)
   ammoDefaultLeadTimeDays  Int      @default(14)
   ammoDefaultSafetyStockDays Int    @default(7)
+  ammoDefaultSalesSafeId   String?
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
@@ -689,4 +718,20 @@ model CompetitionMatch {
   @@index([roundId])
   @@index([homeParticipantId])
   @@index([awayParticipantId])
+model Section21Declaration {
+  id                  String   @id @default(cuid())
+  userId              String
+  allCheckboxesSigned Boolean
+  fullLegalName       String
+  signedDate          DateTime
+  signedTimestamp     DateTime
+  ipAddress           String
+  userAgent           String
+  declarationText     String   @db.Text
+  nextDueDate         DateTime
+  createdAt           DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, signedDate])
 }

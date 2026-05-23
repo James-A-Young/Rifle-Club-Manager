@@ -1,5 +1,7 @@
 import React from 'react';
-import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus } from '../../types/club';
+import { ClubSettings, AmmunitionType, AmmunitionSafe, GoogleDriveBackupStatus, GoogleDriveFolderItem } from '../../types/club';
+
+type AmmunitionTypeCreateMode = 'ROUND' | 'BOX';
 
 interface Props {
   settings: ClubSettings | null;
@@ -17,7 +19,7 @@ interface Props {
   onNewAmmunitionTypeNameChange: (value: string) => void;
   onNewAmmunitionTypePricePenceChange: (value: number) => void;
   onNewAmmunitionSafeNameChange: (value: string) => void;
-  onCreateAmmunitionType: () => void;
+  onCreateAmmunitionType: (pricePenceOverride?: number) => void;
   onCreateAmmunitionSafe: () => void;
   onUpdateAmmunitionTypePrice: (typeId: string, pricePence: number) => void;
   onUpdateAmmunitionTypeReorderConfig: (typeId: string, config: {
@@ -30,8 +32,20 @@ interface Props {
   onDeleteSafe: (safeId: string) => void;
   googleDriveStatus: GoogleDriveBackupStatus | null;
   backupDriveFolderIdInput: string;
+  backupDriveFolderName: string;
   backupActionLoading: boolean;
   onBackupDriveFolderIdInputChange: (value: string) => void;
+  backupFolderPickerOpen: boolean;
+  backupFolderPickerLoading: boolean;
+  backupFolderPickerError: string;
+  backupFolderPickerCurrentName: string;
+  backupFolderPickerCanGoUp: boolean;
+  backupFolderPickerItems: GoogleDriveFolderItem[];
+  onOpenBackupFolderPicker: () => void;
+  onCloseBackupFolderPicker: () => void;
+  onOpenBackupFolder: (folderId: string) => void;
+  onGoUpBackupFolder: () => void;
+  onSelectBackupFolder: (folderId: string, folderName: string) => void;
   onStartGoogleDriveLink: () => void;
   onDisconnectGoogleDrive: () => void;
   onRefreshBackupStatus: () => void;
@@ -60,13 +74,142 @@ export default function ClubSettingsSection({
   onRenameSafe,
   onDeleteSafe,
   googleDriveStatus,
-  backupDriveFolderIdInput,
+  backupDriveFolderIdInput: _backupDriveFolderIdInput,
+  backupDriveFolderName,
   backupActionLoading,
-  onBackupDriveFolderIdInputChange,
+  onBackupDriveFolderIdInputChange: _onBackupDriveFolderIdInputChange,
+  backupFolderPickerOpen,
+  backupFolderPickerLoading,
+  backupFolderPickerError,
+  backupFolderPickerCurrentName,
+  backupFolderPickerCanGoUp,
+  backupFolderPickerItems,
+  onOpenBackupFolderPicker,
+  onCloseBackupFolderPicker,
+  onOpenBackupFolder,
+  onGoUpBackupFolder,
+  onSelectBackupFolder,
   onStartGoogleDriveLink,
   onDisconnectGoogleDrive,
   onRefreshBackupStatus,
 }: Props) {
+  const [createMode, setCreateMode] = React.useState<AmmunitionTypeCreateMode>('ROUND');
+  const [newAmmunitionTypeBoxSize, setNewAmmunitionTypeBoxSize] = React.useState(50);
+  const [newAmmunitionTypeBoxPriceGbp, setNewAmmunitionTypeBoxPriceGbp] = React.useState('0.00');
+  const [editingPriceTypeId, setEditingPriceTypeId] = React.useState<string | null>(null);
+  const [editMode, setEditMode] = React.useState<AmmunitionTypeCreateMode>('ROUND');
+  const [editRoundPricePence, setEditRoundPricePence] = React.useState(0);
+  const [editBoxSize, setEditBoxSize] = React.useState(50);
+  const [editBoxPriceGbp, setEditBoxPriceGbp] = React.useState('0.00');
+
+  const defaultSalesSafeName = settings?.ammoDefaultSalesSafeId
+    ? ammunitionSafes.find(safe => safe.id === settings.ammoDefaultSalesSafeId)?.name ?? 'Not set'
+    : 'Not set';
+
+  const boxPricePence = Math.round(Number(newAmmunitionTypeBoxPriceGbp || '0') * 100);
+  const calculatedBoxModePricePence = newAmmunitionTypeBoxSize > 0 && boxPricePence > 0
+    ? Math.round(boxPricePence / newAmmunitionTypeBoxSize)
+    : 0;
+
+  const editBoxPricePence = Math.round(Number(editBoxPriceGbp || '0') * 100);
+  const calculatedEditBoxModePricePence = editBoxSize > 0 && editBoxPricePence > 0
+    ? Math.round(editBoxPricePence / editBoxSize)
+    : 0;
+
+  function getPricePenceFromMode(mode: AmmunitionTypeCreateMode, roundPricePence: number, size: number, boxPriceInPence: number) {
+    if (mode === 'ROUND') {
+      return roundPricePence;
+    }
+
+    if (!Number.isFinite(size) || size <= 0) {
+      return 0;
+    }
+    if (!Number.isFinite(boxPriceInPence) || boxPriceInPence <= 0) {
+      return 0;
+    }
+
+    return Math.round(boxPriceInPence / size);
+  }
+
+  function openPriceEditor(type: AmmunitionType) {
+    setEditingPriceTypeId(type.id);
+    setEditMode('ROUND');
+    setEditRoundPricePence(type.currentPricePence);
+    setEditBoxSize(50);
+    setEditBoxPriceGbp(((type.currentPricePence * 50) / 100).toFixed(2));
+  }
+
+  function saveEditedPrice(typeId: string) {
+    const nextPricePence = getPricePenceFromMode(editMode, editRoundPricePence, editBoxSize, editBoxPricePence);
+    if (!Number.isFinite(nextPricePence) || nextPricePence <= 0) return;
+    onUpdateAmmunitionTypePrice(typeId, nextPricePence);
+    setEditingPriceTypeId(null);
+  }
+
+  function renderPricingInputs(options: {
+    mode: AmmunitionTypeCreateMode;
+    onModeChange: (mode: AmmunitionTypeCreateMode) => void;
+    roundPricePence: number;
+    onRoundPricePenceChange: (value: number) => void;
+    boxSize: number;
+    onBoxSizeChange: (value: number) => void;
+    boxPriceGbp: string;
+    onBoxPriceGbpChange: (value: string) => void;
+    calculatedPricePence: number;
+    compact?: boolean;
+  }) {
+    if (options.mode === 'ROUND') {
+      return (
+        <div style={{ display: 'grid', gridTemplateColumns: options.compact ? '1fr' : '2fr 1fr', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Price Per Round (£)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={(options.roundPricePence / 100)}
+              onChange={e => options.onRoundPricePenceChange(Math.round(Number(e.target.value || '0') * 100))}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: options.compact ? '1fr' : '1fr 1fr', gap: '0.75rem', alignItems: 'end', marginBottom: '1rem' }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Box Size (Rounds)</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={options.boxSize}
+            onChange={e => options.onBoxSizeChange(Math.max(1, Number(e.target.value || '1')))}
+          />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Box Price (£)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={options.boxPriceGbp}
+            onChange={e => options.onBoxPriceGbpChange(e.target.value)}
+          />
+        </div>
+        <div style={{ gridColumn: '1 / -1', color: 'var(--gray-600)', fontSize: '0.9rem' }}>
+          Calculated price per round: <strong>£{(options.calculatedPricePence / 100).toFixed(2)}</strong>
+        </div>
+      </div>
+    );
+  }
+
+  function handleCreateAmmunitionTypeClick() {
+    const nextPricePence = getPricePenceFromMode(createMode, newAmmunitionTypePricePence, newAmmunitionTypeBoxSize, boxPricePence);
+    if (!Number.isFinite(nextPricePence) || nextPricePence <= 0) return;
+    onCreateAmmunitionType(nextPricePence);
+  }
+
   return (
     <section>
       <div className="page-header">
@@ -174,6 +317,19 @@ export default function ClubSettingsSection({
                 onChange={e => onFormChange({ ammoDefaultSafetyStockDays: Number(e.target.value || '7') })}
               />
             </div>
+
+            <div className="form-group">
+              <label>Default Sales Safe</label>
+              <select
+                value={form.ammoDefaultSalesSafeId ?? ''}
+                onChange={e => onFormChange({ ammoDefaultSalesSafeId: e.target.value || null })}
+              >
+                <option value="">None</option>
+                {ammunitionSafes.map(safe => (
+                  <option key={safe.id} value={safe.id}>{safe.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
@@ -246,6 +402,8 @@ export default function ClubSettingsSection({
           <dd>{settings?.ammoDefaultLeadTimeDays ?? 14} days</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Safety Stock</dt>
           <dd>{settings?.ammoDefaultSafetyStockDays ?? 7} days</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Sales Safe</dt>
+          <dd>{defaultSalesSafeName}</dd>
         </dl>
       )}
 
@@ -258,13 +416,82 @@ export default function ClubSettingsSection({
         </div>
 
         <div className="form-group">
-          <label>Target Drive Folder ID (optional)</label>
-          <input
-            value={backupDriveFolderIdInput}
-            onChange={e => onBackupDriveFolderIdInputChange(e.target.value)}
-            placeholder="Leave blank to auto-create managed folders"
-          />
+          <label>Target Drive Folder</label>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              onClick={onOpenBackupFolderPicker}
+              disabled={backupActionLoading || !googleDriveStatus?.connection?.linked}
+            >
+              Choose Folder
+            </button>
+            <span style={{ color: 'var(--gray-600)' }}>
+              {backupDriveFolderName ? `Selected folder: ${backupDriveFolderName}` : 'No folder selected (auto-create managed folders)'}
+            </span>
+          </div>
         </div>
+
+        {backupFolderPickerOpen && (
+          <div style={{ border: '1px solid var(--gray-200)', borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+              <strong>Browsing: {backupFolderPickerCurrentName}</strong>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={onGoUpBackupFolder}
+                disabled={backupFolderPickerLoading || !backupFolderPickerCanGoUp}
+              >
+                Up
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={onCloseBackupFolderPicker}
+                disabled={backupFolderPickerLoading}
+              >
+                Close
+              </button>
+            </div>
+
+            {backupFolderPickerError && (
+              <div style={{ color: 'var(--danger-600)', marginBottom: '0.5rem' }}>{backupFolderPickerError}</div>
+            )}
+
+            {backupFolderPickerLoading ? (
+              <div style={{ color: 'var(--gray-600)' }}>Loading folders…</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Folder</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backupFolderPickerItems.map(folder => (
+                    <tr key={folder.id}>
+                      <td>{folder.name}</td>
+                      <td style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => onOpenBackupFolder(folder.id)}>
+                          Open
+                        </button>
+                        <button className="btn btn-primary btn-sm" type="button" onClick={() => onSelectBackupFolder(folder.id, folder.name)}>
+                          Select
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {backupFolderPickerItems.length === 0 && (
+                    <tr>
+                      <td colSpan={2} style={{ color: 'var(--gray-600)', textAlign: 'center' }}>No subfolders found</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
           <button
@@ -290,8 +517,8 @@ export default function ClubSettingsSection({
           <dd>{googleDriveStatus?.connection?.status ?? 'UNKNOWN'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked</dt>
           <dd>{googleDriveStatus?.connection?.linked ? 'Yes' : 'No'}</dd>
-          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Drive Folder ID</dt>
-          <dd>{googleDriveStatus?.connection?.driveFolderId ?? 'Not set'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Drive Folder</dt>
+          <dd>{googleDriveStatus?.connection?.driveFolderName ?? 'Not set'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Linked At</dt>
           <dd>{googleDriveStatus?.connection?.linkedAt ? new Date(googleDriveStatus.connection.linkedAt).toLocaleString() : 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disconnected At</dt>
@@ -338,23 +565,32 @@ export default function ClubSettingsSection({
             <input
               value={newAmmunitionTypeName}
               onChange={e => onNewAmmunitionTypeNameChange(e.target.value)}
-              placeholder="e.g. .22LR"
+              placeholder="e.g. Eley Club"
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Price Per Round (£)</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={(newAmmunitionTypePricePence / 100).toFixed(2)}
-              onChange={e => onNewAmmunitionTypePricePenceChange(Math.round(Number(e.target.value || '0') * 100))}
-            />
+            <label>Pricing Mode</label>
+            <select value={createMode} onChange={e => setCreateMode(e.target.value as AmmunitionTypeCreateMode)}>
+              <option value="ROUND">By Round</option>
+              <option value="BOX">By Box</option>
+            </select>
           </div>
-          <button className="btn btn-primary" type="button" onClick={onCreateAmmunitionType}>
+          <button className="btn btn-primary" type="button" onClick={handleCreateAmmunitionTypeClick}>
             Add Type
           </button>
         </div>
+
+        {renderPricingInputs({
+          mode: createMode,
+          onModeChange: setCreateMode,
+          roundPricePence: newAmmunitionTypePricePence,
+          onRoundPricePenceChange: onNewAmmunitionTypePricePenceChange,
+          boxSize: newAmmunitionTypeBoxSize,
+          onBoxSizeChange: setNewAmmunitionTypeBoxSize,
+          boxPriceGbp: newAmmunitionTypeBoxPriceGbp,
+          onBoxPriceGbpChange: setNewAmmunitionTypeBoxPriceGbp,
+          calculatedPricePence: calculatedBoxModePricePence,
+        })}
 
         <table>
           <thead>
@@ -372,19 +608,45 @@ export default function ClubSettingsSection({
                 <td>{type.name}</td>
                 <td>£{(type.currentPricePence / 100).toFixed(2)}</td>
                 <td>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    type="button"
-                    onClick={() => {
-                      const raw = window.prompt(`Set new price for ${type.name} (GBP)`, (type.currentPricePence / 100).toFixed(2));
-                      if (!raw) return;
-                      const value = Math.round(Number(raw) * 100);
-                      if (!Number.isFinite(value) || value < 0) return;
-                      onUpdateAmmunitionTypePrice(type.id, value);
-                    }}
-                  >
-                    Change
-                  </button>
+                  {editingPriceTypeId === type.id ? (
+                    <div style={{ minWidth: '260px' }}>
+                      <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+                        <label>Pricing Mode</label>
+                        <select value={editMode} onChange={e => setEditMode(e.target.value as AmmunitionTypeCreateMode)}>
+                          <option value="ROUND">By Round</option>
+                          <option value="BOX">By Box</option>
+                        </select>
+                      </div>
+                      {renderPricingInputs({
+                        mode: editMode,
+                        onModeChange: setEditMode,
+                        roundPricePence: editRoundPricePence,
+                        onRoundPricePenceChange: setEditRoundPricePence,
+                        boxSize: editBoxSize,
+                        onBoxSizeChange: setEditBoxSize,
+                        boxPriceGbp: editBoxPriceGbp,
+                        onBoxPriceGbpChange: setEditBoxPriceGbp,
+                        calculatedPricePence: calculatedEditBoxModePricePence,
+                        compact: true,
+                      })}
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-primary btn-sm" type="button" onClick={() => saveEditedPrice(type.id)}>
+                          Save
+                        </button>
+                        <button className="btn btn-secondary btn-sm" type="button" onClick={() => setEditingPriceTypeId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => openPriceEditor(type)}
+                    >
+                      Change
+                    </button>
+                  )}
                 </td>
                 <td>
                   <div style={{ fontSize: '0.85rem', color: 'var(--gray-700)' }}>

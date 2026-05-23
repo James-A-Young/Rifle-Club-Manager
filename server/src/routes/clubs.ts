@@ -19,9 +19,32 @@ import {
   exchangeGoogleOAuthCode,
   revokeGoogleToken,
 } from '../services/backups/googleDriveOAuth';
+import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
+import { buildMemberDemographicsCsv } from '../services/exports/memberDemographicsExport';
 import { getUserProfileHistorySince } from '../services/profileHistory';
+import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration';
 
 const router = Router();
+
+const DRIVE_FOLDER_NAME_CACHE_TTL_MS = 10 * 60 * 1000;
+const driveFolderNameCache = new Map<string, { name: string; expiresAt: number }>();
+
+function getCachedDriveFolderName(folderId: string): string | null {
+  const cached = driveFolderNameCache.get(folderId);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    driveFolderNameCache.delete(folderId);
+    return null;
+  }
+  return cached.name;
+}
+
+function setCachedDriveFolderName(folderId: string, name: string): void {
+  driveFolderNameCache.set(folderId, {
+    name,
+    expiresAt: Date.now() + DRIVE_FOLDER_NAME_CACHE_TTL_MS,
+  });
+}
 
 const publicClubProfileParamsSchema = z.object({
   id: z.string().min(1),
@@ -277,11 +300,50 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
           shotgunCertificateNumber: true,
           shotgunCertificateExpiry: true,
           gdprConsentDate: true,
+          section21Declarations: {
+            orderBy: { signedDate: 'desc' },
+            take: 1,
+            select: {
+              nextDueDate: true,
+            },
+          },
         },
       },
     },
   });
-  res.json(members);
+
+  const now = new Date();
+  const withSection21Status = members.map(member => {
+    const { section21Declarations, ...userWithoutDeclarations } = member.user;
+    const latestDeclaration = section21Declarations[0];
+    let section21Status: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED' = 'NOT_DECLARED';
+
+    if (latestDeclaration) {
+      section21Status = deriveDeclarationStatusFromDueDate(latestDeclaration.nextDueDate, now);
+    }
+
+    return {
+      ...member,
+      user: userWithoutDeclarations,
+      section21Status,
+    };
+  });
+
+  res.json(withSection21Status);
+});
+
+router.get('/:id/members/export.csv', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const csv = await buildMemberDemographicsCsv(clubId);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-members.csv"`);
+  res.send(csv);
 });
 
 router.get('/:id/members/:userId/profile-history', async (req: AuthRequest, res: Response) => {
@@ -811,6 +873,11 @@ const firearmSchema = z.object({
   caliber: z.string().min(1),
   serialNumber: z.string().min(1),
 });
+
+const firearmFavoriteSchema = z.object({
+  isFavorite: z.boolean(),
+});
+
 router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -820,6 +887,7 @@ router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
   }
   const firearms = await prisma.firearm.findMany({
     where: { clubId, ownerType: OwnerType.CLUB },
+    orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
 });
@@ -900,6 +968,37 @@ router.patch('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response)
   res.json(updated);
 });
 
+router.patch('/:id/firearms/:firearmId/favorite', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const firearmId = req.params.firearmId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = firearmFavoriteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { isFavorite: parsed.data.isFavorite },
+  });
+
+  res.json(updated);
+});
+
 // Club Settings endpoints for Google Wallet
 const hexColorSchema = z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid hex color format').optional();
 
@@ -914,6 +1013,7 @@ const updateClubSettingsSchema = z.object({
   ammoSalesLookbackDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultLeadTimeDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultSafetyStockDays: z.number().int().min(0).max(365).optional(),
+  ammoDefaultSalesSafeId: z.string().min(1).optional().nullable(),
 });
 
 router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
@@ -942,6 +1042,7 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         ammoSalesLookbackDays: 30,
         ammoDefaultLeadTimeDays: 14,
         ammoDefaultSafetyStockDays: 7,
+        ammoDefaultSalesSafeId: null,
       },
     });
   }
@@ -974,6 +1075,7 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     ammoSalesLookbackDays?: number;
     ammoDefaultLeadTimeDays?: number;
     ammoDefaultSafetyStockDays?: number;
+    ammoDefaultSalesSafeId?: string | null;
   } = {};
 
   if ('logoUrl' in parsed.data) {
@@ -1006,6 +1108,23 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   if ('ammoDefaultSafetyStockDays' in parsed.data && typeof parsed.data.ammoDefaultSafetyStockDays === 'number') {
     updateData.ammoDefaultSafetyStockDays = parsed.data.ammoDefaultSafetyStockDays;
   }
+  if ('ammoDefaultSalesSafeId' in parsed.data) {
+    updateData.ammoDefaultSalesSafeId = parsed.data.ammoDefaultSalesSafeId ?? null;
+  }
+
+  if (typeof updateData.ammoDefaultSalesSafeId === 'string') {
+    const safe = await prisma.ammunitionSafe.findFirst({
+      where: {
+        id: updateData.ammoDefaultSalesSafeId,
+        clubId,
+      },
+      select: { id: true },
+    });
+    if (!safe) {
+      res.status(400).json({ error: 'Default sales safe must belong to this club' });
+      return;
+    }
+  }
 
   let settings = await prisma.clubSettings.findUnique({
     where: { clubId },
@@ -1032,6 +1151,14 @@ const backupOAuthStartSchema = z.object({
   driveFolderId: z.string().min(1).optional(),
 });
 
+const backupFolderListQuerySchema = z.object({
+  parentId: z.string().min(1).optional(),
+});
+
+const backupFolderSelectSchema = z.object({
+  driveFolderId: z.string().min(1),
+});
+
 router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.id as string;
   const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
@@ -1047,6 +1174,9 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
       select: {
         status: true,
         driveFolderId: true,
+        encryptedRefreshToken: true,
+        tokenIv: true,
+        tokenAuthTag: true,
         linkedAt: true,
         disconnectedAt: true,
         updatedAt: true,
@@ -1082,6 +1212,28 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
     return acc;
   }, {});
 
+  let driveFolderName: string | null = null;
+  if (connection?.driveFolderId
+    && connection.status === GoogleDriveConnectionStatus.ACTIVE
+    && connection.encryptedRefreshToken
+    && connection.tokenIv
+    && connection.tokenAuthTag) {
+    driveFolderName = getCachedDriveFolderName(connection.driveFolderId);
+    if (!driveFolderName) {
+      try {
+        const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+        const drive = new GoogleDriveBackupClient(refreshToken);
+        const folder = await drive.getFolderMetadata(connection.driveFolderId);
+        driveFolderName = folder?.name ?? null;
+        if (folder?.name) {
+          setCachedDriveFolderName(connection.driveFolderId, folder.name);
+        }
+      } catch {
+        driveFolderName = null;
+      }
+    }
+  }
+
   res.json({
     backupEnabled: settings?.backupEnabled ?? false,
     connection: connection
@@ -1089,6 +1241,7 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
           linked: connection.status === GoogleDriveConnectionStatus.ACTIVE,
           status: connection.status,
           driveFolderId: connection.driveFolderId,
+          driveFolderName,
           linkedAt: connection.linkedAt,
           disconnectedAt: connection.disconnectedAt,
           updatedAt: connection.updatedAt,
@@ -1097,6 +1250,7 @@ router.get('/:id/settings/backups/google-drive/status', async (req: AuthRequest,
           linked: false,
           status: 'NONE',
           driveFolderId: null,
+          driveFolderName: null,
           linkedAt: null,
           disconnectedAt: null,
           updatedAt: null,
@@ -1161,6 +1315,108 @@ router.post('/:id/settings/backups/google-drive/link/start', async (req: AuthReq
   res.json({
     authUrl: buildGoogleDriveAuthUrl(state),
     expiresAt,
+  });
+});
+
+router.get('/:id/settings/backups/google-drive/folders', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = backupFolderListQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const connection = await prisma.googleDriveConnection.findUnique({
+    where: { clubId },
+    select: {
+      status: true,
+      encryptedRefreshToken: true,
+      tokenIv: true,
+      tokenAuthTag: true,
+    },
+  });
+
+  if (!connection || connection.status !== GoogleDriveConnectionStatus.ACTIVE) {
+    res.status(400).json({ error: 'Link Google Drive before browsing folders' });
+    return;
+  }
+
+  const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+  const drive = new GoogleDriveBackupClient(refreshToken);
+  const parentId = parsed.data.parentId;
+  const currentFolder = parentId ? await drive.getFolderMetadata(parentId) : null;
+
+  if (parentId && !currentFolder) {
+    res.status(404).json({ error: 'Folder not found' });
+    return;
+  }
+
+  const folders = await drive.listFolders(parentId ?? 'root');
+  res.json({
+    currentFolder: currentFolder
+      ? {
+          id: currentFolder.id,
+          name: currentFolder.name,
+          parentId: currentFolder.parentId,
+        }
+      : null,
+    folders,
+  });
+});
+
+router.post('/:id/settings/backups/google-drive/folder', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = backupFolderSelectSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const connection = await prisma.googleDriveConnection.findUnique({
+    where: { clubId },
+    select: {
+      status: true,
+      encryptedRefreshToken: true,
+      tokenIv: true,
+      tokenAuthTag: true,
+    },
+  });
+
+  if (!connection || connection.status !== GoogleDriveConnectionStatus.ACTIVE) {
+    res.status(400).json({ error: 'Link Google Drive before selecting a folder' });
+    return;
+  }
+
+  const refreshToken = decryptSecret(connection.encryptedRefreshToken, connection.tokenIv, connection.tokenAuthTag);
+  const drive = new GoogleDriveBackupClient(refreshToken);
+  const folder = await drive.getFolderMetadata(parsed.data.driveFolderId);
+  if (!folder) {
+    res.status(404).json({ error: 'Folder not found' });
+    return;
+  }
+
+  await prisma.googleDriveConnection.update({
+    where: { clubId },
+    data: { driveFolderId: folder.id },
+  });
+
+  setCachedDriveFolderName(folder.id, folder.name);
+
+  res.json({
+    driveFolderId: folder.id,
+    folderName: folder.name,
   });
 });
 

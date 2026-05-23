@@ -339,6 +339,7 @@ describe('security: HttpOnly auth cookie', () => {
         address: '1 Cookie Street',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken,
       });
 

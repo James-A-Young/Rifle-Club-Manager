@@ -1,0 +1,10 @@
+FROM alpine:latest
+
+# Install only what we need
+RUN apk add --no-cache postgresql-client rclone bash tzdata
+
+COPY backup.sh /backup.sh
+RUN chmod +x /backup.sh
+
+# When the container starts, run the script and exit
+ENTRYPOINT ["/backup.sh"]

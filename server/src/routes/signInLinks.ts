@@ -4,10 +4,12 @@ import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { attachOptionalAuth } from '../middleware/auth';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditSignInLinkInvalid } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { OwnerType } from '@prisma/client';
 
 const router = Router();
 
@@ -172,14 +174,24 @@ router.post('/:token/issue', async (req: AuthRequest, res: Response) => {
   });
 });
 
-router.get('/:token', async (req: AuthRequest, res: Response) => {
+router.get('/:token', attachOptionalAuth, async (req: AuthRequest, res: Response) => {
   const cryptoToken = req.params.token as string;
   const link = await prisma.signInLink.findUnique({
     where: { cryptoToken },
     include: {
       club: {
         include: {
-          firearms: true,
+          firearms: {
+            where: { ownerType: OwnerType.CLUB },
+            select: {
+              id: true,
+              make: true,
+              model: true,
+              caliber: true,
+              isFavorite: true,
+            },
+            orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
+          },
         },
       },
     },
@@ -207,10 +219,28 @@ router.get('/:token', async (req: AuthRequest, res: Response) => {
     { expiresIn: `${JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES}m` }
   );
 
+  const userFirearms = req.user?.id
+    ? await prisma.firearm.findMany({
+        where: {
+          userId: req.user.id,
+          ownerType: OwnerType.USER,
+        },
+        select: {
+          id: true,
+          make: true,
+          model: true,
+          caliber: true,
+          isFavorite: true,
+        },
+        orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
+      })
+    : [];
+
   res.json({
     ...link,
     mode: isKioskLink(link.expiresAt) ? 'KIOSK' : 'QR',
     isAuthenticated: Boolean(req.user?.id),
+    userFirearms,
     accessToken,
     accessTokenExpiresInMinutes: JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES,
   });

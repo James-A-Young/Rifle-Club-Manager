@@ -26,7 +26,10 @@ export function listMonthsBetweenInclusive(minDate: Date, maxDate: Date): Date[]
   return months;
 }
 
-export function buildBackupFileName(dataset: 'sign-in-history' | 'sales-ledger' | 'competition-results', monthStart: Date): string {
+export function buildBackupFileName(
+  dataset: 'sign-in-history' | 'sales-ledger' | 'competition-results' | 'member-demographics',
+  monthStart: Date
+): string {
   return `${dataset}-${monthKey(monthStart)}.csv`;
 }
 

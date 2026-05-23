@@ -20,6 +20,7 @@ interface KioskLinkData {
   isAuthenticated?: boolean;
   accessToken: string;
   accessTokenExpiresInMinutes: number;
+  userFirearms: SimpleFirearm[];
   club: {
     id: string;
     name: string;
@@ -231,6 +232,7 @@ export default function KioskSignIn() {
   }
 
   const clubFirearms = kioskData?.club.firearms ?? [];
+  const myFirearms = kioskData?.userFirearms ?? [];
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
     signOutId: v.publicVisitRef,
@@ -272,6 +274,7 @@ export default function KioskSignIn() {
           {kioskData && (
             <VisitSignInForm
               clubFirearms={clubFirearms}
+              myFirearms={myFirearms}
               isAuthenticated={isAuthenticatedKioskUser}
               onSubmit={handleManualSubmit}
             />

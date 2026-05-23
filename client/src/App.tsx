@@ -2,10 +2,13 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import Navbar from './components/Navbar';
+import GdprPolicyModal from './components/GdprPolicyModal';
+import { useConfig } from './context/ConfigContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import DisableTwoFactor from './pages/DisableTwoFactor';
 import Bootstrap from './pages/Bootstrap';
 import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
@@ -25,6 +28,7 @@ import CompetitionDivisionSetup from './pages/CompetitionDivisionSetup';
 import CompetitionMatchScoring from './pages/CompetitionMatchScoring';
 import CompetitionDetail from './pages/CompetitionDetail';
 import CompetitionsList from './pages/CompetitionsList';
+import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
 import { trackPageView } from './analytics';
 
 function usePageTracking(): void {
@@ -42,6 +46,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!user) {
     const next = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
+  }
+
+  // Redirect to declaration signup if user hasn't declared and isn't already on that page
+  if (user.section21Status === 'NOT_DECLARED' && location.pathname !== '/section21-declaration-signup') {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={`/section21-declaration-signup?next=${encodeURIComponent(next)}`} replace />;
   }
 
   return <>{children}</>;
@@ -66,26 +76,39 @@ function RegisterRoute() {
 
 function HomeRoute() {
   const { user } = useAuth();
-  return user ? <Dashboard /> : <Landing />;
+  
+  if (!user) return <Landing />;
+  
+  // If user hasn't declared Section 21, redirect to signup
+  if (user.section21Status === 'NOT_DECLARED') {
+    return <Navigate to="/section21-declaration-signup?next=%2F" replace />;
+  }
+  
+  return <Dashboard />;
 }
 
 function AppRoutes() {
   const { loading } = useAuth();
+  const { clientOrigin } = useConfig();
   const location = useLocation();
   const isKioskRoute = location.pathname.startsWith('/kiosk/');
+  const isSection21SignUp = location.pathname === '/section21-declaration-signup';
+  const [policyOpen, setPolicyOpen] = React.useState(false);
   usePageTracking();
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
   return (
     <>
-      {!isKioskRoute && <Navbar />}
+      {!isKioskRoute && !isSection21SignUp && <Navbar />}
       <main>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/register" element={<RegisterRoute />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/disable-2fa" element={<DisableTwoFactor />} />
           <Route path="/setup" element={<Bootstrap />} />
+          <Route path="/section21-declaration-signup" element={<ProtectedRoute><Section21DeclarationSignUp /></ProtectedRoute>} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
@@ -106,6 +129,15 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {!isKioskRoute && !isSection21SignUp && (
+        <footer className="site-footer">
+          <span>Rifle Club Manager</span>
+          <button type="button" className="link-button" onClick={() => setPolicyOpen(true)}>
+            Privacy Policy (UK GDPR)
+          </button>
+        </footer>
+      )}
+      <GdprPolicyModal open={policyOpen} onClose={() => setPolicyOpen(false)} clientOrigin={clientOrigin} />
     </>
   );
 }

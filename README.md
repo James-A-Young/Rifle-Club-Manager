@@ -351,6 +351,7 @@ Configuration options:
 - `accentColor` (hex) — Tertiary accent color
 - `passIssuingEnabled` (boolean) — Allow members to generate membership passes
 - `memberCardSignInEnabled` (boolean) — Allow QR code kiosk sign-in via membership cards
+- `ammoDefaultSalesSafeId` (string, nullable) — Optional ammunition safe ID preselected in the ammo sales form
 
 ### Membership Passes
 

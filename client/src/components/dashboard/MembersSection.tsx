@@ -6,6 +6,7 @@ interface Props {
   clubId: string;
   isAdmin: boolean;
   currentUserId?: string;
+  onExportMembersCsv?: () => void;
   editingRole: EditingRoleState | null;
   savingRole: boolean;
   removingUserId: string | null;
@@ -22,6 +23,7 @@ export default function MembersSection({
   clubId,
   isAdmin,
   currentUserId,
+  onExportMembersCsv,
   editingRole,
   savingRole,
   removingUserId,
@@ -32,10 +34,30 @@ export default function MembersSection({
   onSaveRole,
   onCancelEditRole,
 }: Props) {
+  function getSection21Color(status?: Member['section21Status']): { background: string; color: string } {
+    switch (status) {
+      case 'SIGNED':
+        return { background: '#d1fae5', color: '#047857' };
+      case 'EXPIRED':
+        return { background: '#fee2e2', color: '#991b1b' };
+      case 'PENDING_RENEWAL':
+        return { background: '#fef3c7', color: '#92400e' };
+      default:
+        return { background: '#e5e7eb', color: '#374151' };
+    }
+  }
+
   return (
     <section>
       <div className="page-header">
         <h2>Members</h2>
+        {isAdmin && onExportMembersCsv && (
+          <div className="actions">
+            <button className="btn btn-secondary btn-sm" onClick={onExportMembersCsv}>
+              Export Membership CSV
+            </button>
+          </div>
+        )}
       </div>
       <table>
         <thead>
@@ -43,6 +65,7 @@ export default function MembersSection({
             <th>Name</th>
             <th>Email</th>
             <th>Status</th>
+            <th>Section 21</th>
             <th>Role</th>
             {isAdmin && <th>Actions</th>}
           </tr>
@@ -54,6 +77,22 @@ export default function MembersSection({
               <td>{m.user.email}</td>
               <td>
                 <span className={`badge badge-${m.status.toLowerCase()}`}>{m.status}</span>
+              </td>
+              <td>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    backgroundColor: getSection21Color(m.section21Status).background,
+                    color: getSection21Color(m.section21Status).color,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {m.section21Status ?? 'NOT_DECLARED'}
+                </span>
               </td>
               <td>
                 {editingRole?.userId === m.userId && m.status === 'APPROVED' ? (

@@ -40,6 +40,7 @@ const tables = [
   'SignInLink',
   'UserProfileHistory',
   'PasswordResetToken',
+  'TwoFactorDisableToken',
   'ClubInvite',
   'ClubMembership',
   'Firearm',

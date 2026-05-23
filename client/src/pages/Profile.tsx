@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import ArmorySection from '../components/dashboard/ArmorySection';
+import Section21DeclarationHistory from '../components/Section21DeclarationHistory';
+import Section21DeclarationViewModal from '../components/Section21DeclarationViewModal';
+import Section21DeclarationRenewal from '../components/Section21DeclarationRenewal';
 import { Firearm } from '../types/club';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface UserProfile {
   id: string;
@@ -10,10 +14,14 @@ interface UserProfile {
   address: string;
   placeOfBirth: string;
   dateOfBirth: string;
+  phoneNumber: string;
+  twoFactorEnabled?: boolean;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
   shotgunCertificateNumber?: string | null;
   shotgunCertificateExpiry?: string | null;
+  section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
+  section21DeclarationSignedAt?: string | null;
 }
 
 export default function Profile() {
@@ -21,11 +29,23 @@ export default function Profile() {
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [editing, setEditing] = useState(false);
   const [showFirearmForm, setShowFirearmForm] = useState(false);
+  const [showDeclarationHistory, setShowDeclarationHistory] = useState(false);
+  const [showDeclarationRenewal, setShowDeclarationRenewal] = useState(false);
+  const [currentDeclaration, setCurrentDeclaration] = useState<any>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [twoFactorSetup, setTwoFactorSetup] = useState<null | {
+    otpauthUrl: string;
+    manualKey: string;
+    expiresAt: string;
+  }>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
   const [form, setForm] = useState({
     name: '',
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    phoneNumber: '',
     firearmCertificateNumber: '',
     firearmCertificateExpiry: '',
     shotgunCertificateNumber: '',
@@ -42,12 +62,14 @@ export default function Profile() {
         address: p.address,
         placeOfBirth: p.placeOfBirth,
         dateOfBirth: p.dateOfBirth.split('T')[0],
+        phoneNumber: p.phoneNumber,
         firearmCertificateNumber: p.firearmCertificateNumber ?? '',
         firearmCertificateExpiry: p.firearmCertificateExpiry ? p.firearmCertificateExpiry.split('T')[0] : '',
         shotgunCertificateNumber: p.shotgunCertificateNumber ?? '',
         shotgunCertificateExpiry: p.shotgunCertificateExpiry ? p.shotgunCertificateExpiry.split('T')[0] : '',
       });
     });
+    api.get<any>('/api/users/me/section21-declaration').then(setCurrentDeclaration).catch(() => {});
     api.get<Firearm[]>('/api/users/me/firearms').then(setFirearms);
   }, []);
 
@@ -71,6 +93,40 @@ export default function Profile() {
     setShowFirearmForm(false);
   }
 
+  async function startTwoFactorSetup() {
+    setTwoFactorLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const setup = await api.post<{ otpauthUrl: string; manualKey: string; expiresAt: string }>('/api/users/me/2fa/setup/start', {});
+      setTwoFactorSetup(setup);
+      setTwoFactorCode('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start 2FA setup');
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  }
+
+  async function verifyTwoFactorSetup(e: React.FormEvent) {
+    e.preventDefault();
+    setTwoFactorLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.post('/api/users/me/2fa/setup/verify', { code: twoFactorCode });
+      const refreshed = await api.get<UserProfile>('/api/users/me');
+      setProfile(refreshed);
+      setTwoFactorSetup(null);
+      setTwoFactorCode('');
+      setSuccess('Two-factor authentication enabled successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to verify 2FA code');
+    } finally {
+      setTwoFactorLoading(false);
+    }
+  }
+
   async function removeFirearm(id: string) {
     await api.delete(`/api/users/me/firearms/${id}`);
     setFirearms(prev => prev.filter(f => f.id !== id));
@@ -79,6 +135,37 @@ export default function Profile() {
   async function editFirearm(id: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
     const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}`, data);
     setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
+  }
+
+  async function toggleFavoriteFirearm(id: string, isFavorite: boolean) {
+    const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}/favorite`, { isFavorite });
+    setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
+  }
+
+
+  async function handleViewDeclaration(declarationId?: string) {
+    if (declarationId && currentDeclaration?.id !== declarationId) {
+      try {
+        const fullDeclaration = await api.get<any>(`/api/users/me/section21-declarations/${declarationId}`);
+        setCurrentDeclaration(fullDeclaration);
+      } catch (err) {
+        console.error('Failed to load declaration:', err);
+        return;
+      }
+    }
+    setShowViewModal(true);
+  }
+  function getStatusBadgeColor(status?: string) {
+    switch (status) {
+      case 'SIGNED':
+        return '#10b981'; // green
+      case 'EXPIRED':
+        return '#ef4444'; // red
+      case 'PENDING_RENEWAL':
+        return '#f59e0b'; // amber
+      default:
+        return '#6b7280'; // gray
+    }
   }
 
   if (!profile) return <div>Loading…</div>;
@@ -114,6 +201,10 @@ export default function Profile() {
             <div className="form-group">
               <label>Date of Birth</label>
               <input type="date" value={form.dateOfBirth} onChange={e => setForm(f => ({ ...f, dateOfBirth: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Phone Number</label>
+              <input value={form.phoneNumber} onChange={e => setForm(f => ({ ...f, phoneNumber: e.target.value }))} required />
             </div>
             <div className="form-group">
               <label>Firearm Certificate Number</label>
@@ -161,6 +252,8 @@ export default function Profile() {
             <dd>{profile.placeOfBirth}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Date of Birth</dt>
             <dd>{new Date(profile.dateOfBirth).toLocaleDateString()}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Phone Number</dt>
+            <dd>{profile.phoneNumber}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate #</dt>
             <dd>{profile.firearmCertificateNumber ?? 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate Expiry</dt>
@@ -173,6 +266,178 @@ export default function Profile() {
         )}
       </section>
 
+      <section>
+        <div className="page-header">
+          <h2>Two-Factor Authentication</h2>
+        </div>
+
+        {profile.twoFactorEnabled ? (
+          <div className="alert alert-success">Authenticator-based 2FA is enabled for your account.</div>
+        ) : (
+          <>
+            <p style={{ color: 'var(--gray-600)', marginBottom: '0.75rem' }}>
+              Protect your account with an authenticator app (TOTP).
+            </p>
+            {!twoFactorSetup ? (
+              <button className="btn btn-primary" onClick={() => void startTwoFactorSetup()} disabled={twoFactorLoading}>
+                {twoFactorLoading ? 'Preparing…' : 'Set Up Authenticator App'}
+              </button>
+            ) : (
+              <div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <QRCodeSVG value={twoFactorSetup.otpauthUrl} size={180} includeMargin />
+                </div>
+                <p style={{ marginBottom: '0.5rem' }}>
+                  If you can&apos;t scan the QR code, enter this setup key manually:
+                </p>
+                <p style={{ fontFamily: 'monospace', fontWeight: 600, letterSpacing: '0.04em' }}>{twoFactorSetup.manualKey}</p>
+                <p style={{ color: 'var(--gray-600)' }}>
+                  Setup expires at {new Date(twoFactorSetup.expiresAt).toLocaleTimeString()}.
+                </p>
+
+                <form onSubmit={verifyTwoFactorSetup}>
+                  <div className="form-group">
+                    <label>Enter 6-digit code from your app</label>
+                    <input
+                      inputMode="numeric"
+                      pattern="\d{6}"
+                      maxLength={6}
+                      value={twoFactorCode}
+                      onChange={e => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456"
+                      required
+                    />
+                  </div>
+                  <div className="actions">
+                    <button className="btn btn-primary" type="submit" disabled={twoFactorLoading}>
+                      {twoFactorLoading ? 'Verifying…' : 'Enable 2FA'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        setTwoFactorSetup(null);
+                        setTwoFactorCode('');
+                      }}
+                      disabled={twoFactorLoading}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section>
+        <div className="page-header">
+          <h2>Section 21 Firearms Act Declaration</h2>
+          {profile.section21Status && (
+            <span
+              style={{
+                padding: '6px 12px',
+                borderRadius: '4px',
+                backgroundColor: getStatusBadgeColor(profile.section21Status) + '20',
+                color: getStatusBadgeColor(profile.section21Status),
+                fontSize: '12px',
+                fontWeight: '600',
+                textTransform: 'uppercase',
+              }}
+            >
+              {profile.section21Status}
+            </span>
+          )}
+        </div>
+
+        {profile.section21Status === 'NOT_DECLARED' ? (
+          <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+            You have not yet completed the mandatory Section 21 declaration. Please complete this declaration to access firearms facilities.
+          </p>
+        ) : (
+          <>
+            <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+              {profile.section21DeclarationSignedAt ? (
+                <>
+                  Signed: <strong>{new Date(profile.section21DeclarationSignedAt).toLocaleDateString('en-GB')}</strong>
+                  {profile.section21Status === 'PENDING_RENEWAL' && (
+                    <span style={{ color: '#f59e0b', fontWeight: '600', marginLeft: '1rem' }}>
+                      ⚠️ Renewal due soon
+                    </span>
+                  )}
+                  {profile.section21Status === 'EXPIRED' && (
+                    <span style={{ color: '#ef4444', fontWeight: '600', marginLeft: '1rem' }}>
+                      ⚠️ Renewal overdue
+                    </span>
+                  )}
+                </>
+              ) : null}
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowDeclarationHistory(!showDeclarationHistory)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#e5e7eb',
+                  color: '#1f2937',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                }}
+              >
+                {showDeclarationHistory ? 'Hide' : 'View'} History
+              </button>
+              {(profile.section21Status === 'EXPIRED' || profile.section21Status === 'PENDING_RENEWAL') && (
+                <button
+                  onClick={() => setShowDeclarationRenewal(true)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                  }}
+                >
+                  Renew Now
+                </button>
+              )}
+            </div>
+
+            {showDeclarationHistory && (
+              <div style={{ marginTop: '20px' }}>
+                <Section21DeclarationHistory onViewClick={handleViewDeclaration} />
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <Section21DeclarationViewModal
+        isOpen={showViewModal}
+        onClose={() => setShowViewModal(false)}
+        declaration={currentDeclaration}
+      />
+
+      <Section21DeclarationRenewal
+        isOpen={showDeclarationRenewal}
+        onClose={() => {
+          setShowDeclarationRenewal(false);
+          // Refresh profile to get updated status
+          api.get<UserProfile>('/api/users/me').then(setProfile);
+        }}
+        onSuccess={() => {
+          setSuccess('Declaration renewed successfully');
+          api.get<UserProfile>('/api/users/me').then(setProfile);
+        }}
+      />
+
       <ArmorySection
         title="My Firearms"
         addButtonLabel="Add Firearm"
@@ -183,6 +448,7 @@ export default function Profile() {
         onAdd={addFirearm}
         onEdit={editFirearm}
         onRemove={removeFirearm}
+        onToggleFavorite={toggleFavoriteFirearm}
       />
     </>
   );

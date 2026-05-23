@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ClubInvite, MembershipRoleType } from '../../types/club';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onRoleChange: (role: MembershipRoleType) => void;
   onExpiresChange: (days: number) => void;
   onCreate: () => void;
+  onCreateBulk: (emails: string[]) => Promise<void>;
   onCopyUrl: (token: string) => void;
   onSendEmail: (invite: ClubInvite) => void;
   onCancel: (invite: ClubInvite) => void;
@@ -23,28 +25,65 @@ export default function InvitesSection({
   onRoleChange,
   onExpiresChange,
   onCreate,
+  onCreateBulk,
   onCopyUrl,
   onSendEmail,
   onCancel,
 }: Props) {
+  const [bulkEmails, setBulkEmails] = useState('');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [bulkModeEnabled, setBulkModeEnabled] = useState(false);
+
+  async function handleCreateBulk() {
+    const emails = Array.from(new Set(
+      bulkEmails
+        .split(/\r?\n/)
+        .map(emailLine => emailLine.trim().toLowerCase())
+        .filter(Boolean),
+    ));
+    if (emails.length === 0 || bulkSubmitting) return;
+
+    setBulkSubmitting(true);
+    try {
+      await onCreateBulk(emails);
+      setBulkEmails('');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  }
+
+  function toggleBulkMode() {
+    setBulkModeEnabled(prev => {
+      const next = !prev;
+      if (!next) {
+        setBulkEmails('');
+      }
+      return next;
+    });
+  }
 
   return (
     <section>
       <div className="page-header">
         <h2>Invites</h2>
+        <button className="btn btn-secondary btn-sm" onClick={toggleBulkMode}>
+          {bulkModeEnabled ? 'Disable Bulk Mode' : 'Enable Bulk Mode'}
+        </button>
       </div>
       <div
         className="stats-grid"
-        style={{ gridTemplateColumns: '2fr 1fr 1fr auto', marginBottom: '1rem' }}
+        style={{ gridTemplateColumns: bulkModeEnabled ? '1fr 1fr' : '2fr 1fr 1fr auto', marginBottom: '1rem' }}
       >
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Email</label>
-          <input
-            value={email}
-            onChange={e => onEmailChange(e.target.value)}
-            placeholder="member@example.com"
-          />
-        </div>
+        {!bulkModeEnabled && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Email</label>
+            <input
+              value={email}
+              onChange={e => onEmailChange(e.target.value)}
+              placeholder="member@example.com"
+            />
+          </div>
+        )}
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Role</label>
           <select value={role} onChange={e => onRoleChange(e.target.value as MembershipRoleType)}>
@@ -64,16 +103,48 @@ export default function InvitesSection({
             onChange={e => onExpiresChange(Number(e.target.value) || 14)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'end' }}>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={onCreate}
-            disabled={!email.trim()}
-          >
-            Create Invite
-          </button>
-        </div>
+        {!bulkModeEnabled && (
+          <div style={{ display: 'flex', alignItems: 'end' }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={onCreate}
+              disabled={!email.trim()}
+            >
+              Create Invite
+            </button>
+          </div>
+        )}
       </div>
+
+      {bulkModeEnabled && (
+        <div
+          className="stats-grid"
+          style={{ gridTemplateColumns: '2fr auto', marginBottom: '1rem' }}
+        >
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Bulk Invite Members (one email per line)</label>
+            <textarea
+              rows={5}
+              value={bulkEmails}
+              onChange={e => setBulkEmails(e.target.value)}
+              placeholder={[
+                'alice@example.com',
+                'bob@example.com',
+                'charlie@example.com',
+              ].join('\n')}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'end' }}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => void handleCreateBulk()}
+              disabled={!bulkEmails.trim() || bulkSubmitting}
+            >
+              {bulkSubmitting ? 'Creating…' : 'Create Bulk Invites'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <table>
         <thead>

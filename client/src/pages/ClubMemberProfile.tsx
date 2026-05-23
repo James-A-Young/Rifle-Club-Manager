@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { Member, MemberProfileHistoryEntry, ProfileHistoryFieldChange } from '../types/club';
+import Section21DeclarationViewModal from '../components/Section21DeclarationViewModal';
 
 const profileFieldLabel: Record<ProfileHistoryFieldChange['field'], string> = {
   name: 'Name',
@@ -33,6 +34,9 @@ export default function ClubMemberProfile() {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [history, setHistory] = useState<MemberProfileHistoryEntry[]>([]);
+  const [declaration, setDeclaration] = useState<any>(null);
+  const [declarationLoading, setDeclarationLoading] = useState(false);
+  const [showDeclarationModal, setShowDeclarationModal] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -58,6 +62,15 @@ export default function ClubMemberProfile() {
       .catch(e => setHistoryError(e instanceof Error ? e.message : 'Could not load profile history'))
       .finally(() => setHistoryLoading(false));
   }, [id, member, historyExpanded, historyLoaded]);
+
+  useEffect(() => {
+    if (!id || !userId) return;
+    setDeclarationLoading(true);
+    api.get<any>(`/api/clubs/${id}/members/${userId}/section21-declaration`)
+      .then(decl => setDeclaration(decl))
+      .catch(e => console.error('Could not load Section 21 declaration:', e))
+      .finally(() => setDeclarationLoading(false));
+  }, [id, userId]);
 
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
@@ -127,6 +140,104 @@ export default function ClubMemberProfile() {
               </tbody>
             </table>
           </section>
+
+          {(declaration?.status === 'NOT_DECLARED' || declaration?.status === 'EXPIRED' || !declaration) && (
+            <div
+              style={{
+                padding: '12px 16px',
+                backgroundColor: '#fee2e2',
+                border: '1px solid #fecaca',
+                borderLeft: '4px solid #dc2626',
+                borderRadius: '4px',
+                color: '#991b1b',
+                fontSize: '14px',
+                marginBottom: '1.5rem',
+              }}
+            >
+              ⚠️ <strong>Member has not completed the mandatory Section 21 declaration</strong>
+              {declaration?.status === 'EXPIRED' && ' - declaration is expired and needs renewal'}
+            </div>
+          )}
+
+          <section style={{ marginTop: '1.5rem' }}>
+            <h2>Section 21 Firearms Act Declaration</h2>
+            {declarationLoading ? (
+              <div style={{ padding: '0.5rem 0', color: '#6b7280' }}>Loading declaration…</div>
+            ) : declaration ? (
+              <div style={{ marginBottom: '1rem' }}>
+                <table style={{ marginBottom: '1rem' }}>
+                  <tbody>
+                    <tr>
+                      <th>Status</th>
+                      <td>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '4px 10px',
+                            borderRadius: '4px',
+                            backgroundColor:
+                              declaration.status === 'SIGNED'
+                                ? '#d1fae5'
+                                : declaration.status === 'EXPIRED'
+                                  ? '#fee2e2'
+                                  : '#fef3c7',
+                            color:
+                              declaration.status === 'SIGNED'
+                                ? '#047857'
+                                : declaration.status === 'EXPIRED'
+                                  ? '#991b1b'
+                                  : '#92400e',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {declaration.status}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Signed By</th>
+                      <td>{declaration.fullLegalName}</td>
+                    </tr>
+                    <tr>
+                      <th>Signed Date</th>
+                      <td>{new Date(declaration.signedDate).toLocaleDateString('en-GB')}</td>
+                    </tr>
+                    <tr>
+                      <th>Next Renewal Due</th>
+                      <td>{new Date(declaration.nextDueDate).toLocaleDateString('en-GB')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <button
+                  type="button"
+                  onClick={() => setShowDeclarationModal(true)}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                  }}
+                >
+                  View Full Declaration
+                </button>
+              </div>
+            ) : (
+              <div style={{ padding: '0.5rem 0', color: '#6b7280' }}>No declaration found.</div>
+            )}
+          </section>
+
+          <Section21DeclarationViewModal
+            isOpen={showDeclarationModal}
+            onClose={() => setShowDeclarationModal(false)}
+            declaration={declaration}
+            isAdminView={true}
+          />
 
           <section style={{ marginTop: '1.5rem' }}>
             <div className="page-header" style={{ marginBottom: '0.5rem' }}>

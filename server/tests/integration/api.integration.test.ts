@@ -1,13 +1,16 @@
 import './setup';
 
 import bcrypt from 'bcryptjs';
+import path from 'path';
 import jwt from 'jsonwebtoken';
+import speakeasy from 'speakeasy';
 import request from 'supertest';
 import { MembershipRole, MembershipStatus, OwnerType } from '@prisma/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
 import { emailService } from '../../src/services/email';
+import { encryptStoredTwoFactorSecret } from '../../src/services/twoFactor';
 
 const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
@@ -77,6 +80,18 @@ async function createClubWithAdmin() {
   return { admin, club };
 }
 
+async function enableTwoFactorForUser(userId: string, secret: string) {
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      twoFactorEnabled: true,
+      twoFactorSecret: encryptStoredTwoFactorSecret(secret),
+      twoFactorPendingSecret: null,
+      twoFactorPendingExpiresAt: null,
+    },
+  });
+}
+
 /** Create an invite and use it to register a new user via the API. */
 async function registerViaInvite(clubId: string, createdByUserId: string, opts: {
   email?: string;
@@ -120,6 +135,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -145,6 +161,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
       });
 
     expect(res.status).toBe(400);
@@ -165,6 +182,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -193,6 +211,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'invalid-token',
       });
@@ -222,6 +241,7 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'valid-token',
       });
@@ -240,6 +260,146 @@ describe('auth routes', () => {
       .send({ email, password: 'wrong' });
 
     expect(res.status).toBe(401);
+  });
+
+  it('returns requiresTwoFactor on login when 2FA is enabled', async () => {
+    const password = 'Password123!';
+    const email = `${unique('login-2fa-required')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+
+    expect(res.status).toBe(200);
+    expect(res.body.requiresTwoFactor).toBe(true);
+    expect(typeof res.body.twoFactorToken).toBe('string');
+    expect(res.body.token).toBeUndefined();
+    expect(res.body.user).toBeUndefined();
+  });
+
+  it('accepts valid code on /api/auth/login/2fa and rejects invalid code', async () => {
+    const password = 'Password123!';
+    const email = `${unique('login-2fa-verify')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email, password });
+
+    expect(login.status).toBe(200);
+    expect(login.body.requiresTwoFactor).toBe(true);
+
+    const invalid = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ twoFactorToken: login.body.twoFactorToken, code: '000000' });
+
+    expect(invalid.status).toBe(401);
+
+    const validCode = speakeasy.totp({ secret, encoding: 'base32' });
+    const valid = await request(app)
+      .post('/api/auth/login/2fa')
+      .send({ twoFactorToken: login.body.twoFactorToken, code: validCode });
+
+    expect(valid.status).toBe(200);
+    expect(valid.body.token).toBeTruthy();
+    expect(valid.body.user.email).toBe(email);
+  });
+
+  it('normalizes /api/auth/2fa/recovery/request responses and only issues tokens for valid credentials', async () => {
+    const emailSpy = vi.spyOn(emailService, 'sendTwoFactorDisableEmail').mockResolvedValue(true);
+    const email = `${unique('2fa-recovery')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const wrongPassword = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'wrong-password' });
+
+    expect(wrongPassword.status).toBe(200);
+    expect(wrongPassword.body.success).toBe(true);
+
+    const afterWrongPassword = await prisma.twoFactorDisableToken.findMany({ where: { userId: user.id } });
+    expect(afterWrongPassword.length).toBe(0);
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    const missingUser = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email: `${unique('missing-2fa-recovery')}@test.com`, password: 'Password123!' });
+
+    expect(missingUser.status).toBe(200);
+    expect(missingUser.body.success).toBe(true);
+    expect(emailSpy).not.toHaveBeenCalled();
+
+    const valid = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'Password123!' });
+
+    expect(valid.status).toBe(200);
+    expect(valid.body.success).toBe(true);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    const issuedToken = await prisma.twoFactorDisableToken.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(issuedToken?.token).toBeTruthy();
+  });
+
+  it('allows single-use /api/auth/2fa/recovery/disable tokens and disables 2FA', async () => {
+    const emailSpy = vi.spyOn(emailService, 'sendTwoFactorDisableEmail').mockResolvedValue(true);
+    const email = `${unique('2fa-disable')}@test.com`;
+    const user = await createUser({ email });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    await enableTwoFactorForUser(user.id, secret);
+
+    const requestRecovery = await request(app)
+      .post('/api/auth/2fa/recovery/request')
+      .send({ email, password: 'Password123!' });
+
+    expect(requestRecovery.status).toBe(200);
+    expect(emailSpy).toHaveBeenCalledTimes(1);
+
+    const issuedToken = await prisma.twoFactorDisableToken.findFirst({
+      where: { userId: user.id, usedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(issuedToken).toBeTruthy();
+
+    const disable = await request(app)
+      .post('/api/auth/2fa/recovery/disable')
+      .set('User-Agent', 'VitestAgent/2FA')
+      .send({ token: issuedToken!.token });
+
+    expect(disable.status).toBe(200);
+    expect(disable.body.success).toBe(true);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        twoFactorEnabled: true,
+        twoFactorSecret: true,
+        twoFactorPendingSecret: true,
+      },
+    });
+    expect(updatedUser?.twoFactorEnabled).toBe(false);
+    expect(updatedUser?.twoFactorSecret).toBeNull();
+    expect(updatedUser?.twoFactorPendingSecret).toBeNull();
+
+    const tokenState = await prisma.twoFactorDisableToken.findUnique({ where: { token: issuedToken!.token } });
+    expect(tokenState?.usedAt).toBeTruthy();
+
+    const reuse = await request(app)
+      .post('/api/auth/2fa/recovery/disable')
+      .send({ token: issuedToken!.token });
+
+    expect(reuse.status).toBe(400);
+    expect(reuse.body.error).toBe('Invalid or expired recovery token');
   });
 
   it('forgot-password returns success and sends email for existing user', async () => {
@@ -541,6 +701,71 @@ describe('clubs routes', () => {
     expect(res.status).toBe(200);
     const found = res.body.find((m: { userId: string }) => m.userId === member.id);
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
+  });
+
+  it('exports member demographics CSV excluding inactive memberships', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const approvedMember = await createUser({ email: `${unique('member-approved')}@test.com` });
+    const pendingMember = await createUser({ email: `${unique('member-pending')}@test.com` });
+    const inactiveMember = await createUser({ email: `${unique('member-inactive')}@test.com` });
+
+    await prisma.clubMembership.createMany({
+      data: [
+        {
+          userId: approvedMember.id,
+          clubId: club.id,
+          role: MembershipRole.MEMBER,
+          status: MembershipStatus.APPROVED,
+          approvedAt: new Date(),
+        },
+        {
+          userId: pendingMember.id,
+          clubId: club.id,
+          role: MembershipRole.JUNIOR,
+          status: MembershipStatus.PENDING,
+        },
+        {
+          userId: inactiveMember.id,
+          clubId: club.id,
+          role: MembershipRole.MEMBER,
+          status: MembershipStatus.INACTIVE,
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/export.csv`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.text).toContain('"membershipStatus"');
+    expect(res.text).toContain(`"${approvedMember.email}"`);
+    expect(res.text).toContain(`"${pendingMember.email}"`);
+    expect(res.text).not.toContain(`"${inactiveMember.email}"`);
+  });
+
+  it('forbids non-admin from exporting member demographics CSV', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const member = await createUser({ email: `${unique('member-export-no-admin')}@test.com` });
+
+    await prisma.clubMembership.create({
+      data: {
+        userId: member.id,
+        clubId: club.id,
+        role: MembershipRole.MEMBER,
+        status: MembershipStatus.APPROVED,
+      },
+    });
+
+    const res = await request(app)
+      .get(`/api/clubs/${club.id}/members/export.csv`)
+      .set(authHeader(member));
+
+    expect(res.status).toBe(403);
+
+    // Keep admin variable used for context consistency and future assertions.
+    expect(admin.id).toBeTruthy();
   });
 
   it('admin can view member profile history from acceptance onward in newest-first order', async () => {
@@ -1065,6 +1290,7 @@ describe('club settings routes', () => {
     expect(res.body.primaryColor).toBe('#1f2937');
     expect(res.body.passIssuingEnabled).toBe(false);
     expect(res.body.memberCardSignInEnabled).toBe(false);
+    expect(res.body.ammoDefaultSalesSafeId).toBeNull();
   });
 
   it('requires admin to get club settings', async () => {
@@ -1164,6 +1390,43 @@ describe('club settings routes', () => {
     expect(res.body.backupEnabled).toBe(true);
   });
 
+  it('updates default sales safe when safe belongs to club', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const safe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: club.id,
+        name: 'Sales Safe',
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: safe.id });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ammoDefaultSalesSafeId).toBe(safe.id);
+  });
+
+  it('rejects default sales safe when it does not belong to club', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { club: otherClub } = await createClubWithAdmin();
+    const otherSafe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: otherClub.id,
+        name: 'Other Club Safe',
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: otherSafe.id });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Default sales safe must belong to this club');
+  });
+
   it('returns backup status for admin and blocks non-admin', async () => {
     const { club, admin } = await createClubWithAdmin();
     const member = await createUser();
@@ -1207,6 +1470,42 @@ describe('club settings routes', () => {
       where: { clubId: club.id, userId: admin.id },
     });
     expect(states.length).toBe(1);
+  });
+
+  it('starts Google Drive OAuth link flow using GOOGLE_DRIVE_CREDS_JSON_PATH', async () => {
+    const prevClientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+    const prevClientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+    const prevRedirectUri = process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+    const prevCredsPath = process.env.GOOGLE_DRIVE_CREDS_JSON_PATH;
+
+    try {
+      delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+      delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+      delete process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+      process.env.GOOGLE_DRIVE_CREDS_JSON_PATH = path.join(__dirname, 'fixtures', 'google-drive-oauth-client.json');
+
+      const { club, admin } = await createClubWithAdmin();
+      const res = await request(app)
+        .post(`/api/clubs/${club.id}/settings/backups/google-drive/link/start`)
+        .set(authHeader(admin))
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(typeof res.body.authUrl).toBe('string');
+      expect(res.body.authUrl).toContain('json-client-id');
+    } finally {
+      if (prevClientId === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+      else process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = prevClientId;
+
+      if (prevClientSecret === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+      else process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = prevClientSecret;
+
+      if (prevRedirectUri === undefined) delete process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI;
+      else process.env.GOOGLE_DRIVE_OAUTH_REDIRECT_URI = prevRedirectUri;
+
+      if (prevCredsPath === undefined) delete process.env.GOOGLE_DRIVE_CREDS_JSON_PATH;
+      else process.env.GOOGLE_DRIVE_CREDS_JSON_PATH = prevCredsPath;
+    }
   });
 
   it('rejects callback with invalid state', async () => {
@@ -1427,6 +1726,33 @@ describe('ammunition routes', () => {
       .set(authHeader(admin));
 
     expect(deleteRes.status).toBe(204);
+  });
+
+  it('clears club default sales safe when deleting that safe', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const safe = await prisma.ammunitionSafe.create({
+      data: {
+        clubId: club.id,
+        name: 'Default Sales Safe',
+      },
+    });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ ammoDefaultSalesSafeId: safe.id });
+
+    const deleteRes = await request(app)
+      .delete(`/api/ammunition/club/${club.id}/safes/${safe.id}`)
+      .set(authHeader(admin));
+    expect(deleteRes.status).toBe(204);
+
+    const settingsRes = await request(app)
+      .get(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin));
+
+    expect(settingsRes.status).toBe(200);
+    expect(settingsRes.body.ammoDefaultSalesSafeId).toBeNull();
   });
 
   it('returns 409 when deleting a safe with existing sales', async () => {
@@ -1848,6 +2174,7 @@ describe('bootstrap routes', () => {
         address: '1 Bootstrap Lane',
         placeOfBirth: 'London',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         clubName: 'Bootstrap Club',
       });
 
@@ -1871,6 +2198,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: 'nonexistent-token',
       });
 
@@ -1891,6 +2219,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 
@@ -1922,6 +2251,7 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: expiredToken,
       });
 
@@ -2030,6 +2360,7 @@ describe('probationary member', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        phoneNumber: '07123456789',
         inviteToken: token,
       });
 

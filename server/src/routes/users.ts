@@ -6,6 +6,13 @@ import { OwnerType, MembershipStatus } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
+import { getDeclarationStatus } from '../services/section21Declaration';
+import {
+  decryptStoredTwoFactorSecret,
+  encryptStoredTwoFactorSecret,
+  generateTwoFactorSecret,
+  verifyTwoFactorCode,
+} from '../services/twoFactor';
 
 const router = Router();
 
@@ -18,14 +25,17 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       id: true,
       name: true,
       email: true,
+      twoFactorEnabled: true,
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
       shotgunCertificateNumber: true,
       shotgunCertificateExpiry: true,
       gdprConsentDate: true,
+      section21DeclarationSignedAt: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -34,7 +44,14 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
     res.status(404).json({ error: 'User not found' });
     return;
   }
-  res.json(user);
+
+  // Get current declaration status
+  const section21Status = await getDeclarationStatus(req.user!.id);
+
+  res.json({
+    ...user,
+    section21Status,
+  });
 });
 
 const updateSchema = z.object({
@@ -42,6 +59,7 @@ const updateSchema = z.object({
   address: z.string().min(5).optional(),
   placeOfBirth: z.string().min(2).optional(),
   dateOfBirth: z.string().optional(),
+  phoneNumber: z.string().min(1).optional(),
   firearmCertificateNumber: z.string().optional().nullable(),
   firearmCertificateExpiry: z.string().optional().nullable(),
   shotgunCertificateNumber: z.string().optional().nullable(),
@@ -97,6 +115,7 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
       shotgunCertificateNumber: true,
@@ -115,6 +134,7 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       ...(('address' in parsed.data) ? { address: parsed.data.address } : {}),
       ...(('placeOfBirth' in parsed.data) ? { placeOfBirth: parsed.data.placeOfBirth } : {}),
       ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
+      ...(('phoneNumber' in parsed.data) ? { phoneNumber: parsed.data.phoneNumber } : {}),
       ...(('firearmCertificateNumber' in parsed.data)
         ? { firearmCertificateNumber: normalizeOptionalText(firearmCertificateNumber) }
         : {}),
@@ -135,6 +155,7 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
       shotgunCertificateNumber: true,
@@ -162,11 +183,106 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
   res.json(user);
 });
 
+const twoFactorCodeSchema = z.object({
+  code: z.string().regex(/^\d{6}$/),
+});
+
+router.post('/me/2fa/setup/start', requireAuth, async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: { id: true, email: true, twoFactorEnabled: true },
+  });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  if (user.twoFactorEnabled) {
+    res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+    return;
+  }
+
+  const { secret, otpauthUrl } = generateTwoFactorSecret(user.email);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      twoFactorPendingSecret: encryptStoredTwoFactorSecret(secret),
+      twoFactorPendingExpiresAt: expiresAt,
+    },
+  });
+
+  res.json({
+    otpauthUrl,
+    manualKey: secret,
+    expiresAt,
+  });
+});
+
+router.post('/me/2fa/setup/verify', requireAuth, async (req: AuthRequest, res: Response) => {
+  const parsed = twoFactorCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      id: true,
+      twoFactorEnabled: true,
+      twoFactorPendingSecret: true,
+      twoFactorPendingExpiresAt: true,
+    },
+  });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  if (user.twoFactorEnabled) {
+    res.status(409).json({ error: 'Two-factor authentication is already enabled' });
+    return;
+  }
+  if (!user.twoFactorPendingSecret || !user.twoFactorPendingExpiresAt || user.twoFactorPendingExpiresAt < new Date()) {
+    res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
+    return;
+  }
+  let pendingSecret: string;
+  try {
+    pendingSecret = decryptStoredTwoFactorSecret(user.twoFactorPendingSecret);
+  } catch {
+    res.status(400).json({ error: '2FA setup session expired. Start setup again.' });
+    return;
+  }
+
+  if (!verifyTwoFactorCode(pendingSecret, parsed.data.code)) {
+    res.status(400).json({ error: 'Invalid authenticator code' });
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      twoFactorEnabled: true,
+      twoFactorSecret: user.twoFactorPendingSecret,
+      twoFactorPendingSecret: null,
+      twoFactorPendingExpiresAt: null,
+    },
+  });
+
+  res.json({ success: true });
+});
+
 router.get('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearms = await prisma.firearm.findMany({
     where: { userId: req.user!.id, ownerType: OwnerType.USER },
+    orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
+});
+
+const firearmFavoriteSchema = z.object({
+  isFavorite: z.boolean(),
 });
 
 const firearmSchema = z.object({
@@ -229,8 +345,62 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
   res.json(updated);
 });
 
+router.patch('/me/firearms/:id/favorite', requireAuth, async (req: AuthRequest, res: Response) => {
+  const firearmId = req.params.id as string;
+  const parsed = firearmFavoriteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const firearm = await prisma.firearm.findFirst({
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER },
+  });
+  if (!firearm) {
+    res.status(404).json({ error: 'Firearm not found' });
+    return;
+  }
+
+  const updated = await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { isFavorite: parsed.data.isFavorite },
+  });
+
+  res.json(updated);
+});
+
 // Google Wallet Membership Pass endpoints
-async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
+async function handleMembershipPassStatusRequest(req: AuthRequest, res: Response) {
+  const clubId = req.params.clubId as string;
+
+  try {
+    const membership = await prisma.clubMembership.findFirst({
+      where: {
+        userId: req.user!.id,
+        clubId,
+        status: MembershipStatus.APPROVED,
+      },
+      select: { id: true },
+    });
+
+    if (!membership) {
+      res.json({ passIssuingEnabled: false });
+      return;
+    }
+
+    const settings = await prisma.clubSettings.findUnique({
+      where: { clubId },
+      select: { passIssuingEnabled: true },
+    });
+
+    res.json({ passIssuingEnabled: Boolean(settings?.passIssuingEnabled) });
+  } catch (error) {
+    console.error('Error loading membership pass status:', error);
+    res.status(500).json({ error: 'Failed to load membership pass status' });
+  }
+}
+
+async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Response) {
   const clubId = req.params.clubId as string;
 
   try {
@@ -339,7 +509,7 @@ async function handleMembershipPassRequest(req: AuthRequest, res: Response) {
   }
 }
 
-router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
-router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassRequest);
+router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassStatusRequest);
+router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 
 export default router;

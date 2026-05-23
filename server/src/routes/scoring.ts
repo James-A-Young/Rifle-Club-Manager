@@ -902,4 +902,33 @@ router.get('/clubs/:clubId/scoring/mine/averages', async (req: AuthRequest, res:
   res.json({ allTimeAverage: allTimeAvg, last10Average: last10Avg, totalCardsShot: values.length });
 });
 
+router.get('/clubs/:clubId/scoring/mine/recent', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const userId = req.user!.id;
+
+  const isMember = await ensureMemberOfClub(userId, clubId);
+  if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const scores = await prisma.score.findMany({
+    where: {
+      userId,
+      score: { not: null },
+      competition: { clubId },
+    },
+    include: {
+      competition: { select: { id: true, name: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 5,
+  });
+
+  res.json(scores.map(s => ({
+    scoreId: s.id,
+    competitionId: s.competitionId,
+    competitionName: s.competition.name,
+    score: s.score,
+    scoredAt: s.updatedAt,
+  })));
+});
+
 export default router;

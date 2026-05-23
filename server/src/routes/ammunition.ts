@@ -380,7 +380,18 @@ router.delete('/club/:clubId/safes/:safeId', async (req: AuthRequest, res: Respo
   }
 
   try {
-    await prisma.ammunitionSafe.delete({ where: { id: safeId } });
+    await prisma.$transaction(async tx => {
+      await tx.clubSettings.updateMany({
+        where: {
+          clubId,
+          ammoDefaultSalesSafeId: safeId,
+        },
+        data: {
+          ammoDefaultSalesSafeId: null,
+        },
+      });
+      await tx.ammunitionSafe.delete({ where: { id: safeId } });
+    });
     res.status(204).send();
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {

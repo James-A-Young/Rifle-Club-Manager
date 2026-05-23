@@ -14,6 +14,7 @@ interface LinkData {
   accessToken: string;
   accessTokenExpiresInMinutes: number;
   club: Club;
+  userFirearms: SimpleFirearm[];
 }
 
 export default function SignIn() {
@@ -81,6 +82,7 @@ export default function SignIn() {
   }
 
   const clubFirearms = linkData?.club.firearms ?? [];
+  const myFirearms = linkData?.userFirearms ?? [];
   const isAuthenticatedUser = Boolean(user);
 
   return (
@@ -114,6 +116,7 @@ export default function SignIn() {
         {linkData && (
           <VisitSignInForm
             clubFirearms={clubFirearms}
+            myFirearms={myFirearms}
             isAuthenticated={isAuthenticatedUser}
             onSubmit={handleSubmit}
             submitLabel="Sign In to Club"

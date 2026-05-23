@@ -76,15 +76,20 @@ export interface IssueMembershipPassResult {
   addToWalletLink: string;
 }
 
+const WALLET_CALLBACK_PATH = '/api/webhooks/google-wallet';
+
 export class GoogleWalletService {
   private auth?: GoogleAuth;
   private walletClient?: walletobjects_v1.Walletobjects;
   private issuerId: string;
   private walletEnabled: boolean;
+  private callbackUrl: string;
   private classIdCache = new Set<string>();
 
   constructor() {
     this.issuerId = process.env.GOOGLE_WALLET_ISSUER_ID || '';
+    const clientOrigin = process.env.CLIENT_ORIGIN || '';
+    this.callbackUrl = clientOrigin ? `${clientOrigin}${WALLET_CALLBACK_PATH}` : '';
 
     const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     const privateKey = process.env.GOOGLE_WALLET_PRIVATE_KEY?.replace(/\\n/g, '\n');
@@ -167,6 +172,10 @@ export class GoogleWalletService {
     return passResult.addToWalletLink;
   }
 
+  buildMembershipObjectId(clubId: string, userId: string): string {
+    return this.buildObjectId(clubId, userId);
+  }
+
   private buildPassObject(
     params: CreatePassParams & { classId: string; objectId: string }
   ): PassObject {
@@ -246,6 +255,17 @@ export class GoogleWalletService {
 
     try {
       await this.walletClient.genericclass.get({ resourceId: classId });
+      if (this.callbackUrl) {
+        await this.walletClient.genericclass.patch({
+          resourceId: classId,
+          requestBody: {
+            id: classId,
+            callbackOptions: {
+              url: this.callbackUrl,
+            },
+          } as walletobjects_v1.Schema$GenericClass,
+        });
+      }
       this.classIdCache.add(classId);
       return;
     } catch (error) {
@@ -257,6 +277,11 @@ export class GoogleWalletService {
 
     const newClass: walletobjects_v1.Schema$GenericClass = {
       id: classId,
+      callbackOptions: this.callbackUrl
+        ? {
+            url: this.callbackUrl,
+          }
+        : undefined,
       classTemplateInfo: {
         cardTemplateOverride: {
           cardRowTemplateInfos: [
@@ -436,6 +461,109 @@ export class GoogleWalletService {
     }
     return String(error);
   }
+
+  async refreshMembershipPass(
+    objectId: string,
+    visitCount: number,
+    roundsThisYear: number,
+    average: number,
+    secondaryColor?: string,
+    logoUrl?: string
+  ): Promise<void> {
+    if (!this.walletEnabled) {
+      return;
+    }
+
+    try {
+      const existingObject = await this.walletClient?.genericobject.get({ resourceId: objectId });
+      if (!existingObject) {
+        return;
+      }
+
+      const currentData = existingObject.data as PassObject;
+      let hasChanges = false;
+
+      // Check if stats have changed
+      const currentVisits = currentData.textModulesData?.find(m => m.id === 'visits')?.body;
+      const currentRounds = currentData.textModulesData?.find(m => m.id === 'rounds_this_year')?.body;
+      const currentAverage = currentData.textModulesData?.find(m => m.id === 'average')?.body;
+
+      const newVisits = visitCount.toString();
+      const newRounds = roundsThisYear.toString();
+      const newAverage = average.toFixed(1);
+
+      if (currentVisits !== newVisits || currentRounds !== newRounds || currentAverage !== newAverage) {
+        hasChanges = true;
+      }
+
+      // Check if background color has changed
+      const newBackgroundColor = secondaryColor && this.validateHexColor(secondaryColor) ? secondaryColor : '#374151';
+      if (currentData.hexBackgroundColor !== newBackgroundColor) {
+        hasChanges = true;
+      }
+
+      // Check if logo has changed
+      const currentLogoUrl = currentData.logo?.sourceUri?.uri;
+      const newLogoUrl = logoUrl && this.isLikelyHttpsUrl(logoUrl) ? logoUrl : undefined;
+      if (currentLogoUrl !== newLogoUrl) {
+        hasChanges = true;
+      }
+
+      // Skip update if nothing has changed
+      if (!hasChanges) {
+        return;
+      }
+
+      // Update the textModulesData with new stats
+      const updatedObject = {
+        ...currentData,
+        textModulesData: [
+          {
+            id: 'visits',
+            header: 'Visits',
+            body: newVisits,
+          },
+          {
+            id: 'rounds_this_year',
+            header: 'Rounds This Year',
+            body: newRounds,
+          },
+          {
+            id: 'average',
+            header: 'Average',
+            body: newAverage,
+          },
+        ],
+        hexBackgroundColor: newBackgroundColor,
+      };
+
+      // Update logo if provided
+      if (newLogoUrl) {
+        (updatedObject as PassObject).logo = {
+          sourceUri: {
+            uri: newLogoUrl,
+          },
+          contentDescription: {
+            defaultValue: {
+              language: 'en-US',
+              value: 'Logo',
+            },
+          },
+        };
+      }
+
+      await this.upsertPassObject(updatedObject as PassObject);
+    } catch (error) {
+      const status = this.extractHttpStatus(error);
+      // Silently ignore 404 errors (pass no longer exists in wallet)
+      if (status !== 404) {
+        console.warn('Google Wallet refresh failed:', {
+          objectId,
+          error: this.extractErrorMessage(error),
+        });
+      }
+    }
+  }
 }
 
 let serviceInstance: GoogleWalletService | null = null;
@@ -453,5 +581,8 @@ export const googleWalletService = {
   },
   get issueMembershipPass() {
     return getGoogleWalletService().issueMembershipPass.bind(getGoogleWalletService());
+  },
+  get refreshMembershipPass() {
+    return getGoogleWalletService().refreshMembershipPass.bind(getGoogleWalletService());
   },
 };

@@ -11,6 +11,8 @@ import {
   ClubInvite,
   ClubSettings,
   GoogleDriveBackupStatus,
+  GoogleDriveFolderItem,
+  GoogleDriveFolderListResponse,
   ClubFormData,
   MembershipRoleType,
   EditingRoleState,
@@ -32,6 +34,7 @@ import InvitesSection from '../components/dashboard/InvitesSection';
 import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
 import AmmunitionSalesSection from '../components/dashboard/AmmunitionSalesSection';
 import MatchSecretarySection from '../components/dashboard/MatchSecretarySection';
+import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
 interface ActiveVisitor {
   id: string;
@@ -79,6 +82,7 @@ export default function ClubDashboard() {
   const [showFirearmForm, setShowFirearmForm] = useState(false);
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [membershipResolved, setMembershipResolved] = useState(false);
   const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings'>('operations');
 
   // Club profile edit
@@ -128,10 +132,17 @@ export default function ClubDashboard() {
     ammoSalesLookbackDays: 30,
     ammoDefaultLeadTimeDays: 14,
     ammoDefaultSafetyStockDays: 7,
+    ammoDefaultSalesSafeId: null,
   });
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
   const [backupDriveFolderIdInput, setBackupDriveFolderIdInput] = useState('');
+  const [backupDriveFolderName, setBackupDriveFolderName] = useState('');
   const [backupActionLoading, setBackupActionLoading] = useState(false);
+  const [backupFolderPickerOpen, setBackupFolderPickerOpen] = useState(false);
+  const [backupFolderPickerLoading, setBackupFolderPickerLoading] = useState(false);
+  const [backupFolderPickerError, setBackupFolderPickerError] = useState('');
+  const [backupFolderPickerCurrent, setBackupFolderPickerCurrent] = useState<{ id: string; name: string; parentId: string | null } | null>(null);
+  const [backupFolderPickerItems, setBackupFolderPickerItems] = useState<GoogleDriveFolderItem[]>([]);
   const [ammunitionTypes, setAmmunitionTypes] = useState<AmmunitionType[]>([]);
   const [ammunitionSafes, setAmmunitionSafes] = useState<AmmunitionSafe[]>([]);
   const [ammunitionStock, setAmmunitionStock] = useState<AmmunitionStock[]>([]);
@@ -164,6 +175,7 @@ export default function ClubDashboard() {
 
   useEffect(() => {
     if (!id) return;
+    setMembershipResolved(false);
     api.get<Club>(`/api/clubs/${id}`).then(clubData => {
       setClub(clubData);
       setClubForm({
@@ -182,8 +194,20 @@ export default function ClubDashboard() {
         const me = ms.find(m => m.userId === user?.id);
         setIsAdmin(me?.role === 'ADMIN');
       })
-      .catch(() => setIsAdmin(false));
+      .catch(() => setIsAdmin(false))
+      .finally(() => setMembershipResolved(true));
   }, [id, user?.id]);
+
+  useEffect(() => {
+    if (!id || !membershipResolved || isAdmin) return;
+    navigate(`/clubs/profile/${id}`, { replace: true });
+  }, [id, isAdmin, membershipResolved, navigate]);
+
+  function applyBackupStatus(status: GoogleDriveBackupStatus) {
+    setGoogleDriveStatus(status);
+    setBackupDriveFolderIdInput(status.connection.driveFolderId ?? '');
+    setBackupDriveFolderName(status.connection.driveFolderName ?? '');
+  }
 
   useEffect(() => {
     if (!id || !isAdmin) return;
@@ -200,10 +224,7 @@ export default function ClubDashboard() {
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
     api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`)
-      .then(status => {
-        setGoogleDriveStatus(status);
-        setBackupDriveFolderIdInput(status.connection.driveFolderId ?? '');
-      })
+      .then(status => applyBackupStatus(status))
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading backup status'));
     api.get<Firearm[]>(`/api/clubs/${id}/firearms`)
     .then(firearms => setFirearms(firearms))
@@ -259,6 +280,21 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading ammunition data'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isAdmin]);
+
+  useEffect(() => {
+    if (!saleSafeId) return;
+    if (!ammunitionSafes.some(safe => safe.id === saleSafeId)) {
+      setSaleSafeId('');
+    }
+  }, [saleSafeId, ammunitionSafes]);
+
+  useEffect(() => {
+    if (saleSafeId || ammunitionSafes.length === 0) return;
+
+    if (settingsForm.ammoDefaultSalesSafeId && ammunitionSafes.some(safe => safe.id === settingsForm.ammoDefaultSalesSafeId)) {
+      setSaleSafeId(settingsForm.ammoDefaultSalesSafeId);
+    }
+  }, [saleSafeId, ammunitionSafes, settingsForm.ammoDefaultSalesSafeId]);
 
   useEffect(() => {
     if (!id || !isAdmin) return;
@@ -418,6 +454,46 @@ export default function ClubDashboard() {
     }
   }
 
+  async function createBulkInvites(emails: string[]) {
+    if (!id || emails.length === 0) return;
+
+    setError('');
+
+    const results = await Promise.allSettled(
+      emails.map(email => api.post<ClubInvite>(`/api/clubs/${id}/invites`, {
+        email,
+        role: inviteRole,
+        expiresInDays: inviteExpiresInDays,
+      })),
+    );
+
+    const createdInvites: ClubInvite[] = [];
+    const failedEmails: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        createdInvites.push(result.value);
+      } else {
+        failedEmails.push(emails[index] as string);
+      }
+    });
+
+    if (createdInvites.length > 0) {
+      setInvites(prev => [...createdInvites, ...prev]);
+    }
+
+    if (failedEmails.length > 0) {
+      setError(
+        `Created ${createdInvites.length} invite(s). Failed ${failedEmails.length}: ${failedEmails.join(', ')}`,
+      );
+      return;
+    }
+
+    if (createdInvites.some(invite => invite.emailSent === false)) {
+      setError('Invites created, but email sending is disabled or failed for one or more invites.');
+    }
+  }
+
   function getInviteUrl(token: string): string {
     return `${inviteBaseUrl}/${token}/accept`;
   }
@@ -474,6 +550,12 @@ export default function ClubDashboard() {
     setFirearms(prev => prev.filter(f => f.id !== firearmId));
   }
 
+  async function toggleFavoriteFirearm(firearmId: string, isFavorite: boolean) {
+    if (!id) return;
+    const updated = await api.patch<Firearm>(`/api/clubs/${id}/firearms/${firearmId}/favorite`, { isFavorite });
+    setFirearms(prev => prev.map(f => (f.id === firearmId ? updated : f)));
+  }
+
   async function handleSignOut(visitId: string) {
     if (!id) return;
     setSignoutLoading(visitId);
@@ -519,6 +601,7 @@ export default function ClubDashboard() {
         ammoSalesLookbackDays: settingsForm.ammoSalesLookbackDays,
         ammoDefaultLeadTimeDays: settingsForm.ammoDefaultLeadTimeDays,
         ammoDefaultSafetyStockDays: settingsForm.ammoDefaultSafetyStockDays,
+        ammoDefaultSalesSafeId: settingsForm.ammoDefaultSalesSafeId || null,
       });
       setSettings(updated);
       setSettingsForm(updated);
@@ -534,7 +617,7 @@ export default function ClubDashboard() {
   async function reloadBackupStatus() {
     if (!id || !isAdmin) return;
     const status = await api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`);
-    setGoogleDriveStatus(status);
+    applyBackupStatus(status);
   }
 
   async function startGoogleDriveLink() {
@@ -548,6 +631,70 @@ export default function ClubDashboard() {
       window.location.href = response.authUrl;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error starting Google Drive link');
+      setBackupActionLoading(false);
+    }
+  }
+
+  async function loadDriveFolderChoices(parentId?: string) {
+    if (!id) return;
+    setBackupFolderPickerLoading(true);
+    setBackupFolderPickerError('');
+    try {
+      const query = parentId ? `?parentId=${encodeURIComponent(parentId)}` : '';
+      const result = await api.get<GoogleDriveFolderListResponse>(`/api/clubs/${id}/settings/backups/google-drive/folders${query}`);
+      setBackupFolderPickerCurrent(result.currentFolder);
+      setBackupFolderPickerItems(result.folders);
+    } catch (e) {
+      setBackupFolderPickerError(e instanceof Error ? e.message : 'Error loading folders');
+    } finally {
+      setBackupFolderPickerLoading(false);
+    }
+  }
+
+  async function openBackupFolderPicker() {
+    if (!googleDriveStatus?.connection?.linked) {
+      setError('Link Google Drive before picking a folder.');
+      return;
+    }
+    setBackupFolderPickerOpen(true);
+    await loadDriveFolderChoices(backupDriveFolderIdInput.trim() || undefined);
+  }
+
+  function closeBackupFolderPicker() {
+    setBackupFolderPickerOpen(false);
+    setBackupFolderPickerError('');
+  }
+
+  async function openBackupFolder(folderId: string) {
+    await loadDriveFolderChoices(folderId);
+  }
+
+  async function goUpBackupFolder() {
+    const parentId = backupFolderPickerCurrent?.parentId;
+    if (!parentId) {
+      await loadDriveFolderChoices();
+      return;
+    }
+    await loadDriveFolderChoices(parentId);
+  }
+
+  async function selectBackupFolder(folderId: string, folderName: string) {
+    if (!id) return;
+    setBackupActionLoading(true);
+    setError('');
+    try {
+      const response = await api.post<{ driveFolderId: string; folderName: string }>(`/api/clubs/${id}/settings/backups/google-drive/folder`, {
+        driveFolderId: folderId,
+      });
+      setBackupDriveFolderIdInput(response.driveFolderId);
+      setBackupDriveFolderName(response.folderName || folderName);
+      setBackupFolderPickerOpen(false);
+      await reloadBackupStatus();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Error selecting backup folder';
+      setError(message);
+      setBackupFolderPickerError(message);
+    } finally {
       setBackupActionLoading(false);
     }
   }
@@ -567,12 +714,17 @@ export default function ClubDashboard() {
     }
   }
 
-  async function createAmmunitionType() {
+  async function createAmmunitionType(pricePenceOverride?: number) {
     if (!id || !newAmmunitionTypeName.trim()) return;
+    const pricePence = pricePenceOverride ?? newAmmunitionTypePricePence;
+    if (!Number.isFinite(pricePence) || pricePence <= 0) {
+      setError('Please provide a valid ammunition price greater than 0');
+      return;
+    }
     try {
       await api.post(`/api/ammunition/club/${id}/types`, {
         name: newAmmunitionTypeName.trim(),
-        pricePence: newAmmunitionTypePricePence,
+        pricePence,
       });
       setNewAmmunitionTypeName('');
       setNewAmmunitionTypePricePence(0);
@@ -753,7 +905,34 @@ export default function ClubDashboard() {
     }
   }
 
-  if (!club) return <div>Loading…</div>;
+  async function exportMembershipCsv() {
+    if (!id) return;
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/clubs/${id}/members/export.csv`, {
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error((body as { error?: string }).error ?? response.statusText);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `club-${id}-members.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error exporting membership list');
+    }
+  }
+
+  if (!club || !membershipResolved) return <div>Loading…</div>;
+  if (!isAdmin) return null;
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
     signOutId: v.id,
@@ -801,6 +980,8 @@ export default function ClubDashboard() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      <Section21RenewalPrompt />
 
       <DashboardTabNav activeTab={activeTab} isAdmin={isAdmin} onChange={setActiveTab} />
 
@@ -851,8 +1032,20 @@ export default function ClubDashboard() {
               onDeleteSafe={deleteSafe}
               googleDriveStatus={googleDriveStatus}
               backupDriveFolderIdInput={backupDriveFolderIdInput}
+              backupDriveFolderName={backupDriveFolderName}
               backupActionLoading={backupActionLoading}
               onBackupDriveFolderIdInputChange={setBackupDriveFolderIdInput}
+              backupFolderPickerOpen={backupFolderPickerOpen}
+              backupFolderPickerLoading={backupFolderPickerLoading}
+              backupFolderPickerError={backupFolderPickerError}
+              backupFolderPickerCurrentName={backupFolderPickerCurrent?.name ?? 'My Drive'}
+              backupFolderPickerCanGoUp={Boolean(backupFolderPickerCurrent)}
+              backupFolderPickerItems={backupFolderPickerItems}
+              onOpenBackupFolderPicker={() => void openBackupFolderPicker()}
+              onCloseBackupFolderPicker={closeBackupFolderPicker}
+              onOpenBackupFolder={folderId => void openBackupFolder(folderId)}
+              onGoUpBackupFolder={() => void goUpBackupFolder()}
+              onSelectBackupFolder={(folderId, folderName) => void selectBackupFolder(folderId, folderName)}
               onStartGoogleDriveLink={startGoogleDriveLink}
               onDisconnectGoogleDrive={disconnectGoogleDrive}
               onRefreshBackupStatus={() => void reloadBackupStatus()}
@@ -878,6 +1071,7 @@ export default function ClubDashboard() {
               onAdd={addFirearm}
               onEdit={editFirearm}
               onRemove={removeFirearm}
+              onToggleFavorite={toggleFavoriteFirearm}
             />
           )}
         </>
@@ -905,6 +1099,7 @@ export default function ClubDashboard() {
             clubId={id ?? ''}
             isAdmin={isAdmin}
             currentUserId={user?.id}
+            onExportMembersCsv={exportMembershipCsv}
             editingRole={editingRole}
             savingRole={savingRole}
             removingUserId={removingMemberId}
@@ -926,6 +1121,7 @@ export default function ClubDashboard() {
               onRoleChange={setInviteRole}
               onExpiresChange={setInviteExpiresInDays}
               onCreate={createInvite}
+              onCreateBulk={createBulkInvites}
               onCopyUrl={copyInviteUrl}
               onSendEmail={resendInviteEmail}
               onCancel={cancelInvite}

@@ -15,6 +15,8 @@ import ammunitionRouter from './routes/ammunition';
 import cashboxRouter from './routes/cashbox';
 import scoringRouter from './routes/scoring';
 import competitionsRouter from './routes/competitions';
+import section21DeclarationRouter from './routes/section21Declaration';
+import walletWebhooksRouter from './routes/walletWebhooks';
 import { errorHandler } from './middleware/error';
 import { AUTH_COOKIE_NAME } from './middleware/auth';
 
@@ -134,6 +136,7 @@ export function createApp() {
       apiUrl: process.env.VITE_API_URL ?? '',
       turnstileSiteKey: process.env.VITE_TURNSTILE_SITE_KEY ?? '',
       gaMeasurementId: process.env.VITE_GA_MEASUREMENT_ID ?? '',
+      clientOrigin: process.env.CLIENT_ORIGIN ?? '',
     });
   });
 
@@ -145,8 +148,10 @@ export function createApp() {
   app.use('/api/sign-in-links', signInLinksRouter);
   app.use('/api/ammunition', ammunitionRouter);
   app.use('/api/cashbox', cashboxRouter);
+  app.use('/api/webhooks', walletWebhooksRouter);
   app.use('/api', scoringRouter);
   app.use('/api', competitionsRouter);
+  app.use('/api', section21DeclarationRouter);
 
   if (process.env.NODE_ENV === 'production') {
     const publicPath = path.join(__dirname, '..', '..', 'public');

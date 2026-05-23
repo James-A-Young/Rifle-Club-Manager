@@ -1,0 +1,42 @@
+This folder contains basic pg backout infra, the implimentor is responsbile for their own plan but we suggest pgdump streamed and encrypted via rclone 
+
+Setup:
+1.Create the config folder on your Pi:First, create an empty directory on your Raspberry Pi where Docker will save the generated configuration file.Bashmkdir -p ~/.config/rclone
+2.Spin up the interactive config container:Uses the official rclone image.Run this command to start a temporary rclone container in interactive mode (-it). We map the folder you just created into the container so the file persists after the container shuts down.Bashdocker run --rm -it \
+  -v ~/.config/rclone:/config/rclone \
+  rclone/rclone config
+3.Set up the Google Drive remote:Authorizes Google Drive without a Pi web browser.You are now inside the rclone config wizard within Docker.Type n for a new remote and name it gdrive.Choose drive as the storage type.Leave client_id and client_secret blank.Choose 1 for Full Access.CRUCIAL: When asked Use auto config?, you MUST type n (No).Rclone will generate a command that looks like rclone authorize "drive" "...".Leave your Pi terminal open. Go to your personal laptop/desktop (which has a web browser), download the rclone executable for your OS, and paste that exact command into your laptop's terminal.Your browser will open, you will log into Google, and your laptop terminal will spit out a long token code.Copy that code and paste it back into your Pi's terminal.4.Set up the encrypted remote:Once the base gdrive is set up, the wizard will ask what you want to do next. Do not exit yet.Type n for another new remote, name it secure_gdrive.Choose crypt as the type.For the remote to encrypt, type gdrive:Secure_Pi_Backups.Choose 1 for standard filename encryption and 1 for directory encryption.Enter a secure password and salt (write these down!).Type q to quit the config wizard.
+
+
+## 🔄 Disaster Recovery: Restoring a Backup
+
+Backups are encrypted and stored in Google Drive. To restore, we use a temporary `rclone` container to stream the decrypted backup directly into the PostgreSQL container. No files are downloaded to the Raspberry Pi's local disk.
+
+### 1. Find the Backup File
+First, list the available backups in your encrypted Google Drive remote:
+
+```bash
+docker run --rm -v ~/.config/rclone:/config/rclone:ro rclone/rclone ls secure_gdrive:
+```
+Identify and copy the exact filename you want to restore (e.g., backup_2026-05-20_02-00-00.dump).
+
+### 2. Stop Application Traffic
+Before restoring, stop whatever application is actively writing to the database to prevent data corruption. Leave the database container running.
+
+```
+docker compose stop <your_app_service_name>
+```
+
+### 3. Stream the Restore
+Pipe the decrypted backup directly from Google Drive into pg_restore.
+
+(Replace YOUR_FILE_NAME.dump and the database variables with your actual values).
+```
+docker run --rm -v ~/.config/rclone:/config/rclone:ro rclone/rclone cat "secure_gdrive:YOUR_FILE_NAME.dump" \
+  | docker exec -i <your_postgres_container_name> pg_restore -U <your_db_user> -d <your_database_name> -c
+```
+Warning: The -c flag tells Postgres to DROP existing tables before restoring. This gives you a clean slate but will completely overwrite the current state of the database.
+
+### 4. Restart the Application
+Once the restore command finishes executing successfully, bring your application back online:
+docker compose start <your_app_service_name>

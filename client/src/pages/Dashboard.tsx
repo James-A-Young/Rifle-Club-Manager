@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { DueCard, ScoringAverages } from '../types/club';
+import { DueCard, RecentScore, ScoringAverages } from '../types/club';
 import addToGWallet from '../assets/add_to_google_wallet.svg';
+import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
 interface Club { id: string; name: string; }
 interface VisitLog { id: string; clubId: string; purpose: string; timeIn: string; timeOut: string | null; club: Club; }
+interface MembershipPassStatusResponse { passIssuingEnabled: boolean; }
 interface MembershipPassResponse { addToWalletLink?: string; }
 interface AmmunitionPurchase {
   id: string;
@@ -25,7 +27,8 @@ export default function Dashboard() {
   const [visits, setVisits] = useState<VisitLog[]>([]);
   const [activeVisit, setActiveVisit] = useState<VisitLog | null>(null);
   const [clubs, setClubs] = useState<Club[]>([]);
-  const [membershipPasses, setMembershipPasses] = useState<Map<string,string>>(new Map()); // clubId -> passLink
+  const [membershipPassStatusByClub, setMembershipPassStatusByClub] = useState<Record<string, boolean>>({});
+  const [membershipPassLoadingClubId, setMembershipPassLoadingClubId] = useState<string | null>(null);
   const [ammunitionPurchases, setAmmunitionPurchases] = useState<AmmunitionPurchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,6 +39,7 @@ export default function Dashboard() {
   // Scoring — keyed by clubId so stale cards are replaced on each load
   const [dueCardsByClub, setDueCardsByClub] = useState<Record<string, DueCard[]>>({});
   const [avgsByClub, setAvgsByClub] = useState<Record<string, ScoringAverages & { clubName: string }>>({});
+  const [recentScoresByClub, setRecentScoresByClub] = useState<Record<string, RecentScore[]>>({});
 
   useEffect(() => {
     Promise.all([
@@ -63,18 +67,39 @@ export default function Dashboard() {
             })))
             .catch(() => { /* silently ignore */ });
 
-          api.get<MembershipPassResponse>(`/api/users/me/membership-passes/${club.id}`)
-            .then(pass => {
-              if (pass?.addToWalletLink) {
-                setMembershipPasses(prev => new Map(prev).set(club.id, pass.addToWalletLink as string));
-              }
+          api.get<RecentScore[]>(`/api/clubs/${club.id}/scoring/mine/recent`)
+            .then(scores => setRecentScoresByClub(prev => ({ ...prev, [club.id]: scores })))
+            .catch(() => { /* silently ignore */ });
+
+          api.get<MembershipPassStatusResponse>(`/api/users/me/membership-passes/${club.id}`)
+            .then(status => {
+              setMembershipPassStatusByClub(prev => ({ ...prev, [club.id]: status.passIssuingEnabled }));
             })
-            .catch(() => { /* silently ignore if club has no membership pass */ });
+            .catch(() => {
+              setMembershipPassStatusByClub(prev => ({ ...prev, [club.id]: false }));
+            });
         });
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading data'))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleAddToWallet(clubId: string) {
+    if (membershipPassLoadingClubId) return;
+    setMembershipPassLoadingClubId(clubId);
+    try {
+      const pass = await api.post<MembershipPassResponse>(`/api/users/me/membership-passes/${clubId}`, {});
+      if (pass?.addToWalletLink) {
+        window.location.href = pass.addToWalletLink;
+      } else {
+        setError('Failed to generate membership pass');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to generate membership pass');
+    } finally {
+      setMembershipPassLoadingClubId(null);
+    }
+  }
 
   async function signOut() {
     if (!activeVisit) return;
@@ -120,6 +145,14 @@ export default function Dashboard() {
     .flat()
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
+  const recentScores = clubs
+    .flatMap(club => (recentScoresByClub[club.id] ?? []).map(score => ({
+      ...score,
+      clubName: club.name,
+    })))
+    .sort((a, b) => new Date(b.scoredAt).getTime() - new Date(a.scoredAt).getTime())
+    .slice(0, 10);
+
   if (loading) return <div>Loading…</div>;
 
   return (
@@ -130,6 +163,8 @@ export default function Dashboard() {
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      <Section21RenewalPrompt />
 
       <div className="stats-grid">
         <div className="stat-card">
@@ -200,6 +235,30 @@ export default function Dashboard() {
         </section>
       )}
 
+      {recentScores.length > 0 && (
+        <section>
+          <h2>Recent Scores</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Club</th>
+                <th>Competition</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentScores.map(row => (
+                <tr key={row.scoreId}>
+                  <td>{row.clubName}</td>
+                  <td>{row.competitionName}</td>
+                  <td>{row.score}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       <section>
         <div className="page-header">
           <h2>My Clubs</h2>
@@ -237,7 +296,8 @@ export default function Dashboard() {
           </thead>
           <tbody>
             {clubs.map(club => {
-              const saveUrl = membershipPasses.get(club.id) || '#';
+              const passIssuingEnabled = membershipPassStatusByClub[club.id] === true;
+              const isGeneratingPass = membershipPassLoadingClubId === club.id;
               return (
                 <tr key={club.id}>
                   <td>{club.name}</td>
@@ -245,8 +305,17 @@ export default function Dashboard() {
                     <Link to={`/clubs/${club.id}`} className="btn btn-secondary btn-sm">View</Link>
                     </td>
                   <td>
-                    { saveUrl !== '#' ? (
-                    <a href={saveUrl}><img src={addToGWallet} alt="Add to Google Wallet" /></a>) : null }
+                    {passIssuingEnabled ? (
+                      <button
+                        type="button"
+                        className="wallet-pass-button"
+                        onClick={() => void handleAddToWallet(club.id)}
+                        disabled={isGeneratingPass}
+                        title="Generate and add your membership pass to Google Wallet"
+                      >
+                        <img className="wallet-pass-image" src={addToGWallet} alt="Add to Google Wallet" />
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               );
