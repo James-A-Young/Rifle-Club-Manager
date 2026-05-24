@@ -138,56 +138,6 @@ function verifyTwoFactorLoginToken(token: string): TwoFactorLoginJwtPayload | nu
     if (payload.purpose !== '2fa-login' || !payload.id || !payload.email) {
       return null;
     }
-
-    function getEmailVerificationRequiredBy(createdAt: Date, emailVerifiedAt: Date | null): Date | null {
-      if (emailVerifiedAt || !emailService.isConfigured()) {
-        return null;
-      }
-      return new Date(createdAt.getTime() + EMAIL_VERIFICATION_GRACE_PERIOD_MS);
-    }
-
-    async function issueAndSendEmailVerification(params: {
-      userId: string;
-      email: string;
-      name?: string | null;
-      ip: string;
-    }): Promise<void> {
-      if (!emailService.isConfigured()) {
-        return;
-      }
-
-      const verificationToken = `email_verify_${crypto.randomBytes(32).toString('hex')}`;
-      const expiresAt = new Date(Date.now() + EMAIL_VERIFICATION_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
-
-      await prisma.$transaction(async tx => {
-        await tx.emailVerificationToken.updateMany({
-          where: {
-            userId: params.userId,
-            usedAt: null,
-          },
-          data: {
-            usedAt: new Date(),
-            usedByIp: params.ip,
-            usedByUserAgent: 'superseded',
-          },
-        });
-
-        await tx.emailVerificationToken.create({
-          data: {
-            userId: params.userId,
-            token: verificationToken,
-            expiresAt,
-          },
-        });
-      });
-
-      await emailService.sendEmailVerificationEmail({
-        to: params.email,
-        name: params.name,
-        verificationToken,
-        expiresInDays: EMAIL_VERIFICATION_TOKEN_TTL_DAYS,
-      });
-    }
     return {
       id: payload.id,
       email: payload.email,
@@ -196,6 +146,56 @@ function verifyTwoFactorLoginToken(token: string): TwoFactorLoginJwtPayload | nu
   } catch {
     return null;
   }
+}
+
+function getEmailVerificationRequiredBy(createdAt: Date, emailVerifiedAt: Date | null): Date | null {
+  if (emailVerifiedAt || !emailService.isConfigured()) {
+    return null;
+  }
+  return new Date(createdAt.getTime() + EMAIL_VERIFICATION_GRACE_PERIOD_MS);
+}
+
+async function issueAndSendEmailVerification(params: {
+  userId: string;
+  email: string;
+  name?: string | null;
+  ip: string;
+}): Promise<void> {
+  if (!emailService.isConfigured()) {
+    return;
+  }
+
+  const verificationToken = `email_verify_${crypto.randomBytes(32).toString('hex')}`;
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFICATION_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  await prisma.$transaction(async tx => {
+    await tx.emailVerificationToken.updateMany({
+      where: {
+        userId: params.userId,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+        usedByIp: params.ip,
+        usedByUserAgent: 'superseded',
+      },
+    });
+
+    await tx.emailVerificationToken.create({
+      data: {
+        userId: params.userId,
+        token: verificationToken,
+        expiresAt,
+      },
+    });
+  });
+
+  await emailService.sendEmailVerificationEmail({
+    to: params.email,
+    name: params.name,
+    verificationToken,
+    expiresInDays: EMAIL_VERIFICATION_TOKEN_TTL_DAYS,
+  });
 }
 
 /** Returns true when no users exist — bootstrap mode is active. */
@@ -411,8 +411,8 @@ router.post('/register', async (req: Request, res: Response) => {
       userId: user.id,
       email: user.email,
       name: user.name,
-      ip: req.ip,
-    }).catch(error => {
+      ip: req.ip ?? 'unknown',
+    }).catch((error: unknown) => {
       console.error('Failed to issue email verification after registration:', error);
     });
   } catch (e) {
@@ -468,8 +468,8 @@ router.post('/email-verification/resend', requireAuth, async (req: AuthRequest, 
     userId: user.id,
     email: user.email,
     name: user.name,
-    ip: req.ip,
-  }).then(() => true).catch(error => {
+    ip: req.ip ?? 'unknown',
+  }).then(() => true).catch((error: unknown) => {
     console.error('Failed to resend verification email:', error);
     return false;
   });
