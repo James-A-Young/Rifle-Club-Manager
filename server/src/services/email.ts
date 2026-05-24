@@ -73,6 +73,13 @@ export interface SendTwoFactorDisableEmailParams {
   expiresInMinutes: number;
 }
 
+export interface SendEmailVerificationEmailParams {
+  to: string;
+  name?: string | null;
+  verificationToken: string;
+  expiresInDays: number;
+}
+
 function buildResetUrl(resetToken: string): string {
   const params = new URLSearchParams({ token: resetToken });
   return `${getAppOrigin()}/reset-password?${params.toString()}`;
@@ -85,6 +92,11 @@ function buildInviteUrl(inviteToken: string): string {
 function buildTwoFactorDisableUrl(disableToken: string): string {
   const params = new URLSearchParams({ token: disableToken });
   return `${getAppOrigin()}/disable-2fa?${params.toString()}`;
+}
+
+function buildEmailVerificationUrl(verificationToken: string): string {
+  const params = new URLSearchParams({ token: verificationToken });
+  return `${getAppOrigin()}/verify-email?${params.toString()}`;
 }
 
 async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Promise<boolean> {
@@ -181,6 +193,52 @@ async function sendTwoFactorDisableEmail(params: SendTwoFactorDisableEmailParams
     return false;
   }
 
+  async function sendEmailVerificationEmail(params: SendEmailVerificationEmailParams): Promise<boolean> {
+    const resend = createResendClient();
+    const from = getResendFromEmail();
+    if (!resend || !from) {
+      return false;
+    }
+
+    const verificationUrl = buildEmailVerificationUrl(params.verificationToken);
+    const safeVerificationUrl = escapeHtml(verificationUrl);
+    const greeting = params.name?.trim() ? `Hi ${params.name.trim()},` : 'Hello,';
+    const safeGreeting = escapeHtml(greeting);
+    const subject = 'Verify your Rifle Club Manager email address';
+    const text = [
+      greeting,
+      '',
+      'Please verify your email address to keep full access to your account.',
+      `Verify your email here: ${verificationUrl}`,
+      '',
+      `This link expires in ${params.expiresInDays} days.`,
+    ].join('\n');
+    const html = [
+      `<p>${safeGreeting}</p>`,
+      '<p>Please verify your email address to keep full access to your account.</p>',
+      `<p><a href="${safeVerificationUrl}">Verify your email</a></p>`,
+      `<p>This link expires in ${params.expiresInDays} days.</p>`,
+    ].join('');
+
+    try {
+      await resend.emails.send({
+        from,
+        to: params.to,
+        subject,
+        text,
+        html,
+      });
+      return true;
+    } catch (error) {
+      console.error('Failed to send email verification email:', error);
+      return false;
+    }
+  }
+
+  function isConfigured(): boolean {
+    return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
+  }
+
   const disableUrl = buildTwoFactorDisableUrl(params.disableToken);
   const safeDisableUrl = escapeHtml(disableUrl);
   const greeting = params.name?.trim() ? `Hi ${params.name.trim()},` : 'Hello,';
@@ -225,7 +283,9 @@ export function sanitizeUserAgent(userAgent: string | null | undefined): string 
 }
 
 export const emailService = {
+  isConfigured,
   sendPasswordResetEmail,
   sendInviteEmail,
   sendTwoFactorDisableEmail,
+  sendEmailVerificationEmail,
 };

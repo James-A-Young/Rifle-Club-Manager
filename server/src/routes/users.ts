@@ -15,6 +15,7 @@ import {
 } from '../services/twoFactor';
 
 const router = Router();
+const EMAIL_VERIFICATION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 
 router.use(requireAuth);
 
@@ -25,6 +26,7 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       id: true,
       name: true,
       email: true,
+      emailVerifiedAt: true,
       twoFactorEnabled: true,
       address: true,
       placeOfBirth: true,
@@ -50,6 +52,10 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
 
   res.json({
     ...user,
+    emailVerificationRequiredBy:
+      user.emailVerifiedAt || !process.env.RESEND_API_KEY?.trim() || !process.env.RESEND_FROM_EMAIL?.trim()
+        ? null
+        : new Date(user.createdAt.getTime() + EMAIL_VERIFICATION_GRACE_PERIOD_MS),
     section21Status,
   });
 });

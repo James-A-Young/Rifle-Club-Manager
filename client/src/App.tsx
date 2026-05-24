@@ -9,6 +9,7 @@ import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import DisableTwoFactor from './pages/DisableTwoFactor';
+import VerifyEmail from './pages/VerifyEmail';
 import Bootstrap from './pages/Bootstrap';
 import Dashboard from './pages/Dashboard';
 import Landing from './pages/Landing';
@@ -25,6 +26,7 @@ import Profile from './pages/Profile';
 import ClubPublicProfile from './pages/ClubPublicProfile';
 import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
 import { trackPageView } from './analytics';
+import { api } from './api';
 
 function usePageTracking(): void {
   const location = useLocation();
@@ -82,6 +84,56 @@ function HomeRoute() {
   return <Dashboard />;
 }
 
+function EmailVerificationBanner() {
+  const { user, refreshUser } = useAuth();
+  const [sending, setSending] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  const [error, setError] = React.useState('');
+
+  if (!user || user.emailVerifiedAt) {
+    return null;
+  }
+
+  const deadlineText = user.emailVerificationRequiredBy
+    ? new Date(user.emailVerificationRequiredBy).toLocaleString()
+    : null;
+
+  async function resendVerificationEmail() {
+    setSending(true);
+    setError('');
+    setMessage('');
+    try {
+      const response = await api.post<{ message?: string }>('/api/auth/email-verification/resend', {});
+      setMessage(response.message ?? 'Verification email sent.');
+      await refreshUser().catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend verification email.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="alert alert-info" style={{ margin: '0.75rem 1rem 0' }}>
+      <strong>Please verify your email address.</strong>{' '}
+      {deadlineText
+        ? `Verify by ${deadlineText} to keep full access. `
+        : 'Check your inbox for your verification link. '}
+      <button
+        type="button"
+        className="btn btn-secondary btn-sm"
+        onClick={() => void resendVerificationEmail()}
+        disabled={sending}
+        style={{ marginLeft: '0.5rem' }}
+      >
+        {sending ? 'Sending…' : 'Resend verification email'}
+      </button>
+      {message && <div style={{ marginTop: '0.4rem' }}>{message}</div>}
+      {error && <div style={{ marginTop: '0.4rem', color: '#991b1b' }}>{error}</div>}
+    </div>
+  );
+}
+
 function AppRoutes() {
   const { loading } = useAuth();
   const { clientOrigin } = useConfig();
@@ -95,6 +147,7 @@ function AppRoutes() {
   return (
     <>
       {!isKioskRoute && !isSection21SignUp && <Navbar />}
+      <EmailVerificationBanner />
       <main>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -102,6 +155,7 @@ function AppRoutes() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/disable-2fa" element={<DisableTwoFactor />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/setup" element={<Bootstrap />} />
           <Route path="/section21-declaration-signup" element={<ProtectedRoute><Section21DeclarationSignUp /></ProtectedRoute>} />
           <Route path="/" element={<HomeRoute />} />

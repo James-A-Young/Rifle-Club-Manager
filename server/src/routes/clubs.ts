@@ -292,6 +292,7 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
           id: true,
           name: true,
           email: true,
+          emailVerifiedAt: true,
           address: true,
           placeOfBirth: true,
           dateOfBirth: true,
