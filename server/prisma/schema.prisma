@@ -60,6 +60,7 @@ model User {
   id              String   @id @default(cuid())
   name            String
   email           String   @unique
+  emailVerifiedAt DateTime?
   passwordHash    String
   gdprConsentDate DateTime
   address         String
@@ -90,12 +91,30 @@ model User {
   competitionEntries CompetitionEntry[]
   scores             Score[]
   passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
   twoFactorDisableTokens TwoFactorDisableToken[]
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
   profileHistoryEntries UserProfileHistory[] @relation("UserProfileHistorySubject")
   profileHistoryChanges UserProfileHistory[] @relation("UserProfileHistoryActor")
   cashBoxTransactionsCreated CashBoxTransaction[] @relation("CashBoxTransactionCreatedBy")
   section21Declarations Section21Declaration[]
+}
+
+model EmailVerificationToken {
+  id                String   @id @default(cuid())
+  userId            String
+  token             String   @unique
+  expiresAt         DateTime
+  usedAt            DateTime?
+  usedByIp          String?
+  usedByUserAgent   String?
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
 
 model Club {

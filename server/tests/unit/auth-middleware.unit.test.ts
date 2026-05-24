@@ -20,18 +20,18 @@ describe('auth middleware', () => {
     vi.clearAllMocks();
   });
 
-  it('requireAuth returns 401 when bearer header missing', () => {
+  it('requireAuth returns 401 when bearer header missing', async () => {
     const req = { headers: {} } as AuthRequest;
     const res = mockResponse();
     const next = vi.fn() as NextFunction;
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     expect((res.status as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('requireAuth attaches user and calls next for valid token', () => {
+  it('requireAuth attaches user and calls next for valid token', async () => {
     const verifyMock = vi.mocked(jwt.verify);
     verifyMock.mockReturnValue({ id: 'u1', email: 'u1@test.com' } as never);
 
@@ -39,7 +39,7 @@ describe('auth middleware', () => {
     const res = mockResponse();
     const next = vi.fn() as NextFunction;
 
-    requireAuth(req, res, next);
+    await requireAuth(req, res, next);
 
     expect(req.user?.id).toBe('u1');
     expect(next).toHaveBeenCalledOnce();
