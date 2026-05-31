@@ -23,6 +23,10 @@ import {
   PaymentMethod,
   AmmunitionReorderAnalysisResponse,
   AmmunitionReorderAnalysisRow,
+  ClubPublicPageData,
+  ClubPublicBlogPost,
+  ClubPublicDomain,
+  PublicAnnouncementVariant,
 } from '../types/club';
 import DashboardTabNav from '../components/dashboard/DashboardTabNav';
 import ClubProfileSection from '../components/dashboard/ClubProfileSection';
@@ -35,6 +39,7 @@ import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisit
 import AmmunitionSalesSection from '../components/dashboard/AmmunitionSalesSection';
 import MatchSecretarySection from '../components/dashboard/MatchSecretarySection';
 import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
+import PublicSiteSection from '../components/dashboard/PublicSiteSection';
 
 interface ActiveVisitor {
   id: string;
@@ -50,6 +55,39 @@ interface ActiveVisitor {
 interface AmmunitionSettingsResponse {
   types: AmmunitionType[];
   safes: AmmunitionSafe[];
+}
+
+interface PublicSiteProfileForm {
+  vanitySlug: string;
+  heroTitle: string;
+  heroSubtitle: string;
+  headerImageUrl: string;
+  headerImageAlt: string;
+}
+
+interface PublicSessionDraft {
+  dayLabel: string;
+  sessionType: string;
+  startsAt: string;
+  endsAt: string;
+  notes: string;
+}
+
+interface PublicAnnouncementDraft {
+  title: string;
+  message: string;
+  variant: PublicAnnouncementVariant;
+  startsAt: string;
+  endsAt: string;
+  isEnabled: boolean;
+}
+
+interface PublicBlogDraft {
+  title: string;
+  slug: string;
+  excerpt: string;
+  markdownBody: string;
+  isPublished: boolean;
 }
 
 function toLocalDayBoundaryIso(date: string, boundary: 'start' | 'end'): string {
@@ -170,6 +208,27 @@ export default function ClubDashboard() {
   const [transferFromSafeId, setTransferFromSafeId] = useState('');
   const [transferToSafeId, setTransferToSafeId] = useState('');
   const [transferQuantity, setTransferQuantity] = useState(1);
+  const [publicSiteProfileForm, setPublicSiteProfileForm] = useState<PublicSiteProfileForm>({
+    vanitySlug: '',
+    heroTitle: '',
+    heroSubtitle: '',
+    headerImageUrl: '',
+    headerImageAlt: '',
+  });
+  const [publicSessions, setPublicSessions] = useState<PublicSessionDraft[]>([]);
+  const [publicAnnouncements, setPublicAnnouncements] = useState<PublicAnnouncementDraft[]>([]);
+  const [publicBlogPosts, setPublicBlogPosts] = useState<ClubPublicBlogPost[]>([]);
+  const [publicBlogDraft, setPublicBlogDraft] = useState<PublicBlogDraft>({
+    title: '',
+    slug: '',
+    excerpt: '',
+    markdownBody: '',
+    isPublished: false,
+  });
+  const [publicDomains, setPublicDomains] = useState<ClubPublicDomain[]>([]);
+  const [expectedCnameTarget, setExpectedCnameTarget] = useState('public.shootingmatch.app');
+  const [newPublicDomain, setNewPublicDomain] = useState('');
+  const [publicSiteSaving, setPublicSiteSaving] = useState(false);
 
   const REFRESH_VISITS_INTERVAL_MS = 120_000;
 
@@ -229,6 +288,45 @@ export default function ClubDashboard() {
     api.get<Firearm[]>(`/api/clubs/${id}/firearms`)
     .then(firearms => setFirearms(firearms))
     .catch(e => setError(e instanceof Error ? e.message : 'Error loading firearms'));
+    api.get<{
+      publicSite: ClubPublicPageData['publicSite'];
+      posts: ClubPublicBlogPost[];
+      domains: ClubPublicDomain[];
+    }>(`/api/clubs/${id}/public-site`)
+      .then(data => {
+        const site = data.publicSite;
+        setPublicSiteProfileForm({
+          vanitySlug: site?.vanitySlug ?? '',
+          heroTitle: site?.heroTitle ?? '',
+          heroSubtitle: site?.heroSubtitle ?? '',
+          headerImageUrl: site?.headerImageUrl ?? '',
+          headerImageAlt: site?.headerImageAlt ?? '',
+        });
+        setPublicSessions((site?.sessions ?? []).map(item => ({
+          dayLabel: item.dayLabel,
+          sessionType: item.sessionType,
+          startsAt: item.startsAt,
+          endsAt: item.endsAt,
+          notes: item.notes ?? '',
+        })));
+        setPublicAnnouncements((site?.announcements ?? []).map(item => ({
+          title: item.title,
+          message: item.message,
+          variant: item.variant,
+          startsAt: item.startsAt ? item.startsAt.slice(0, 16) : '',
+          endsAt: item.endsAt ? item.endsAt.slice(0, 16) : '',
+          isEnabled: item.isEnabled,
+        })));
+        setPublicBlogPosts(data.posts ?? []);
+        setPublicDomains(data.domains ?? []);
+      })
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading public site settings'));
+    api.get<{ expectedCnameTarget: string; domains: ClubPublicDomain[] }>(`/api/clubs/${id}/public-site/domains`)
+      .then(data => {
+        setExpectedCnameTarget(data.expectedCnameTarget);
+        setPublicDomains(data.domains);
+      })
+      .catch(() => undefined);
   }, [id, isAdmin]);
 
   useEffect(() => {
@@ -931,6 +1029,168 @@ export default function ClubDashboard() {
     }
   }
 
+  async function savePublicSiteProfile() {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      await api.patch(`/api/clubs/${id}/public-site`, {
+        vanitySlug: publicSiteProfileForm.vanitySlug || null,
+        heroTitle: publicSiteProfileForm.heroTitle || null,
+        heroSubtitle: publicSiteProfileForm.heroSubtitle || null,
+        headerImageUrl: publicSiteProfileForm.headerImageUrl || null,
+        headerImageAlt: publicSiteProfileForm.headerImageAlt || null,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save public profile settings');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function savePublicSessions() {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      await api.put(`/api/clubs/${id}/public-site/sessions`, {
+        sessions: publicSessions.map(item => ({
+          dayLabel: item.dayLabel,
+          sessionType: item.sessionType,
+          startsAt: item.startsAt,
+          endsAt: item.endsAt,
+          notes: item.notes || null,
+        })),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save sessions');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function savePublicAnnouncements() {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      await api.put(`/api/clubs/${id}/public-site/announcements`, {
+        announcements: publicAnnouncements.map(item => ({
+          title: item.title,
+          message: item.message,
+          variant: item.variant,
+          startsAt: item.startsAt ? new Date(item.startsAt).toISOString() : null,
+          endsAt: item.endsAt ? new Date(item.endsAt).toISOString() : null,
+          isEnabled: item.isEnabled,
+        })),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save announcements');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function createPublicBlogPost() {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      const created = await api.post<ClubPublicBlogPost>(`/api/clubs/${id}/public-site/blog-posts`, {
+        title: publicBlogDraft.title,
+        slug: publicBlogDraft.slug || undefined,
+        excerpt: publicBlogDraft.excerpt || null,
+        markdownBody: publicBlogDraft.markdownBody,
+        isPublished: publicBlogDraft.isPublished,
+      });
+      setPublicBlogPosts(prev => [created, ...prev]);
+      setPublicBlogDraft({ title: '', slug: '', excerpt: '', markdownBody: '', isPublished: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create blog post');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function deletePublicBlogPost(postId: string) {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      await api.delete(`/api/clubs/${id}/public-site/blog-posts/${postId}`);
+      setPublicBlogPosts(prev => prev.filter(post => post.id !== postId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete blog post');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function togglePublicBlogPost(postId: string, publish: boolean) {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      const updated = await api.patch<ClubPublicBlogPost>(`/api/clubs/${id}/public-site/blog-posts/${postId}`, {
+        isPublished: publish,
+      });
+      setPublicBlogPosts(prev => prev.map(post => post.id === postId ? updated : post));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update blog post');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function addPublicDomain() {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      const created = await api.post<ClubPublicDomain>(`/api/clubs/${id}/public-site/domains`, {
+        domain: newPublicDomain,
+      });
+      setPublicDomains(prev => [...prev, created]);
+      setNewPublicDomain('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add custom domain');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function verifyPublicDomain(domainId: string) {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      const response = await api.post<{ domain: ClubPublicDomain }>(`/api/clubs/${id}/public-site/domains/${domainId}/check-verification`, {});
+      setPublicDomains(prev => prev.map(domain => domain.id === domainId ? response.domain : domain));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to verify domain');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function toggleDomainActivation(domainId: string, isActive: boolean) {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      const response = await api.patch<{ domains: ClubPublicDomain[] }>(`/api/clubs/${id}/public-site/domains/${domainId}/activation`, { isActive });
+      setPublicDomains(response.domains);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update domain activation');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
+  async function deletePublicDomain(domainId: string) {
+    if (!id || !isAdmin) return;
+    setPublicSiteSaving(true);
+    try {
+      await api.delete(`/api/clubs/${id}/public-site/domains/${domainId}`);
+      setPublicDomains(prev => prev.filter(domain => domain.id !== domainId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete domain');
+    } finally {
+      setPublicSiteSaving(false);
+    }
+  }
+
   if (!club || !membershipResolved) return <div>Loading…</div>;
   if (!isAdmin) return null;
 
@@ -1006,6 +1266,35 @@ export default function ClubDashboard() {
               }))
             }
           />
+
+          {isAdmin && (
+            <PublicSiteSection
+              profile={publicSiteProfileForm}
+              sessions={publicSessions}
+              announcements={publicAnnouncements}
+              blogPosts={publicBlogPosts}
+              blogDraft={publicBlogDraft}
+              domains={publicDomains}
+              newDomain={newPublicDomain}
+              expectedCnameTarget={expectedCnameTarget}
+              loading={publicSiteSaving}
+              onProfileChange={partial => setPublicSiteProfileForm(prev => ({ ...prev, ...partial }))}
+              onSaveProfile={() => void savePublicSiteProfile()}
+              onSessionsChange={setPublicSessions}
+              onSaveSessions={() => void savePublicSessions()}
+              onAnnouncementsChange={setPublicAnnouncements}
+              onSaveAnnouncements={() => void savePublicAnnouncements()}
+              onBlogDraftChange={partial => setPublicBlogDraft(prev => ({ ...prev, ...partial }))}
+              onCreateBlogPost={() => void createPublicBlogPost()}
+              onDeleteBlogPost={postId => void deletePublicBlogPost(postId)}
+              onTogglePublishBlogPost={(postId, publish) => void togglePublicBlogPost(postId, publish)}
+              onNewDomainChange={setNewPublicDomain}
+              onAddDomain={() => void addPublicDomain()}
+              onVerifyDomain={domainId => void verifyPublicDomain(domainId)}
+              onToggleDomainActivation={(domainId, active) => void toggleDomainActivation(domainId, active)}
+              onDeleteDomain={domainId => void deletePublicDomain(domainId)}
+            />
+          )}
 
           {isAdmin && (
             <ClubSettingsSection
