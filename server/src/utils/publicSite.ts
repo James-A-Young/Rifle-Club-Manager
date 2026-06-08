@@ -81,7 +81,7 @@ export function renderMarkdownToSafeHtml(markdown: string): string {
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    html.push(`<p>${applyInlineMarkdown(paragraph.join('<br/>'))}</p>`);
+    html.push(`<p>${paragraph.map(line => applyInlineMarkdown(line)).join('<br/>')}</p>`);
     paragraph = [];
   };
 
