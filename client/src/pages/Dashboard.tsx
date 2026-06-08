@@ -71,7 +71,7 @@ export default function Dashboard() {
             .then(scores => setRecentScoresByClub(prev => ({ ...prev, [club.id]: scores })))
             .catch(() => { /* silently ignore */ });
 
-          api.get<MembershipPassStatusResponse>(`/api/users/me/membership-passes/${club.id}`)
+          api.get<MembershipPassStatusResponse>(`/api/users/me/membership-passes/${club.id}/status`)
             .then(status => {
               setMembershipPassStatusByClub(prev => ({ ...prev, [club.id]: status.passIssuingEnabled }));
             })
