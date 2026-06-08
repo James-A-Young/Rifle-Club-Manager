@@ -309,12 +309,18 @@ export default function ClubDashboard() {
           endsAt: item.endsAt,
           notes: item.notes ?? '',
         })));
+        const toDateTimeLocal = (iso: string | null | undefined) => {
+          if (!iso) return '';
+          const date = new Date(iso);
+          date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+          return date.toISOString().slice(0, 16);
+        };
         setPublicAnnouncements((site?.announcements ?? []).map(item => ({
           title: item.title,
           message: item.message,
           variant: item.variant,
-          startsAt: item.startsAt ? item.startsAt.slice(0, 16) : '',
-          endsAt: item.endsAt ? item.endsAt.slice(0, 16) : '',
+          startsAt: toDateTimeLocal(item.startsAt),
+          endsAt: toDateTimeLocal(item.endsAt),
           isEnabled: item.isEnabled,
         })));
         setPublicBlogPosts(data.posts ?? []);
