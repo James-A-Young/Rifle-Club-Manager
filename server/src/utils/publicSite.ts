@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { randomBytes } from 'crypto';
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
@@ -34,8 +34,8 @@ export function normalizeHostHeader(hostHeader: string | undefined): string | nu
   return normalizeDomain(hostHeader);
 }
 
-export function buildVerificationToken(domain: string): string {
-  return createHash('sha256').update(`${domain}:${Date.now()}:${Math.random()}`).digest('hex').slice(0, 24);
+export function buildVerificationToken(_domain: string): string {
+  return randomBytes(12).toString('hex');
 }
 
 export function getExpectedCnameTarget(): string {
