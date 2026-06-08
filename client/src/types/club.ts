@@ -23,6 +23,91 @@ export interface Club {
   description?: string | null;
 }
 
+export type PublicAnnouncementVariant = 'INFO' | 'WARNING' | 'SUCCESS';
+
+export interface ClubPublicSessionBlock {
+  id: string;
+  clubId: string;
+  dayLabel: string;
+  sessionType: string;
+  startsAt: string;
+  endsAt: string;
+  notes?: string | null;
+  sortOrder: number;
+}
+
+export interface ClubPublicAnnouncement {
+  id: string;
+  clubId: string;
+  title: string;
+  message: string;
+  variant: PublicAnnouncementVariant;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
+export interface ClubPublicBlogPostPreview {
+  id: string;
+  clubId: string;
+  title: string;
+  slug: string;
+  excerpt?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ClubPublicBlogPost extends ClubPublicBlogPostPreview {
+  markdownBody: string;
+  renderedHtml?: string;
+  isPublished: boolean;
+  updatedAt?: string;
+}
+
+export interface ClubPublicBlogPostListResponse {
+  posts: ClubPublicBlogPostPreview[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface ClubPublicDomain {
+  id: string;
+  clubId: string;
+  domain: string;
+  verificationToken: string;
+  expectedCnameTarget: string;
+  status: 'PENDING' | 'VERIFIED';
+  isActive: boolean;
+  verifiedAt?: string | null;
+  lastCheckedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClubPublicSiteProfile {
+  vanitySlug?: string | null;
+  heroTitle?: string | null;
+  heroSubtitle?: string | null;
+  headerImageUrl?: string | null;
+  headerImageAlt?: string | null;
+  sessions: ClubPublicSessionBlock[];
+  announcements: ClubPublicAnnouncement[];
+  blogPosts: ClubPublicBlogPostPreview[];
+  canonicalUrl: string;
+  resolvedBy: 'id' | 'vanity' | 'domain';
+}
+
+export interface ClubPublicPageData extends Club {
+  createdAt: string;
+  _count: { memberships: number };
+  publicSite: ClubPublicSiteProfile;
+}
+
 export interface MemberUser {
   id: string;
   name: string;

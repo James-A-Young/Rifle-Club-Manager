@@ -56,6 +56,17 @@ enum CashBoxTransactionReason {
   BANKED_CASH
 }
 
+enum PublicAnnouncementVariant {
+  INFO
+  WARNING
+  SUCCESS
+}
+
+enum PublicDomainStatus {
+  PENDING
+  VERIFIED
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -129,6 +140,97 @@ model Club {
   backupRuns       BackupRun[]
   cashBox          CashBox?
   cashBoxTransactions CashBoxTransaction[]
+  publicSiteProfile ClubPublicSiteProfile?
+  publicSessionBlocks ClubPublicSessionBlock[]
+  publicAnnouncements ClubPublicAnnouncement[]
+  publicBlogPosts ClubPublicBlogPost[]
+  publicDomains ClubPublicDomain[]
+}
+
+model ClubPublicSiteProfile {
+  id             String   @id @default(cuid())
+  clubId         String   @unique
+  vanitySlug     String?  @unique
+  heroTitle      String?
+  heroSubtitle   String?
+  headerImageUrl String?
+  headerImageAlt String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+}
+
+model ClubPublicSessionBlock {
+  id          String   @id @default(cuid())
+  clubId      String
+  dayLabel    String
+  sessionType String
+  startsAt    String
+  endsAt      String
+  notes       String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, sortOrder])
+}
+
+model ClubPublicAnnouncement {
+  id         String                    @id @default(cuid())
+  clubId     String
+  title      String
+  message    String
+  variant    PublicAnnouncementVariant @default(INFO)
+  startsAt   DateTime?
+  endsAt     DateTime?
+  isEnabled  Boolean                   @default(true)
+  sortOrder  Int                       @default(0)
+  createdAt  DateTime                  @default(now())
+  updatedAt  DateTime                  @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, sortOrder])
+  @@index([clubId, isEnabled])
+}
+
+model ClubPublicBlogPost {
+  id          String   @id @default(cuid())
+  clubId       String
+  title        String
+  slug         String
+  excerpt      String?
+  markdownBody String
+  isPublished  Boolean  @default(false)
+  publishedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, slug])
+  @@index([clubId, isPublished, publishedAt])
+}
+
+model ClubPublicDomain {
+  id                  String             @id @default(cuid())
+  clubId              String
+  domain              String             @unique
+  verificationToken   String
+  expectedCnameTarget String
+  status              PublicDomainStatus @default(PENDING)
+  isActive            Boolean            @default(false)
+  verifiedAt          DateTime?
+  lastCheckedAt       DateTime?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, isActive])
 }
 
 model ClubMembership {

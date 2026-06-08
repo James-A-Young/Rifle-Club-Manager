@@ -318,6 +318,125 @@ tr:hover td { background: var(--gray-50); }
   padding: 1rem;
 }
 
+.public-site-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.public-hero {
+  color: var(--white);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--navy), var(--slate));
+  background-size: cover;
+  background-position: center;
+  padding: 2rem 1.5rem;
+}
+
+.public-hero h1 {
+  color: var(--white);
+  margin-bottom: 0.5rem;
+}
+
+.public-hero p {
+  max-width: 640px;
+  margin-bottom: 1rem;
+}
+
+.public-announcements {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.public-banner {
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.public-banner-info {
+  background: #eaf3fb;
+  border: 1px solid #4a90d9;
+}
+
+.public-banner-warning {
+  background: #fff8e1;
+  border: 1px solid #f39c12;
+}
+
+.public-banner-success {
+  background: #eafaf1;
+  border: 1px solid #2ecc71;
+}
+
+.public-overview-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 0.45rem 1rem;
+}
+
+.public-overview-grid dt {
+  font-weight: 600;
+  color: var(--gray-600);
+}
+
+.public-blog-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.public-blog-card {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 0.85rem;
+}
+
+.public-blog-card h3 {
+  margin-bottom: 0.25rem;
+}
+
+.public-blog-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.public-blog-pagination span {
+  color: var(--gray-600);
+  font-size: 0.95rem;
+}
+
+.markdown-content {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.markdown-content ul {
+  margin-left: 1.2rem;
+}
+
+.markdown-content p,
+.markdown-content li {
+  line-height: 1.65;
+}
+
+.markdown-content code {
+  background: var(--gray-100);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+}
+
+@media (max-width: 720px) {
+  .public-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .public-blog-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .kiosk-card {
   width: min(680px, 95vw);
   text-align: center;

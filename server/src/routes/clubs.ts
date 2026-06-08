@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import crypto from 'crypto';
+import dns from 'dns/promises';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
@@ -23,6 +24,15 @@ import { GoogleDriveBackupClient } from '../services/backups/googleDriveClient';
 import { buildMemberDemographicsCsv } from '../services/exports/memberDemographicsExport';
 import { getUserProfileHistorySince } from '../services/profileHistory';
 import { deriveDeclarationStatusFromDueDate } from '../services/section21Declaration';
+import {
+  buildVerificationToken,
+  getExpectedCnameTarget,
+  normalizeDomain,
+  normalizeHostHeader,
+  normalizeVanitySlug,
+  renderMarkdownToSafeHtml,
+  slugFromTitle,
+} from '../utils/publicSite';
 
 const router = Router();
 
@@ -50,9 +60,181 @@ const publicClubProfileParamsSchema = z.object({
   id: z.string().min(1),
 });
 
+const publicClubVanityParamsSchema = z.object({
+  vanity: z.string().min(1),
+});
+
+const publicClubBlogParamsSchema = z.object({
+  slug: z.string().min(1),
+});
+
+const PUBLIC_BLOG_DEFAULT_PAGE_SIZE = 5;
+const PUBLIC_BLOG_MAX_PAGE_SIZE = 20;
+
+const publicBlogListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(PUBLIC_BLOG_MAX_PAGE_SIZE).default(PUBLIC_BLOG_DEFAULT_PAGE_SIZE),
+});
+
 const invitePreviewParamsSchema = z.object({
   token: z.string().min(1),
 });
+
+function buildCanonicalUrl(clubId: string, vanitySlug: string | null | undefined, activeDomain: string | null | undefined): string {
+  if (activeDomain) {
+    return `https://${activeDomain}`;
+  }
+  if (vanitySlug) {
+    return `https://shootingmatch.app/clubpage/${vanitySlug}`;
+  }
+  return `https://shootingmatch.app/clubs/profile/${clubId}`;
+}
+
+async function getPublicBlogPostPreviews(clubId: string, page: number, pageSize: number) {
+  const skip = (page - 1) * pageSize;
+  const where = { clubId, isPublished: true };
+
+  const [total, posts] = await Promise.all([
+    prisma.clubPublicBlogPost.count({ where }),
+    prisma.clubPublicBlogPost.findMany({
+      where,
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        clubId: true,
+        title: true,
+        slug: true,
+        excerpt: true,
+        publishedAt: true,
+        createdAt: true,
+      },
+    }),
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  return {
+    posts,
+    page,
+    pageSize,
+    total,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1 && totalPages > 0,
+  };
+}
+
+async function resolveClubIdFromVanity(vanityRaw: string): Promise<string | null> {
+  const vanity = normalizeVanitySlug(vanityRaw);
+  if (!vanity) {
+    return null;
+  }
+
+  const profile = await prisma.clubPublicSiteProfile.findUnique({
+    where: { vanitySlug: vanity },
+    select: { clubId: true },
+  });
+
+  return profile?.clubId ?? null;
+}
+
+async function resolveClubIdFromHost(hostHeader: string | undefined): Promise<string | null> {
+  const host = normalizeHostHeader(hostHeader);
+  if (!host) {
+    return null;
+  }
+
+  const domain = await prisma.clubPublicDomain.findFirst({
+    where: { domain: host, isActive: true, status: 'VERIFIED' },
+    select: { clubId: true },
+  });
+
+  return domain?.clubId ?? null;
+}
+
+async function getPublicSitePayload(clubId: string, mode: 'id' | 'vanity' | 'domain') {
+  const now = new Date();
+  const [club, profile, sessions, announcements, blogPosts, activeDomain] = await Promise.all([
+    prisma.club.findUnique({
+      where: { id: clubId },
+      select: {
+        id: true,
+        name: true,
+        homeOfficeRef: true,
+        address: true,
+        disciplinesOffered: true,
+        acceptingNewMembers: true,
+        openingTimes: true,
+        description: true,
+        createdAt: true,
+        _count: { select: { memberships: true } },
+      },
+    }),
+    prisma.clubPublicSiteProfile.findUnique({ where: { clubId } }),
+    prisma.clubPublicSessionBlock.findMany({ where: { clubId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
+    prisma.clubPublicAnnouncement.findMany({
+      where: {
+        clubId,
+        isEnabled: true,
+        OR: [
+          { startsAt: null, endsAt: null },
+          { startsAt: null, endsAt: { gte: now } },
+          { startsAt: { lte: now }, endsAt: null },
+          { startsAt: { lte: now }, endsAt: { gte: now } },
+        ],
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+    }),
+    getPublicBlogPostPreviews(clubId, 1, PUBLIC_BLOG_DEFAULT_PAGE_SIZE),
+    prisma.clubPublicDomain.findFirst({
+      where: { clubId, isActive: true, status: 'VERIFIED' },
+      select: { domain: true },
+    }),
+  ]);
+
+  if (!club) return null;
+
+  return {
+    ...club,
+    publicSite: {
+      vanitySlug: profile?.vanitySlug ?? null,
+      heroTitle: profile?.heroTitle ?? null,
+      heroSubtitle: profile?.heroSubtitle ?? null,
+      headerImageUrl: profile?.headerImageUrl ?? null,
+      headerImageAlt: profile?.headerImageAlt ?? null,
+      sessions,
+      announcements,
+      blogPosts: blogPosts.posts,
+      canonicalUrl: buildCanonicalUrl(club.id, profile?.vanitySlug, activeDomain?.domain),
+      resolvedBy: mode,
+    },
+  };
+}
+
+async function getPublicBlogPost(clubId: string, slug: string) {
+  const post = await prisma.clubPublicBlogPost.findFirst({
+    where: { clubId, slug, isPublished: true },
+    select: {
+      id: true,
+      clubId: true,
+      title: true,
+      slug: true,
+      excerpt: true,
+      markdownBody: true,
+      isPublished: true,
+      publishedAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!post) return null;
+  return {
+    ...post,
+    renderedHtml: renderMarkdownToSafeHtml(post.markdownBody),
+  };
+}
 
 router.get('/profile/:id', async (req, res: Response) => {
   const params = publicClubProfileParamsSchema.safeParse(req.params);
@@ -61,28 +243,222 @@ router.get('/profile/:id', async (req, res: Response) => {
     return;
   }
 
+  const payload = await getPublicSitePayload(params.data.id, 'id');
+  if (!payload) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  res.json(payload);
+});
+
+router.get('/profile/:id/blog', async (req, res: Response) => {
+  const params = publicClubProfileParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+
+  const query = publicBlogListQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: formatZodError(query.error) });
+    return;
+  }
+
   const club = await prisma.club.findUnique({
     where: { id: params.data.id },
-    select: {
-      id: true,
-      name: true,
-      homeOfficeRef: true,
-      address: true,
-      disciplinesOffered: true,
-      acceptingNewMembers: true,
-      openingTimes: true,
-      description: true,
-      createdAt: true,
-      _count: { select: { memberships: true } },
-    },
+    select: { id: true },
   });
-
   if (!club) {
     res.status(404).json({ error: 'Club not found' });
     return;
   }
 
-  res.json(club);
+  const result = await getPublicBlogPostPreviews(club.id, query.data.page, query.data.pageSize);
+  res.json(result);
+});
+
+router.get('/profile/:id/blog/:slug', async (req, res: Response) => {
+  const profileParams = publicClubProfileParamsSchema.safeParse(req.params);
+  const blogParams = publicClubBlogParamsSchema.safeParse(req.params);
+  if (!profileParams.success) {
+    res.status(400).json({ error: formatZodError(profileParams.error) });
+    return;
+  }
+  if (!blogParams.success) {
+    res.status(400).json({ error: formatZodError(blogParams.error) });
+    return;
+  }
+
+  const [payload, post] = await Promise.all([
+    getPublicSitePayload(profileParams.data.id, 'id'),
+    getPublicBlogPost(profileParams.data.id, blogParams.data.slug),
+  ]);
+  if (!payload || !post) {
+    res.status(404).json({ error: 'Blog post not found' });
+    return;
+  }
+  res.json({ club: payload, post });
+});
+
+router.get('/public/by-vanity/:vanity', async (req, res: Response) => {
+  const params = publicClubVanityParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+
+  const vanity = normalizeVanitySlug(params.data.vanity);
+  if (!vanity) {
+    res.status(400).json({ error: 'Invalid vanity slug' });
+    return;
+  }
+
+  const profile = await prisma.clubPublicSiteProfile.findUnique({
+    where: { vanitySlug: vanity },
+    select: { clubId: true },
+  });
+  if (!profile) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  const payload = await getPublicSitePayload(profile.clubId, 'vanity');
+  if (!payload) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  res.json(payload);
+});
+
+router.get('/public/by-vanity/:vanity/blog', async (req, res: Response) => {
+  const params = publicClubVanityParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+
+  const query = publicBlogListQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: formatZodError(query.error) });
+    return;
+  }
+
+  const clubId = await resolveClubIdFromVanity(params.data.vanity);
+  if (!clubId) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+
+  const result = await getPublicBlogPostPreviews(clubId, query.data.page, query.data.pageSize);
+  res.json(result);
+});
+
+router.get('/public/by-vanity/:vanity/blog/:slug', async (req, res: Response) => {
+  const vanityParams = publicClubVanityParamsSchema.safeParse(req.params);
+  const blogParams = publicClubBlogParamsSchema.safeParse(req.params);
+  if (!vanityParams.success) {
+    res.status(400).json({ error: formatZodError(vanityParams.error) });
+    return;
+  }
+  if (!blogParams.success) {
+    res.status(400).json({ error: formatZodError(blogParams.error) });
+    return;
+  }
+  const vanity = normalizeVanitySlug(vanityParams.data.vanity);
+  const profile = await prisma.clubPublicSiteProfile.findUnique({
+    where: { vanitySlug: vanity },
+    select: { clubId: true },
+  });
+  if (!profile) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  const [payload, post] = await Promise.all([
+    getPublicSitePayload(profile.clubId, 'vanity'),
+    getPublicBlogPost(profile.clubId, blogParams.data.slug),
+  ]);
+  if (!payload || !post) {
+    res.status(404).json({ error: 'Blog post not found' });
+    return;
+  }
+  res.json({ club: payload, post });
+});
+
+router.get('/public/by-domain', async (req, res: Response) => {
+  const host = normalizeHostHeader(req.headers.host);
+  if (!host) {
+    res.status(400).json({ error: 'Host header is required' });
+    return;
+  }
+
+  const domain = await prisma.clubPublicDomain.findFirst({
+    where: { domain: host, isActive: true, status: 'VERIFIED' },
+    select: { clubId: true },
+  });
+  if (!domain) {
+    res.status(404).json({ error: 'Club not found for this domain' });
+    return;
+  }
+
+  const payload = await getPublicSitePayload(domain.clubId, 'domain');
+  if (!payload) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  res.json(payload);
+});
+
+router.get('/public/by-domain/blog', async (req, res: Response) => {
+  const query = publicBlogListQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: formatZodError(query.error) });
+    return;
+  }
+
+  const host = normalizeHostHeader(req.headers.host);
+  if (!host) {
+    res.status(400).json({ error: 'Host header is required' });
+    return;
+  }
+
+  const clubId = await resolveClubIdFromHost(host);
+  if (!clubId) {
+    res.status(404).json({ error: 'Club not found for this domain' });
+    return;
+  }
+
+  const result = await getPublicBlogPostPreviews(clubId, query.data.page, query.data.pageSize);
+  res.json(result);
+});
+
+router.get('/public/by-domain/blog/:slug', async (req, res: Response) => {
+  const params = publicClubBlogParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: formatZodError(params.error) });
+    return;
+  }
+  const host = normalizeHostHeader(req.headers.host);
+  if (!host) {
+    res.status(400).json({ error: 'Host header is required' });
+    return;
+  }
+  const domain = await prisma.clubPublicDomain.findFirst({
+    where: { domain: host, isActive: true, status: 'VERIFIED' },
+    select: { clubId: true },
+  });
+  if (!domain) {
+    res.status(404).json({ error: 'Club not found for this domain' });
+    return;
+  }
+
+  const [payload, post] = await Promise.all([
+    getPublicSitePayload(domain.clubId, 'domain'),
+    getPublicBlogPost(domain.clubId, params.data.slug),
+  ]);
+  if (!payload || !post) {
+    res.status(404).json({ error: 'Blog post not found' });
+    return;
+  }
+  res.json({ club: payload, post });
 });
 
 router.get('/invite-preview/:token', async (req, res: Response) => {
@@ -161,6 +537,63 @@ function normalizeDisciplines(value: string[] | null | undefined): string[] {
   });
 
   return Array.from(deduped);
+}
+
+const publicSiteProfileSchema = z.object({
+  vanitySlug: z.string().max(60).nullable().optional(),
+  heroTitle: z.string().max(120).nullable().optional(),
+  heroSubtitle: z.string().max(280).nullable().optional(),
+  headerImageUrl: z.string().url().max(2000).nullable().optional(),
+  headerImageAlt: z.string().max(160).nullable().optional(),
+});
+
+const publicSessionBlockSchema = z.object({
+  dayLabel: z.string().min(1).max(40),
+  sessionType: z.string().min(1).max(80),
+  startsAt: z.string().regex(/^\d{2}:\d{2}$/, 'startsAt must be HH:MM'),
+  endsAt: z.string().regex(/^\d{2}:\d{2}$/, 'endsAt must be HH:MM'),
+  notes: z.string().max(200).nullable().optional(),
+});
+
+const publicAnnouncementSchema = z.object({
+  title: z.string().min(1).max(120),
+  message: z.string().min(1).max(500),
+  variant: z.enum(['INFO', 'WARNING', 'SUCCESS']).default('INFO'),
+  startsAt: z.string().datetime().nullable().optional(),
+  endsAt: z.string().datetime().nullable().optional(),
+  isEnabled: z.boolean().default(true),
+});
+
+const publicBlogPostSchema = z.object({
+  title: z.string().min(3).max(160),
+  slug: z.string().max(120).optional(),
+  excerpt: z.string().max(260).nullable().optional(),
+  markdownBody: z.string().min(1).max(50_000),
+  isPublished: z.boolean().default(false),
+  publishedAt: z.string().datetime().nullable().optional(),
+});
+
+const publicBlogPostUpdateSchema = publicBlogPostSchema.partial();
+
+const publicDomainSchema = z.object({
+  domain: z.string().min(3).max(255),
+});
+
+const publicDomainActivationSchema = z.object({
+  isActive: z.boolean(),
+});
+
+function sanitizeNullableText(value: string | null | undefined, maxLength?: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return typeof maxLength === 'number' ? trimmed.slice(0, maxLength) : trimmed;
+}
+
+async function ensurePublicSiteProfile(clubId: string) {
+  const existing = await prisma.clubPublicSiteProfile.findUnique({ where: { clubId } });
+  if (existing) return existing;
+  return prisma.clubPublicSiteProfile.create({ data: { clubId } });
 }
 
 router.post('/', async (req: AuthRequest, res: Response) => {
@@ -275,6 +708,443 @@ router.patch('/:id', async (req: AuthRequest, res: Response) => {
   });
 
   res.json(club);
+});
+
+router.get('/:id/public-site', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  await ensurePublicSiteProfile(clubId);
+  const payload = await getPublicSitePayload(clubId, 'id');
+  if (!payload) {
+    res.status(404).json({ error: 'Club not found' });
+    return;
+  }
+  const domains = await prisma.clubPublicDomain.findMany({
+    where: { clubId },
+    orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
+  });
+  const posts = await prisma.clubPublicBlogPost.findMany({
+    where: { clubId },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  res.json({ ...payload, domains, posts });
+});
+
+router.patch('/:id/public-site', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const parsed = publicSiteProfileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const updateData: {
+    vanitySlug?: string | null;
+    heroTitle?: string | null;
+    heroSubtitle?: string | null;
+    headerImageUrl?: string | null;
+    headerImageAlt?: string | null;
+  } = {};
+
+  if ('vanitySlug' in parsed.data) {
+    const slug = sanitizeNullableText(parsed.data.vanitySlug, 60);
+    updateData.vanitySlug = slug ? normalizeVanitySlug(slug) : null;
+  }
+  if ('heroTitle' in parsed.data) {
+    updateData.heroTitle = sanitizeNullableText(parsed.data.heroTitle, 120);
+  }
+  if ('heroSubtitle' in parsed.data) {
+    updateData.heroSubtitle = sanitizeNullableText(parsed.data.heroSubtitle, 280);
+  }
+  if ('headerImageUrl' in parsed.data) {
+    updateData.headerImageUrl = sanitizeNullableText(parsed.data.headerImageUrl, 2000);
+  }
+  if ('headerImageAlt' in parsed.data) {
+    updateData.headerImageAlt = sanitizeNullableText(parsed.data.headerImageAlt, 160);
+  }
+
+  await ensurePublicSiteProfile(clubId);
+  try {
+    const profile = await prisma.clubPublicSiteProfile.update({
+      where: { clubId },
+      data: updateData,
+    });
+    res.json(profile);
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? (error as any).code : undefined;
+    if (code === 'P2002') { res.status(409).json({ error: 'Vanity slug is already in use' }); return; }
+    throw error;
+  }
+});
+
+router.put('/:id/public-site/sessions', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = z.object({ sessions: z.array(publicSessionBlockSchema).max(50) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const sessions = await prisma.$transaction(async tx => {
+    await tx.clubPublicSessionBlock.deleteMany({ where: { clubId } });
+    if (parsed.data.sessions.length === 0) {
+      return [];
+    }
+    await tx.clubPublicSessionBlock.createMany({
+      data: parsed.data.sessions.map((session, index) => ({
+        clubId,
+        dayLabel: session.dayLabel.trim(),
+        sessionType: session.sessionType.trim(),
+        startsAt: session.startsAt,
+        endsAt: session.endsAt,
+        notes: sanitizeNullableText(session.notes, 200),
+        sortOrder: index,
+      })),
+    });
+    return tx.clubPublicSessionBlock.findMany({ where: { clubId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
+  });
+
+  res.json({ sessions });
+});
+
+router.put('/:id/public-site/announcements', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = z.object({ announcements: z.array(publicAnnouncementSchema).max(20) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const announcements = await prisma.$transaction(async tx => {
+    await tx.clubPublicAnnouncement.deleteMany({ where: { clubId } });
+    if (parsed.data.announcements.length === 0) {
+      return [];
+    }
+    await tx.clubPublicAnnouncement.createMany({
+      data: parsed.data.announcements.map((item, index) => ({
+        clubId,
+        title: item.title.trim(),
+        message: item.message.trim(),
+        variant: item.variant,
+        startsAt: item.startsAt ? new Date(item.startsAt) : null,
+        endsAt: item.endsAt ? new Date(item.endsAt) : null,
+        isEnabled: item.isEnabled,
+        sortOrder: index,
+      })),
+    });
+    return tx.clubPublicAnnouncement.findMany({ where: { clubId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }] });
+  });
+
+  res.json({ announcements });
+});
+
+router.get('/:id/public-site/blog-posts', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const posts = await prisma.clubPublicBlogPost.findMany({
+    where: { clubId },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  res.json(posts);
+});
+
+router.post('/:id/public-site/blog-posts', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = publicBlogPostSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const generatedSlugBase = sanitizeNullableText(parsed.data.slug, 120) || slugFromTitle(parsed.data.title);
+  const slug = normalizeVanitySlug(generatedSlugBase);
+  if (!slug) {
+    res.status(400).json({ error: 'A valid post slug is required' });
+    return;
+  }
+
+  try {
+    const post = await prisma.clubPublicBlogPost.create({
+      data: {
+        clubId,
+        title: parsed.data.title.trim(),
+        slug,
+        excerpt: sanitizeNullableText(parsed.data.excerpt, 260),
+        markdownBody: parsed.data.markdownBody,
+        isPublished: parsed.data.isPublished,
+        publishedAt: parsed.data.isPublished
+          ? (parsed.data.publishedAt ? new Date(parsed.data.publishedAt) : new Date())
+          : null,
+      },
+    });
+    res.status(201).json(post);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      res.status(409).json({ error: 'Post slug must be unique per club' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.patch('/:id/public-site/blog-posts/:postId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const postId = req.params.postId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = publicBlogPostUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const updateData: {
+    title?: string;
+    slug?: string;
+    excerpt?: string | null;
+    markdownBody?: string;
+    isPublished?: boolean;
+    publishedAt?: Date | null;
+  } = {};
+  if ('title' in parsed.data && parsed.data.title) updateData.title = parsed.data.title.trim();
+  if ('slug' in parsed.data && parsed.data.slug) {
+    const normalizedSlug = normalizeVanitySlug(parsed.data.slug);
+    if (!normalizedSlug) {
+      res.status(400).json({ error: 'Invalid slug' });
+      return;
+    }
+    updateData.slug = normalizedSlug;
+  }
+  if ('excerpt' in parsed.data) updateData.excerpt = sanitizeNullableText(parsed.data.excerpt, 260);
+  if ('markdownBody' in parsed.data && parsed.data.markdownBody) updateData.markdownBody = parsed.data.markdownBody;
+  if ('isPublished' in parsed.data && typeof parsed.data.isPublished === 'boolean') {
+    updateData.isPublished = parsed.data.isPublished;
+    updateData.publishedAt = parsed.data.isPublished
+      ? (parsed.data.publishedAt ? new Date(parsed.data.publishedAt) : new Date())
+      : null;
+  } else if ('publishedAt' in parsed.data) {
+    updateData.publishedAt = parsed.data.publishedAt ? new Date(parsed.data.publishedAt) : null;
+  }
+
+  try {
+    const post = await prisma.clubPublicBlogPost.updateMany({
+      where: { id: postId, clubId },
+      data: updateData,
+    });
+    if (post.count !== 1) {
+      res.status(404).json({ error: 'Post not found' });
+      return;
+    }
+    const refreshed = await prisma.clubPublicBlogPost.findUnique({ where: { id: postId } });
+    res.json(refreshed);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      res.status(409).json({ error: 'Post slug must be unique per club' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.delete('/:id/public-site/blog-posts/:postId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const postId = req.params.postId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const removed = await prisma.clubPublicBlogPost.deleteMany({ where: { id: postId, clubId } });
+  if (removed.count !== 1) {
+    res.status(404).json({ error: 'Post not found' });
+    return;
+  }
+  res.status(204).send();
+});
+
+router.get('/:id/public-site/domains', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const domains = await prisma.clubPublicDomain.findMany({
+    where: { clubId },
+    orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
+  });
+  res.json({ expectedCnameTarget: getExpectedCnameTarget(), domains });
+});
+
+router.post('/:id/public-site/domains', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = publicDomainSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+  const normalized = normalizeDomain(parsed.data.domain);
+  if (!normalized) {
+    res.status(400).json({ error: 'Invalid domain' });
+    return;
+  }
+
+  try {
+    const domain = await prisma.clubPublicDomain.create({
+      data: {
+        clubId,
+        domain: normalized,
+        verificationToken: buildVerificationToken(normalized),
+        expectedCnameTarget: getExpectedCnameTarget(),
+      },
+    });
+    res.status(201).json(domain);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Unique constraint')) {
+      res.status(409).json({ error: 'Domain is already in use' });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.post('/:id/public-site/domains/:domainId/check-verification', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const domainId = req.params.domainId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const record = await prisma.clubPublicDomain.findFirst({
+    where: { id: domainId, clubId },
+  });
+  if (!record) {
+    res.status(404).json({ error: 'Domain not found' });
+    return;
+  }
+
+  let resolvedCnames: string[] = [];
+  try {
+    resolvedCnames = await dns.resolveCname(record.domain);
+  } catch {
+    resolvedCnames = [];
+  }
+  const expected = record.expectedCnameTarget.toLowerCase();
+  const verified = resolvedCnames.some(item => item.toLowerCase().replace(/\.$/, '') === expected.replace(/\.$/, ''));
+  const updated = await prisma.clubPublicDomain.update({
+    where: { id: domainId },
+    data: {
+      status: verified ? 'VERIFIED' : 'PENDING',
+      verifiedAt: verified ? new Date() : null,
+      lastCheckedAt: new Date(),
+      isActive: verified ? record.isActive : false,
+    },
+  });
+
+  res.json({ verified, resolvedCnames, domain: updated });
+});
+
+router.patch('/:id/public-site/domains/:domainId/activation', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const domainId = req.params.domainId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const parsed = publicDomainActivationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+  const domain = await prisma.clubPublicDomain.findFirst({ where: { id: domainId, clubId } });
+  if (!domain) {
+    res.status(404).json({ error: 'Domain not found' });
+    return;
+  }
+  if (parsed.data.isActive && domain.status !== 'VERIFIED') {
+    res.status(409).json({ error: 'Domain must be verified before activation' });
+    return;
+  }
+
+  if (parsed.data.isActive) {
+    await prisma.$transaction([
+      prisma.clubPublicDomain.updateMany({
+        where: { clubId, id: { not: domainId } },
+        data: { isActive: false },
+      }),
+      prisma.clubPublicDomain.update({
+        where: { id: domainId },
+        data: { isActive: true },
+      }),
+    ]);
+  } else {
+    await prisma.clubPublicDomain.update({
+      where: { id: domainId },
+      data: { isActive: false },
+    });
+  }
+
+  const domains = await prisma.clubPublicDomain.findMany({
+    where: { clubId },
+    orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
+  });
+  res.json({ domains });
+});
+
+router.delete('/:id/public-site/domains/:domainId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.id as string;
+  const domainId = req.params.domainId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  const removed = await prisma.clubPublicDomain.deleteMany({ where: { id: domainId, clubId } });
+  if (removed.count !== 1) {
+    res.status(404).json({ error: 'Domain not found' });
+    return;
+  }
+  res.status(204).send();
 });
 
 router.get('/:id/members', async (req: AuthRequest, res: Response) => {

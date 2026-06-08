@@ -23,6 +23,7 @@ import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
 import ClubPublicProfile from './pages/ClubPublicProfile';
+import ClubPublicBlogPostPage from './pages/ClubPublicBlogPost';
 import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
 import { trackPageView } from './analytics';
 
@@ -72,7 +73,14 @@ function RegisterRoute() {
 function HomeRoute() {
   const { user } = useAuth();
   
-  if (!user) return <Landing />;
+  if (!user) {
+    const host = window.location.hostname.toLowerCase();
+    const isPlatformHost = host === 'shootingmatch.app' || host === 'www.shootingmatch.app' || host === 'localhost' || host === '127.0.0.1';
+    if (!isPlatformHost) {
+      return <ClubPublicProfile />;
+    }
+    return <Landing />;
+  }
   
   // If user hasn't declared Section 21, redirect to signup
   if (user.section21Status === 'NOT_DECLARED') {
@@ -88,13 +96,19 @@ function AppRoutes() {
   const location = useLocation();
   const isKioskRoute = location.pathname.startsWith('/kiosk/');
   const isSection21SignUp = location.pathname === '/section21-declaration-signup';
+  const host = window.location.hostname.toLowerCase();
+  const isCustomDomainHost = !(host === 'shootingmatch.app' || host === 'www.shootingmatch.app' || host === 'localhost' || host === '127.0.0.1');
+  const isPublicSiteRoute = location.pathname.startsWith('/clubpage/')
+    || location.pathname.startsWith('/clubs/profile/')
+    || location.pathname.startsWith('/blog/')
+    || (isCustomDomainHost && location.pathname === '/');
   const [policyOpen, setPolicyOpen] = React.useState(false);
   usePageTracking();
   if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading…</div>;
 
   return (
     <>
-      {!isKioskRoute && !isSection21SignUp && <Navbar />}
+      {!isKioskRoute && !isSection21SignUp && !isPublicSiteRoute && <Navbar />}
       <main>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -106,6 +120,10 @@ function AppRoutes() {
           <Route path="/section21-declaration-signup" element={<ProtectedRoute><Section21DeclarationSignUp /></ProtectedRoute>} />
           <Route path="/" element={<HomeRoute />} />
           <Route path="/clubs/profile/:id" element={<ClubPublicProfile />} />
+          <Route path="/clubs/profile/:id/blog/:slug" element={<ClubPublicBlogPostPage />} />
+          <Route path="/clubpage/:vanity" element={<ClubPublicProfile />} />
+          <Route path="/clubpage/:vanity/blog/:slug" element={<ClubPublicBlogPostPage />} />
+          <Route path="/blog/:slug" element={<ClubPublicBlogPostPage />} />
           <Route path="/clubs/:id" element={<ProtectedRoute><ClubDashboard /></ProtectedRoute>} />
           <Route path="/clubs/:id/history" element={<ProtectedRoute><ClubHistory /></ProtectedRoute>} />
           <Route path="/clubs/:id/ammunition-history" element={<ProtectedRoute><AmmunitionHistory /></ProtectedRoute>} />
@@ -119,7 +137,7 @@ function AppRoutes() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      {!isKioskRoute && !isSection21SignUp && (
+      {!isKioskRoute && !isSection21SignUp && !isPublicSiteRoute && (
         <footer className="site-footer">
           <span>Rifle Club Manager</span>
           <button type="button" className="link-button" onClick={() => setPolicyOpen(true)}>

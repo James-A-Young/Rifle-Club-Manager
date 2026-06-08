@@ -509,7 +509,8 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
   }
 }
 
-router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassStatusRequest);
+router.get('/me/membership-passes/:clubId/status', requireAuth, handleMembershipPassStatusRequest);
+router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 
 export default router;
