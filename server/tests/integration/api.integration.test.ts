@@ -695,9 +695,9 @@ describe('clubs routes', () => {
     expect(activateRes.status).toBe(409);
   });
 
-  it('renders markdown to safe html in public blog response', async () => {
+  it('returns preview posts in list payload and rendered html in single-post payload', async () => {
     const { club, admin } = await createClubWithAdmin();
-    await request(app)
+    const createRes = await request(app)
       .post(`/api/clubs/${club.id}/public-site/blog-posts`)
       .set(authHeader(admin))
       .send({
@@ -705,12 +705,18 @@ describe('clubs routes', () => {
         markdownBody: '# Headline\\n<script>alert(1)</script> **safe**',
         isPublished: true,
       });
+    expect(createRes.status).toBe(201);
 
     const payloadRes = await request(app).get(`/api/clubs/profile/${club.id}`);
     expect(payloadRes.status).toBe(200);
     expect(payloadRes.body.publicSite.blogPosts).toHaveLength(1);
-    expect(payloadRes.body.publicSite.blogPosts[0].renderedHtml).not.toContain('<script>');
-    expect(payloadRes.body.publicSite.blogPosts[0].renderedHtml).toContain('<strong>safe</strong>');
+    expect(payloadRes.body.publicSite.blogPosts[0].renderedHtml).toBeUndefined();
+    expect(payloadRes.body.publicSite.blogPosts[0].markdownBody).toBeUndefined();
+
+    const postRes = await request(app).get(`/api/clubs/profile/${club.id}/blog/${createRes.body.slug}`);
+    expect(postRes.status).toBe(200);
+    expect(postRes.body.post.renderedHtml).not.toContain('<script>');
+    expect(postRes.body.post.renderedHtml).toContain('<strong>safe</strong>');
   });
 
   it('forbids non-admin club profile updates', async () => {
