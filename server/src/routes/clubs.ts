@@ -654,10 +654,8 @@ router.patch('/:id/public-site', async (req: AuthRequest, res: Response) => {
     });
     res.json(profile);
   } catch (error) {
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      res.status(409).json({ error: 'Vanity slug is already in use' });
-      return;
-    }
+    const code = typeof error === 'object' && error && 'code' in error ? (error as any).code : undefined;
+    if (code === 'P2002') { res.status(409).json({ error: 'Vanity slug is already in use' }); return; }
     throw error;
   }
 });
