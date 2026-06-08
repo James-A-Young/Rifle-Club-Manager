@@ -206,7 +206,7 @@ export default function PublicSiteSection({
               <button type="button" className="btn btn-danger btn-sm" onClick={() => onDeleteDomain(domain.id)}>Delete</button>
             </div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>Verification token: {domain.verificationToken}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--gray-600)' }}>Verification: set a CNAME for <code>{domain.domain}</code> to <code>{domain.expectedCnameTarget}</code>, then click "Check DNS".</div>
         </div>
       ))}
     </section>
