@@ -48,18 +48,31 @@ export interface ClubPublicAnnouncement {
   sortOrder: number;
 }
 
-export interface ClubPublicBlogPost {
+export interface ClubPublicBlogPostPreview {
   id: string;
   clubId: string;
   title: string;
   slug: string;
   excerpt?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ClubPublicBlogPost extends ClubPublicBlogPostPreview {
   markdownBody: string;
   renderedHtml?: string;
   isPublished: boolean;
-  publishedAt?: string | null;
-  createdAt: string;
   updatedAt?: string;
+}
+
+export interface ClubPublicBlogPostListResponse {
+  posts: ClubPublicBlogPostPreview[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
 }
 
 export interface ClubPublicDomain {
@@ -84,7 +97,7 @@ export interface ClubPublicSiteProfile {
   headerImageAlt?: string | null;
   sessions: ClubPublicSessionBlock[];
   announcements: ClubPublicAnnouncement[];
-  blogPosts: ClubPublicBlogPost[];
+  blogPosts: ClubPublicBlogPostPreview[];
   canonicalUrl: string;
   resolvedBy: 'id' | 'vanity' | 'domain';
 }

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api';
-import { ClubPublicPageData } from '../types/club';
+import { ClubPublicBlogPostListResponse, ClubPublicPageData } from '../types/club';
 import { normalizeDisciplines } from '../shared/clubUtils';
+
+const BLOG_PAGE_SIZE = 5;
 
 function upsertMeta(name: string, content: string): void {
   let node = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null;
@@ -28,29 +30,73 @@ export default function ClubPublicProfile() {
   const { id, vanity } = useParams<{ id?: string; vanity?: string }>();
   const location = useLocation();
   const [club, setClub] = useState<ClubPublicPageData | null>(null);
+  const [blogList, setBlogList] = useState<ClubPublicBlogPostListResponse | null>(null);
+  const [blogPageLoading, setBlogPageLoading] = useState(false);
+  const [blogError, setBlogError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const profilePath = useMemo(() => {
+    if (vanity) {
+      return `/api/clubs/public/by-vanity/${encodeURIComponent(vanity)}`;
+    }
+    if (id) {
+      return `/api/clubs/profile/${encodeURIComponent(id)}`;
+    }
+    return '/api/clubs/public/by-domain';
+  }, [id, vanity]);
+
+  const blogListBasePath = useMemo(() => {
+    if (vanity) {
+      return `/api/clubs/public/by-vanity/${encodeURIComponent(vanity)}/blog`;
+    }
+    if (id) {
+      return `/api/clubs/profile/${encodeURIComponent(id)}/blog`;
+    }
+    return '/api/clubs/public/by-domain/blog';
+  }, [id, vanity]);
+
+  const loadBlogPage = (page: number, signal?: AbortSignal) => {
+    setBlogPageLoading(true);
+    setBlogError('');
+    return api.get<ClubPublicBlogPostListResponse>(`${blogListBasePath}?page=${page}&pageSize=${BLOG_PAGE_SIZE}`, signal)
+      .then(data => setBlogList(data))
+      .catch(e => {
+        if (e instanceof Error && e.name === 'AbortError') {
+          return;
+        }
+        setBlogError(e instanceof Error ? e.message : 'Could not load blog posts');
+      })
+      .finally(() => setBlogPageLoading(false));
+  };
+
   useEffect(() => {
+    const abortController = new AbortController();
+
     setLoading(true);
     setError('');
+    setBlogError('');
+    setBlogList(null);
 
-    const path = vanity
-      ? `/api/clubs/public/by-vanity/${encodeURIComponent(vanity)}`
-      : id
-        ? `/api/clubs/profile/${encodeURIComponent(id)}`
-        : '/api/clubs/public/by-domain';
-
-    api.get<ClubPublicPageData>(path)
+    api.get<ClubPublicPageData>(profilePath, abortController.signal)
       .then(data => {
         setClub(data);
         document.title = `${data.name} | ShootingMatch.app`;
         upsertMeta('description', data.publicSite.heroSubtitle ?? data.description ?? `${data.name} rifle club profile`);
         upsertCanonical(data.publicSite.canonicalUrl);
+
+        return loadBlogPage(1, abortController.signal);
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Could not load club profile'))
+      .catch(e => {
+        if (e instanceof Error && e.name === 'AbortError') {
+          return;
+        }
+        setError(e instanceof Error ? e.message : 'Could not load club profile');
+      })
       .finally(() => setLoading(false));
-  }, [id, vanity]);
+
+    return () => abortController.abort();
+  }, [profilePath, blogListBasePath]);
 
   const disciplinesLabel = useMemo(() => normalizeDisciplines(club?.disciplinesOffered).join(', '), [club]);
 
@@ -127,18 +173,47 @@ export default function ClubPublicProfile() {
 
           <section aria-label="Blog posts">
             <h2>Club Blog</h2>
-            {club.publicSite.blogPosts.length === 0 ? (
+            {blogPageLoading && !blogList ? (
+              <p>Loading published articles…</p>
+            ) : blogError ? (
+              <div className="alert alert-error">{blogError}</div>
+            ) : !blogList || blogList.posts.length === 0 ? (
               <p>No published articles yet.</p>
             ) : (
-              <div className="public-blog-list">
-                {club.publicSite.blogPosts.map(post => (
-                  <article key={post.id} className="public-blog-card">
-                    <h3><Link to={`${blogBasePath}/${post.slug}`}>{post.title}</Link></h3>
-                    <p>{post.excerpt || 'Read the latest club update.'}</p>
-                    <small>{new Date(post.publishedAt || post.createdAt).toLocaleDateString()}</small>
-                  </article>
-                ))}
-              </div>
+              <>
+                <div className="public-blog-list">
+                  {blogList.posts.map(post => (
+                    <article key={post.id} className="public-blog-card">
+                      <h3><Link to={`${blogBasePath}/${post.slug}`}>{post.title}</Link></h3>
+                      <p>{post.excerpt || 'Read the latest club update.'}</p>
+                      <small>{new Date(post.publishedAt || post.createdAt).toLocaleDateString()}</small>
+                    </article>
+                  ))}
+                </div>
+                {blogList.totalPages > 1 && (
+                  <div className="public-blog-pagination" aria-label="Blog pagination controls">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={!blogList.hasPrevPage || blogPageLoading}
+                      onClick={() => loadBlogPage(blogList.page - 1)}
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      Page {blogList.page} of {blogList.totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={!blogList.hasNextPage || blogPageLoading}
+                      onClick={() => loadBlogPage(blogList.page + 1)}
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </section>
         </>
