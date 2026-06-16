@@ -1,6 +1,6 @@
 import React from 'react';
 
-type Tab = 'operations' | 'ammunition' | 'match-secretary' | 'settings';
+type Tab = 'operations' | 'ammunition' | 'match-secretary' | 'settings' | 'public-site';
 
 interface Props {
   activeTab: Tab;
@@ -68,6 +68,14 @@ export default function DashboardTabNav({ activeTab, isAdmin, onChange }: Props)
         onMouseLeave={e => handleMouseLeave('settings', e)}
       >
         Settings
+      </button>
+      <button
+        onClick={() => onChange('public-site')}
+        style={tabStyle('public-site')}
+        onMouseEnter={e => handleMouseEnter('public-site', e)}
+        onMouseLeave={e => handleMouseLeave('public-site', e)}
+      >
+        Public Site
       </button>
     </div>
   );

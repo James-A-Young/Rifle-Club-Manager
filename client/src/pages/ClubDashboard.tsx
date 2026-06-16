@@ -121,7 +121,7 @@ export default function ClubDashboard() {
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [membershipResolved, setMembershipResolved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings'>('operations');
+  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings' | 'public-site'>('operations');
 
   // Club profile edit
   const [editingClubProfile, setEditingClubProfile] = useState(false);
@@ -1274,35 +1274,6 @@ export default function ClubDashboard() {
           />
 
           {isAdmin && (
-            <PublicSiteSection
-              profile={publicSiteProfileForm}
-              sessions={publicSessions}
-              announcements={publicAnnouncements}
-              blogPosts={publicBlogPosts}
-              blogDraft={publicBlogDraft}
-              domains={publicDomains}
-              newDomain={newPublicDomain}
-              expectedCnameTarget={expectedCnameTarget}
-              loading={publicSiteSaving}
-              onProfileChange={partial => setPublicSiteProfileForm(prev => ({ ...prev, ...partial }))}
-              onSaveProfile={() => void savePublicSiteProfile()}
-              onSessionsChange={setPublicSessions}
-              onSaveSessions={() => void savePublicSessions()}
-              onAnnouncementsChange={setPublicAnnouncements}
-              onSaveAnnouncements={() => void savePublicAnnouncements()}
-              onBlogDraftChange={partial => setPublicBlogDraft(prev => ({ ...prev, ...partial }))}
-              onCreateBlogPost={() => void createPublicBlogPost()}
-              onDeleteBlogPost={postId => void deletePublicBlogPost(postId)}
-              onTogglePublishBlogPost={(postId, publish) => void togglePublicBlogPost(postId, publish)}
-              onNewDomainChange={setNewPublicDomain}
-              onAddDomain={() => void addPublicDomain()}
-              onVerifyDomain={domainId => void verifyPublicDomain(domainId)}
-              onToggleDomainActivation={(domainId, active) => void toggleDomainActivation(domainId, active)}
-              onDeleteDomain={domainId => void deletePublicDomain(domainId)}
-            />
-          )}
-
-          {isAdmin && (
             <ClubSettingsSection
               settings={settings}
               editing={editingSettings}
@@ -1422,6 +1393,37 @@ export default function ClubDashboard() {
               onCancel={cancelInvite}
             />
           )}
+        </>
+      )}
+
+      {activeTab === 'public-site' && (
+        <>
+          <PublicSiteSection
+            profile={publicSiteProfileForm}
+            sessions={publicSessions}
+            announcements={publicAnnouncements}
+            blogPosts={publicBlogPosts}
+            blogDraft={publicBlogDraft}
+            domains={publicDomains}
+            newDomain={newPublicDomain}
+            expectedCnameTarget={expectedCnameTarget}
+            loading={publicSiteSaving}
+            onProfileChange={partial => setPublicSiteProfileForm(prev => ({ ...prev, ...partial }))}
+            onSaveProfile={() => void savePublicSiteProfile()}
+            onSessionsChange={setPublicSessions}
+            onSaveSessions={() => void savePublicSessions()}
+            onAnnouncementsChange={setPublicAnnouncements}
+            onSaveAnnouncements={() => void savePublicAnnouncements()}
+            onBlogDraftChange={partial => setPublicBlogDraft(prev => ({ ...prev, ...partial }))}
+            onCreateBlogPost={() => void createPublicBlogPost()}
+            onDeleteBlogPost={postId => void deletePublicBlogPost(postId)}
+            onTogglePublishBlogPost={(postId, publish) => void togglePublicBlogPost(postId, publish)}
+            onNewDomainChange={setNewPublicDomain}
+            onAddDomain={() => void addPublicDomain()}
+            onVerifyDomain={domainId => void verifyPublicDomain(domainId)}
+            onToggleDomainActivation={(domainId, active) => void toggleDomainActivation(domainId, active)}
+            onDeleteDomain={domainId => void deletePublicDomain(domainId)}
+          />
         </>
       )}
 
