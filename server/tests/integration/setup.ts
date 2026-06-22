@@ -12,7 +12,7 @@ process.env.GOOGLE_WALLET_PRIVATE_KEY = '-----BEGIN RSA PRIVATE KEY-----\nMIIEpA
 process.env.GOOGLE_WALLET_PRIVATE_KEY_ID = 'test-key-id';
 
 const tables = [
-  'PracticeScore'
+  'PracticeScore',
   'ClubPublicDomain',
   'ClubPublicBlogPost',
   'ClubPublicAnnouncement',
