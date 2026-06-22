@@ -201,7 +201,7 @@ export default function ScoresReport() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name or email…" />
           </div>
           <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-            <label>Practice discipline</label>
+            <label>Discipline</label>
             <input
               value={disciplineFilter}
               onChange={e => setDisciplineFilter(e.target.value)}
@@ -214,7 +214,7 @@ export default function ScoresReport() {
               checked={showBreakdown}
               onChange={e => setShowBreakdown(e.target.checked)}
             />
-            Show practice breakdown
+            Show discipline breakdown
           </label>
         </div>
 

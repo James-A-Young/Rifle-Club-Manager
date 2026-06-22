@@ -4,7 +4,7 @@ import dns from 'dns/promises';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, MembershipCardAverageMetric, OwnerType, Prisma } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, MembershipCardAverageMetric, OwnerType } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import {
   auditFirearmDeleteDenied,
