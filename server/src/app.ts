@@ -89,16 +89,35 @@ export function createApp() {
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
-        scriptSrc: ["'self'", 'https://challenges.cloudflare.com', 'https://www.googletagmanager.com','https://static.cloudflareinsights.com'],
+        scriptSrc: [
+          "'self'",
+          'https://challenges.cloudflare.com',
+          'https://www.googletagmanager.com',
+          'https://static.cloudflareinsights.com',
+        ],
         frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
         connectSrc: [
           "'self'",
+          'https://analytics.google.com',
+          'https://www.analytics.google.com',
           'https://*.analytics.google.com',
+          'https://google-analytics.com',
+          'https://www.google-analytics.com',
+          'https://region1.google-analytics.com',
           'https://*.google-analytics.com',
           'https://www.googletagmanager.com',
           'https://cloudflareinsights.com',
         ],
-        imgSrc: ["'self'", 'data:', 'https:', 'https://*.google-analytics.com', 'https://www.googletagmanager.com'],
+        imgSrc: [
+          "'self'",
+          'data:',
+          'https:',
+          'https://google-analytics.com',
+          'https://www.google-analytics.com',
+          'https://region1.google-analytics.com',
+          'https://*.google-analytics.com',
+          'https://www.googletagmanager.com',
+        ],
       },
     },
   }));
@@ -138,10 +157,11 @@ export function createApp() {
   // Public config endpoint (no auth required)
   // Allows frontend to read runtime configuration from environment at startup
   app.get('/api/config', (_req: Request, res: Response) => {
+    const gaMeasurementId = process.env.GA_MEASUREMENT_ID ?? process.env.VITE_GA_MEASUREMENT_ID ?? '';
     res.json({
       apiUrl: process.env.VITE_API_URL ?? '',
       turnstileSiteKey: process.env.VITE_TURNSTILE_SITE_KEY ?? '',
-      gaMeasurementId: process.env.VITE_GA_MEASUREMENT_ID ?? '',
+      gaMeasurementId,
       clientOrigin: process.env.CLIENT_ORIGIN ?? '',
     });
   });
