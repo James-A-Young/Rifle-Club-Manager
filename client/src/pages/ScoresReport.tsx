@@ -13,9 +13,20 @@ interface ReportRow {
   name: string;
   email: string;
   totalCardsShot: number;
+  competitionCardsShot: number;
+  practiceCardsShot: number;
   allTimeAverage: number | null;
   last10Average: number | null;
   bestScore: number | null;
+  practiceAllTimeAverage: number | null;
+  practiceLast10Average: number | null;
+  byDiscipline?: {
+    discipline: string;
+    totalCardsShot: number;
+    allTimeAverage: number | null;
+    last10Average: number | null;
+    bestScore: number | null;
+  }[];
 }
 
 export default function ScoresReport() {
@@ -31,6 +42,8 @@ export default function ScoresReport() {
 
   const [selectedSeasonId, setSelectedSeasonId] = useState('');
   const [selectedCompetitionId, setSelectedCompetitionId] = useState('');
+  const [disciplineFilter, setDisciplineFilter] = useState('');
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -61,12 +74,14 @@ export default function ScoresReport() {
     const params = new URLSearchParams();
     if (selectedSeasonId) params.set('seasonId', selectedSeasonId);
     if (selectedCompetitionId) params.set('competitionId', selectedCompetitionId);
+    if (disciplineFilter.trim()) params.set('discipline', disciplineFilter.trim());
+    if (showBreakdown) params.set('includeBreakdown', 'true');
     const qs = params.toString();
     api.get<ReportRow[]>(`/api/clubs/${id}/scoring/report${qs ? '?' + qs : ''}`)
       .then(data => setRows(data))
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading report'))
       .finally(() => setLoading(false));
-  }, [id, selectedSeasonId, selectedCompetitionId]);
+  }, [id, selectedSeasonId, selectedCompetitionId, disciplineFilter, showBreakdown]);
 
   async function exportCsv() {
     if (!id) return;
@@ -75,6 +90,8 @@ export default function ScoresReport() {
       const params = new URLSearchParams({ format: 'csv' });
       if (selectedSeasonId) params.set('seasonId', selectedSeasonId);
       if (selectedCompetitionId) params.set('competitionId', selectedCompetitionId);
+      if (disciplineFilter.trim()) params.set('discipline', disciplineFilter.trim());
+      if (showBreakdown) params.set('includeBreakdown', 'true');
       const token = localStorage.getItem('token');
       const res = await fetch(`/api/clubs/${id}/scoring/report?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -183,6 +200,22 @@ export default function ScoresReport() {
             <label>Search member</label>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Name or email…" />
           </div>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+            <label>Discipline</label>
+            <input
+              value={disciplineFilter}
+              onChange={e => setDisciplineFilter(e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', marginBottom: '0.4rem', fontSize: '0.9rem' }}>
+            <input
+              type="checkbox"
+              checked={showBreakdown}
+              onChange={e => setShowBreakdown(e.target.checked)}
+            />
+            Show discipline breakdown
+          </label>
         </div>
 
         {loading ? (
@@ -194,9 +227,14 @@ export default function ScoresReport() {
                 <th>Member</th>
                 <th>Email</th>
                 <th>Cards Shot</th>
+                {showBreakdown && <th>Competition Cards</th>}
+                {showBreakdown && <th>Practice Cards</th>}
                 <th>All-Time Avg</th>
                 <th>Last 10 Avg</th>
                 <th>Best Score</th>
+                {showBreakdown && <th>Practice Avg</th>}
+                {showBreakdown && <th>Practice Last 10</th>}
+                {showBreakdown && <th>Practice Disciplines</th>}
               </tr>
             </thead>
             <tbody>
@@ -205,14 +243,27 @@ export default function ScoresReport() {
                   <td>{row.name}</td>
                   <td style={{ color: 'var(--gray-600)', fontSize: '0.875rem' }}>{row.email}</td>
                   <td>{row.totalCardsShot}</td>
+                  {showBreakdown && <td>{row.competitionCardsShot}</td>}
+                  {showBreakdown && <td>{row.practiceCardsShot}</td>}
                   <td>{row.allTimeAverage !== null ? row.allTimeAverage.toFixed(2) : '—'}</td>
                   <td>{row.last10Average !== null ? row.last10Average.toFixed(2) : '—'}</td>
                   <td>{row.bestScore !== null ? row.bestScore : '—'}</td>
+                  {showBreakdown && <td>{row.practiceAllTimeAverage !== null ? row.practiceAllTimeAverage.toFixed(2) : '—'}</td>}
+                  {showBreakdown && <td>{row.practiceLast10Average !== null ? row.practiceLast10Average.toFixed(2) : '—'}</td>}
+                  {showBreakdown && (
+                    <td style={{ maxWidth: 260, color: 'var(--gray-700)', fontSize: '0.8rem' }}>
+                      {row.byDiscipline && row.byDiscipline.length > 0
+                        ? row.byDiscipline
+                          .map(d => `${d.discipline}: ${d.allTimeAverage !== null ? d.allTimeAverage.toFixed(2) : '—'} (${d.totalCardsShot})`)
+                          .join(' | ')
+                        : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
               {filteredRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+                  <td colSpan={showBreakdown ? 11 : 6} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                     No results
                   </td>
                 </tr>

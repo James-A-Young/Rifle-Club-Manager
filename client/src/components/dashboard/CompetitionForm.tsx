@@ -8,6 +8,7 @@ export interface CompetitionFormData {
   seasonId: string;
   name: string;
   organiser: string;
+  discipline: string;
   roundCount: number;
   cardsPerRound: number;
   rounds: RoundInput[];
@@ -15,13 +16,16 @@ export interface CompetitionFormData {
 
 interface Props {
   seasonId: string;
+  clubId: string;
+  disciplineOptions: string[];
   onSubmit: (data: CompetitionFormData) => Promise<void>;
   onCancel: () => void;
 }
 
-export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props) {
+export default function CompetitionForm({ seasonId, clubId, disciplineOptions, onSubmit, onCancel }: Props) {
   const [name, setName] = useState('');
   const [organiser, setOrganiser] = useState('');
+  const [discipline, setDiscipline] = useState(disciplineOptions[0] ?? '');
   const [roundCount, setRoundCount] = useState(6);
   const [cardsPerRound, setCardsPerRound] = useState(2);
   const [rounds, setRounds] = useState<RoundInput[]>(() =>
@@ -29,6 +33,14 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  React.useEffect(() => {
+    if (disciplineOptions.length === 0) return;
+    const exists = disciplineOptions.some(option => option.toLowerCase() === discipline.toLowerCase());
+    if (!exists) {
+      setDiscipline(disciplineOptions[0]);
+    }
+  }, [disciplineOptions, discipline]);
 
   function handleRoundCountChange(n: number) {
     const count = Math.max(1, Math.min(52, n));
@@ -49,6 +61,7 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
     e.preventDefault();
     setError('');
     if (!name.trim()) { setError('Name is required'); return; }
+    if (!discipline.trim()) { setError('Discipline is required'); return; }
     if (rounds.some(r => !r.dueDate)) { setError('All rounds must have a due date'); return; }
 
     setSaving(true);
@@ -57,6 +70,7 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
         seasonId,
         name: name.trim(),
         organiser: organiser.trim(),
+        discipline: discipline.trim(),
         roundCount,
         cardsPerRound,
         rounds,
@@ -80,6 +94,24 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Organiser</label>
           <input value={organiser} onChange={e => setOrganiser(e.target.value)} placeholder="e.g. NSRA" />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Discipline *</label>
+          {disciplineOptions.length > 0 ? (
+            <select value={discipline} onChange={e => setDiscipline(e.target.value)}>
+              {disciplineOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          ) : (
+            <div style={{ color: 'var(--gray-600)', fontSize: '0.9rem', padding: '0.5rem', border: '1px solid var(--gray-200)', borderRadius: '4px', background: 'var(--gray-50)' }}>
+              No disciplines configured.
+              {' '}
+              <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
+                Add disciplines in Club Settings
+              </a>
+            </div>
+          )}
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Number of Rounds</label>
@@ -121,7 +153,7 @@ export default function CompetitionForm({ seasonId, onSubmit, onCancel }: Props)
       </div>
 
       <div className="actions" style={{ marginTop: '1rem' }}>
-        <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={saving || disciplineOptions.length === 0}>
           {saving ? 'Creating…' : 'Create Competition'}
         </button>
         <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} disabled={saving}>

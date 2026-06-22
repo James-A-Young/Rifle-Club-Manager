@@ -90,6 +90,8 @@ interface PublicBlogDraft {
   isPublished: boolean;
 }
 
+type DashboardTab = 'operations' | 'ammunition' | 'match-secretary' | 'settings' | 'public-site';
+
 function toLocalDayBoundaryIso(date: string, boundary: 'start' | 'end'): string {
   const [yearRaw, monthRaw, dayRaw] = date.split('-');
   const year = Number(yearRaw);
@@ -121,7 +123,8 @@ export default function ClubDashboard() {
   const [error, setError] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [membershipResolved, setMembershipResolved] = useState(false);
-  const [activeTab, setActiveTab] = useState<'operations' | 'ammunition' | 'match-secretary' | 'settings' | 'public-site'>('operations');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('operations');
+  const [highlightDisciplines, setHighlightDisciplines] = useState(false);
 
   // Club profile edit
   const [editingClubProfile, setEditingClubProfile] = useState(false);
@@ -166,6 +169,8 @@ export default function ClubDashboard() {
     accentColor: '#3b82f6',
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
+    membershipCardAverageMetric: 'OVERALL_LAST_10',
+    membershipCardAverageDiscipline: null,
     backupEnabled: false,
     ammoSalesLookbackDays: 30,
     ammoDefaultLeadTimeDays: 14,
@@ -278,8 +283,13 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
     api.get<ClubSettings>(`/api/clubs/${id}/settings`)
       .then(s => {
-        setSettings(s);
-        setSettingsForm(s);
+        const normalized = {
+          ...s,
+          membershipCardAverageMetric: s.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
+          membershipCardAverageDiscipline: s.membershipCardAverageDiscipline ?? null,
+        };
+        setSettings(normalized);
+        setSettingsForm(normalized);
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
     api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`)
@@ -343,6 +353,51 @@ export default function ClubDashboard() {
       .finally(() => setBackupActionLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isAdmin]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const applyLocationTab = () => {
+      const params = new URLSearchParams(window.location.search);
+      const requestedTab = params.get('tab');
+      if (
+        requestedTab === 'operations'
+        || requestedTab === 'ammunition'
+        || requestedTab === 'match-secretary'
+        || requestedTab === 'settings'
+        || requestedTab === 'public-site'
+      ) {
+        setActiveTab(requestedTab);
+      }
+
+      const hash = window.location.hash;
+      if ((hash === '#disciplines-offered' || hash === '#disciplines') && isAdmin) {
+        setActiveTab('settings');
+        setEditingClubProfile(true);
+      }
+    };
+
+    applyLocationTab();
+    window.addEventListener('hashchange', applyLocationTab);
+    window.addEventListener('popstate', applyLocationTab);
+    return () => {
+      window.removeEventListener('hashchange', applyLocationTab);
+      window.removeEventListener('popstate', applyLocationTab);
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || activeTab !== 'settings') return;
+    if (window.location.hash !== '#disciplines-offered' && window.location.hash !== '#disciplines') return;
+
+    const target = document.getElementById('disciplines-offered');
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightDisciplines(true);
+    const timer = window.setTimeout(() => setHighlightDisciplines(false), 2200);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, editingClubProfile]);
 
   async function loadAmmunitionSettings() {
     if (!id || !isAdmin) return;
@@ -701,14 +756,21 @@ export default function ClubDashboard() {
         accentColor: settingsForm.accentColor,
         passIssuingEnabled: settingsForm.passIssuingEnabled,
         memberCardSignInEnabled: settingsForm.memberCardSignInEnabled,
+        membershipCardAverageMetric: settingsForm.membershipCardAverageMetric,
+        membershipCardAverageDiscipline: settingsForm.membershipCardAverageDiscipline || null,
         backupEnabled: settingsForm.backupEnabled,
         ammoSalesLookbackDays: settingsForm.ammoSalesLookbackDays,
         ammoDefaultLeadTimeDays: settingsForm.ammoDefaultLeadTimeDays,
         ammoDefaultSafetyStockDays: settingsForm.ammoDefaultSafetyStockDays,
         ammoDefaultSalesSafeId: settingsForm.ammoDefaultSalesSafeId || null,
       });
-      setSettings(updated);
-      setSettingsForm(updated);
+      const normalized = {
+        ...updated,
+        membershipCardAverageMetric: updated.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
+        membershipCardAverageDiscipline: updated.membershipCardAverageDiscipline ?? null,
+      };
+      setSettings(normalized);
+      setSettingsForm(normalized);
       setEditingSettings(false);
       await loadReorderAnalysis();
     } catch (e) {
@@ -1259,6 +1321,7 @@ export default function ClubDashboard() {
             editing={editingClubProfile}
             saving={savingClubProfile}
             form={clubForm}
+            highlightDisciplines={highlightDisciplines}
             disciplineInput={disciplineInput}
             onToggleEdit={() => setEditingClubProfile(v => !v)}
             onSave={saveClubProfile}
@@ -1279,6 +1342,7 @@ export default function ClubDashboard() {
               editing={editingSettings}
               saving={savingSettings}
               form={settingsForm}
+              disciplinesOffered={normalizeDisciplines(clubForm.disciplinesOffered)}
               onToggleEdit={() => setEditingSettings(v => !v)}
               onSave={saveSettings}
               onFormChange={partial => setSettingsForm(prev => ({ ...prev, ...partial }))}
@@ -1495,7 +1559,11 @@ export default function ClubDashboard() {
           {!isAdmin ? (
             <div className="alert alert-info">Only club admins can access match secretary features.</div>
           ) : (
-            <MatchSecretarySection clubId={id ?? ''} members={members} />
+            <MatchSecretarySection
+              clubId={id ?? ''}
+              members={members}
+              disciplineOptions={normalizeDisciplines(clubForm.disciplinesOffered)}
+            />
           )}
         </>
       )}

@@ -4,7 +4,7 @@ import dns from 'dns/promises';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, OwnerType } from '@prisma/client';
+import { BackupDataset, GoogleDriveConnectionStatus, MembershipStatus, MembershipRole, MembershipCardAverageMetric, OwnerType } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import {
   auditFirearmDeleteDenied,
@@ -1879,11 +1879,26 @@ const updateClubSettingsSchema = z.object({
   accentColor: hexColorSchema,
   passIssuingEnabled: z.boolean().optional(),
   memberCardSignInEnabled: z.boolean().optional(),
+  membershipCardAverageMetric: z.nativeEnum(MembershipCardAverageMetric).optional(),
+  membershipCardAverageDiscipline: z.string().trim().min(1).max(80).optional().nullable(),
   backupEnabled: z.boolean().optional(),
   ammoSalesLookbackDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultLeadTimeDays: z.number().int().min(1).max(365).optional(),
   ammoDefaultSafetyStockDays: z.number().int().min(0).max(365).optional(),
   ammoDefaultSalesSafeId: z.string().min(1).optional().nullable(),
+}).superRefine((data, ctx) => {
+  if (
+    data.membershipCardAverageMetric &&
+    (data.membershipCardAverageMetric === MembershipCardAverageMetric.DISCIPLINE_ALL_TIME ||
+      data.membershipCardAverageMetric === MembershipCardAverageMetric.DISCIPLINE_LAST_10) &&
+    !data.membershipCardAverageDiscipline
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['membershipCardAverageDiscipline'],
+      message: 'membershipCardAverageDiscipline is required when discipline average metric is selected',
+    });
+  }
 });
 
 router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
@@ -1908,6 +1923,8 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         accentColor: '#3b82f6',
         passIssuingEnabled: false,
         memberCardSignInEnabled: false,
+        membershipCardAverageMetric: MembershipCardAverageMetric.OVERALL_LAST_10,
+        membershipCardAverageDiscipline: null,
         backupEnabled: false,
         ammoSalesLookbackDays: 30,
         ammoDefaultLeadTimeDays: 14,
@@ -1941,6 +1958,8 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     accentColor?: string;
     passIssuingEnabled?: boolean;
     memberCardSignInEnabled?: boolean;
+    membershipCardAverageMetric?: MembershipCardAverageMetric;
+    membershipCardAverageDiscipline?: string | null;
     backupEnabled?: boolean;
     ammoSalesLookbackDays?: number;
     ammoDefaultLeadTimeDays?: number;
@@ -1965,6 +1984,14 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
   if ('memberCardSignInEnabled' in parsed.data && typeof parsed.data.memberCardSignInEnabled === 'boolean') {
     updateData.memberCardSignInEnabled = parsed.data.memberCardSignInEnabled;
+  }
+  if ('membershipCardAverageMetric' in parsed.data && parsed.data.membershipCardAverageMetric) {
+    updateData.membershipCardAverageMetric = parsed.data.membershipCardAverageMetric;
+  }
+  if ('membershipCardAverageDiscipline' in parsed.data) {
+    updateData.membershipCardAverageDiscipline = parsed.data.membershipCardAverageDiscipline
+      ? parsed.data.membershipCardAverageDiscipline.trim().replace(/\s+/g, ' ')
+      : null;
   }
   if ('backupEnabled' in parsed.data && typeof parsed.data.backupEnabled === 'boolean') {
     updateData.backupEnabled = parsed.data.backupEnabled;
@@ -1999,6 +2026,42 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   let settings = await prisma.clubSettings.findUnique({
     where: { clubId },
   });
+
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { disciplinesOffered: true },
+  });
+
+  const existingDisciplines = Array.isArray(club?.disciplinesOffered)
+    ? club!.disciplinesOffered
+      .map(v => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''))
+      .filter(Boolean)
+    : [];
+  const nextDisciplines = existingDisciplines;
+
+  const nextMetric = updateData.membershipCardAverageMetric
+    ?? settings?.membershipCardAverageMetric
+    ?? MembershipCardAverageMetric.OVERALL_LAST_10;
+  const nextDiscipline = updateData.membershipCardAverageDiscipline
+    ?? settings?.membershipCardAverageDiscipline
+    ?? null;
+
+  if (
+    (nextMetric === MembershipCardAverageMetric.DISCIPLINE_ALL_TIME
+      || nextMetric === MembershipCardAverageMetric.DISCIPLINE_LAST_10)
+    && !nextDiscipline
+  ) {
+    res.status(400).json({ error: 'A discipline must be selected for discipline-based membership card averages' });
+    return;
+  }
+
+  if (nextDiscipline && nextDisciplines.length > 0) {
+    const matched = nextDisciplines.some(d => d.toLowerCase() === nextDiscipline.toLowerCase());
+    if (!matched) {
+      res.status(400).json({ error: 'membershipCardAverageDiscipline must be one of the club\'s offered disciplines' });
+      return;
+    }
+  }
 
   if (!settings) {
     settings = await prisma.clubSettings.create({
