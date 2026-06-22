@@ -8,6 +8,7 @@ interface Props {
   editing: boolean;
   saving: boolean;
   form: ClubFormData;
+  highlightDisciplines: boolean;
   disciplineInput: string;
   onToggleEdit: () => void;
   onSave: (e: React.FormEvent) => void;
@@ -23,6 +24,7 @@ export default function ClubProfileSection({
   editing,
   saving,
   form,
+  highlightDisciplines,
   disciplineInput,
   onToggleEdit,
   onSave,
@@ -31,6 +33,15 @@ export default function ClubProfileSection({
   onAddDiscipline,
   onRemoveDiscipline,
 }: Props) {
+  const disciplineHighlightStyle: React.CSSProperties | undefined = highlightDisciplines
+    ? {
+      border: '2px solid var(--blue-light)',
+      borderRadius: 6,
+      padding: '0.5rem',
+      background: 'rgba(59, 130, 246, 0.08)',
+    }
+    : undefined;
+
   return (
     <section>
       <div className="page-header">
@@ -66,7 +77,7 @@ export default function ClubProfileSection({
               onChange={e => onFormChange({ address: e.target.value })}
             />
           </div>
-          <div className="form-group">
+          <div className="form-group" id="disciplines-offered" style={disciplineHighlightStyle}>
             <label>Disciplines Offered</label>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <input
@@ -134,7 +145,7 @@ export default function ClubProfileSection({
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Address</dt>
           <dd>{club.address ?? 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disciplines Offered</dt>
-          <dd>{normalizeDisciplines(club.disciplinesOffered).join(', ') || 'N/A'}</dd>
+          <dd id="disciplines-offered" style={disciplineHighlightStyle}>{normalizeDisciplines(club.disciplinesOffered).join(', ') || 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Accepting New Members</dt>
           <dd>{club.acceptingNewMembers ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Opening Times</dt>

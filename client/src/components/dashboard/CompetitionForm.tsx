@@ -107,7 +107,7 @@ export default function CompetitionForm({ seasonId, clubId, disciplineOptions, o
             <div style={{ color: 'var(--gray-600)', fontSize: '0.9rem', padding: '0.5rem', border: '1px solid var(--gray-200)', borderRadius: '4px', background: 'var(--gray-50)' }}>
               No disciplines configured.
               {' '}
-              <a href={`/clubs/${clubId}/?tab=settings`} style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
+              <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
                 Add disciplines in Club Settings
               </a>
             </div>

@@ -434,7 +434,7 @@ export default function ClubSettingsSection({
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
           <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
-          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Scoring Disciplines</dt>
+          <dt id="disciplines" style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Scoring Disciplines</dt>
           <dd>{disciplinesOffered.length > 0 ? disciplinesOffered.join(', ') : 'Not set (manage in Club Profile)'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Average</dt>
           <dd>{settings?.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}</dd>

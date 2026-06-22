@@ -447,7 +447,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
             <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
               No scoring disciplines configured for this club.
               {' '}
-              <a href={`/clubs/${clubId}/?tab=settings`} style={{ textDecoration: 'underline' }}>
+              <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ textDecoration: 'underline' }}>
                 Add disciplines in Club Settings
               </a>
             </div>
@@ -616,7 +616,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                 <div className="alert alert-info">
                   No scoring disciplines configured for this club.
                   {' '}
-                  <a href={`/clubs/${clubId}/dashboard?tab=settings`} style={{ textDecoration: 'underline' }}>
+                  <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ textDecoration: 'underline' }}>
                     Add disciplines in Club Settings
                   </a>
                 </div>
