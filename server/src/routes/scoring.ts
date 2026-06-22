@@ -944,6 +944,25 @@ router.get('/clubs/:clubId/scoring/practice-cards/recent', async (req: AuthReque
   })));
 });
 
+router.delete('/clubs/:clubId/scoring/practice-cards/:practiceCardId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const practiceCardId = req.params.practiceCardId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const existing = await prisma.practiceScore.findFirst({
+    where: { id: practiceCardId, clubId },
+    select: { id: true },
+  });
+  if (!existing) {
+    res.status(404).json({ error: 'Practice card not found' });
+    return;
+  }
+
+  await prisma.practiceScore.delete({ where: { id: practiceCardId } });
+  res.status(204).send();
+});
+
 // ---------------------------------------------------------------------------
 // Averages report (admin)
 // ---------------------------------------------------------------------------

@@ -46,6 +46,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
 
   // Season form state
   const [showSeasonForm, setShowSeasonForm] = useState(false);
+  const [showPracticeCards, setShowPracticeCards] = useState(true);
   const [newSeasonName, setNewSeasonName] = useState('');
   const [creatingSeason, setCreatingSeason] = useState(false);
   const [showArchivedSeasons, setShowArchivedSeasons] = useState(() => {
@@ -67,6 +68,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
     recordedAt: new Date().toISOString().slice(0, 10),
   });
   const [practiceSaving, setPracticeSaving] = useState(false);
+  const [deletingPracticeCardId, setDeletingPracticeCardId] = useState<string | null>(null);
   const [practiceLoading, setPracticeLoading] = useState(false);
   const [practiceCards, setPracticeCards] = useState<PracticeCardRecord[]>([]);
 
@@ -124,7 +126,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
   const loadPracticeCards = useCallback(async () => {
     setPracticeLoading(true);
     try {
-      const data = await api.get<PracticeCardRecord[]>(`/api/clubs/${clubId}/scoring/practice-cards/recent?limit=25`);
+      const data = await api.get<PracticeCardRecord[]>(`/api/clubs/${clubId}/scoring/practice-cards/recent?limit=5`);
       setPracticeCards(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error loading practice cards');
@@ -426,6 +428,20 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
     }
   }
 
+  async function deletePracticeCard(practiceCardId: string) {
+    if (!confirm('Delete this practice card? This cannot be undone.')) return;
+    setDeletingPracticeCardId(practiceCardId);
+    setError('');
+    try {
+      await api.delete(`/api/clubs/${clubId}/scoring/practice-cards/${practiceCardId}`);
+      await loadPracticeCards();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error deleting practice card');
+    } finally {
+      setDeletingPracticeCardId(null);
+    }
+  }
+
   const visibleSeasons = showArchivedSeasons ? seasons : seasons.filter(s => !s.isArchived);
   const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
 
@@ -442,100 +458,130 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
         {error && <div className="alert alert-error">{error}</div>}
 
         <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '1rem', marginBottom: '1rem', border: '1px solid var(--gray-200)' }}>
-          <h3 style={{ marginBottom: '0.75rem' }}>Practice Cards</h3>
-          {disciplineOptions.length === 0 && (
-            <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-              No scoring disciplines configured for this club.
-              {' '}
-              <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ textDecoration: 'underline' }}>
-                Add disciplines in Club Settings
-              </a>
-            </div>
-          )}
-          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '0.75rem' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Member</label>
-              <select
-                value={practiceForm.userId}
-                onChange={e => setPracticeForm(prev => ({ ...prev, userId: e.target.value }))}
-              >
-                {approvedMembers.map(member => (
-                  <option key={member.userId} value={member.userId}>{member.user.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Discipline</label>
-              {disciplineOptions.length > 0 ? (
-                <select
-                  value={practiceForm.discipline}
-                  onChange={e => setPracticeForm(prev => ({ ...prev, discipline: e.target.value }))}
-                >
-                  {disciplineOptions.map(option => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  value={practiceForm.discipline}
-                  onChange={e => setPracticeForm(prev => ({ ...prev, discipline: e.target.value }))}
-                  placeholder="e.g. Air Rifle Prone"
-                />
-              )}
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Score</label>
-              <input
-                type="number"
-                min={0}
-                max={10000}
-                value={practiceForm.score}
-                onChange={e => setPracticeForm(prev => ({ ...prev, score: e.target.value }))}
-                placeholder="0-10000"
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Date Shot</label>
-              <input
-                type="date"
-                value={practiceForm.recordedAt}
-                onChange={e => setPracticeForm(prev => ({ ...prev, recordedAt: e.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="actions" style={{ marginBottom: '0.75rem' }}>
-            <button className="btn btn-primary btn-sm" disabled={practiceSaving || approvedMembers.length === 0 || disciplineOptions.length === 0} onClick={createPracticeCard}>
-              {practiceSaving ? 'Saving…' : 'Log Practice Card'}
+          <div className="page-header" style={{ marginBottom: '0.75rem' }}>
+            <h3 style={{ marginBottom: 0 }}>Practice Cards</h3>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowPracticeCards(v => !v)}
+              type="button"
+            >
+              {showPracticeCards ? 'Collapse' : 'Expand'}
             </button>
           </div>
 
-          {practiceLoading ? (
-            <p style={{ color: 'var(--gray-600)' }}>Loading recent practice cards…</p>
-          ) : practiceCards.length === 0 ? (
-            <p style={{ color: 'var(--gray-600)', fontSize: '0.875rem', marginBottom: 0 }}>No practice cards logged yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>Discipline</th>
-                  <th>Score</th>
-                  <th>Date Shot</th>
-                  <th>Logged By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {practiceCards.map(card => (
-                  <tr key={card.id}>
-                    <td>{card.userName}</td>
-                    <td>{card.discipline}</td>
-                    <td>{card.score}</td>
-                    <td>{new Date(card.recordedAt).toLocaleDateString()}</td>
-                    <td>{card.createdByName}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {showPracticeCards && (
+            <>
+              {disciplineOptions.length === 0 && (
+                <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
+                  No scoring disciplines configured for this club.
+                  {' '}
+                  <a href={`/clubs/${clubId}?tab=settings#disciplines-offered`} style={{ textDecoration: 'underline' }}>
+                    Add disciplines in Club Settings
+                  </a>
+                </div>
+              )}
+              <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '0.75rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Member</label>
+                  <select
+                    value={practiceForm.userId}
+                    onChange={e => setPracticeForm(prev => ({ ...prev, userId: e.target.value }))}
+                  >
+                    {approvedMembers.map(member => (
+                      <option key={member.userId} value={member.userId}>{member.user.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Discipline</label>
+                  {disciplineOptions.length > 0 ? (
+                    <select
+                      value={practiceForm.discipline}
+                      onChange={e => setPracticeForm(prev => ({ ...prev, discipline: e.target.value }))}
+                    >
+                      {disciplineOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={practiceForm.discipline}
+                      onChange={e => setPracticeForm(prev => ({ ...prev, discipline: e.target.value }))}
+                      placeholder="e.g. Air Rifle Prone"
+                    />
+                  )}
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Score</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10000}
+                    value={practiceForm.score}
+                    onChange={e => setPracticeForm(prev => ({ ...prev, score: e.target.value }))}
+                    placeholder="0-10000"
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Date Shot</label>
+                  <input
+                    type="date"
+                    value={practiceForm.recordedAt}
+                    onChange={e => setPracticeForm(prev => ({ ...prev, recordedAt: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="actions" style={{ marginBottom: '0.75rem' }}>
+                <button className="btn btn-primary btn-sm" disabled={practiceSaving || approvedMembers.length === 0 || disciplineOptions.length === 0} onClick={createPracticeCard}>
+                  {practiceSaving ? 'Saving…' : 'Log Practice Card'}
+                </button>
+              </div>
+
+              {practiceLoading ? (
+                <p style={{ color: 'var(--gray-600)' }}>Loading recent practice cards…</p>
+              ) : practiceCards.length === 0 ? (
+                <p style={{ color: 'var(--gray-600)', fontSize: '0.875rem', marginBottom: 0 }}>No practice cards logged yet.</p>
+              ) : (
+                <>
+                  <p style={{ color: 'var(--gray-600)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                    Showing last 5 practice cards.
+                  </p>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Member</th>
+                        <th>Discipline</th>
+                        <th>Score</th>
+                        <th>Date Shot</th>
+                        <th>Logged By</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {practiceCards.map(card => (
+                        <tr key={card.id}>
+                          <td>{card.userName}</td>
+                          <td>{card.discipline}</td>
+                          <td>{card.score}</td>
+                          <td>{new Date(card.recordedAt).toLocaleDateString()}</td>
+                          <td>{card.createdByName}</td>
+                          <td>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              type="button"
+                              disabled={deletingPracticeCardId === card.id}
+                              onClick={() => deletePracticeCard(card.id)}
+                            >
+                              {deletingPracticeCardId === card.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </>
           )}
         </div>
 
