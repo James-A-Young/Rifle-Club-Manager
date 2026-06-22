@@ -63,6 +63,7 @@ export interface CreatePassParams {
   visitCount: number;
   roundsThisYear: number;
   average: number;
+  averageLabel?: string;
   clubName: string;
   settings?: {
     secondaryColor?: string;
@@ -227,7 +228,7 @@ export class GoogleWalletService {
         },
         {
           id: 'average',
-          header: 'Average',
+          header: params.averageLabel || 'Average',
           body: params.average.toFixed(1),
         },
       ],

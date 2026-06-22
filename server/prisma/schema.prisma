@@ -67,6 +67,17 @@ enum PublicDomainStatus {
   VERIFIED
 }
 
+enum MembershipCardAverageMetric {
+  OVERALL_LAST_10
+  OVERALL_ALL_TIME
+  COMPETITION_LAST_10
+  COMPETITION_ALL_TIME
+  PRACTICE_LAST_10
+  PRACTICE_ALL_TIME
+  DISCIPLINE_LAST_10
+  DISCIPLINE_ALL_TIME
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -100,6 +111,8 @@ model User {
   redeemedInvites ClubInvite[] @relation("InviteRedeemedBy")
   competitionEntries CompetitionEntry[]
   scores             Score[]
+  practiceScores      PracticeScore[] @relation("PracticeScoreMember")
+  practiceScoresLogged PracticeScore[] @relation("PracticeScoreCreatedBy")
   passwordResetTokens PasswordResetToken[]
   twoFactorDisableTokens TwoFactorDisableToken[]
   linkedGoogleDriveConnections GoogleDriveConnection[] @relation("GoogleDriveLinkedByUser")
@@ -135,6 +148,7 @@ model Club {
   settings         ClubSettings?
   seasons          Season[]
   competitions     Competition[]
+  practiceScores   PracticeScore[]
   googleDriveConnection GoogleDriveConnection?
   backupJobStates  BackupJobState[]
   backupRuns       BackupRun[]
@@ -379,6 +393,9 @@ model ClubSettings {
   accentColor              String?  @default("#3b82f6")
   passIssuingEnabled       Boolean  @default(false)
   memberCardSignInEnabled  Boolean  @default(false)
+  scoringDisciplines       Json?
+  membershipCardAverageMetric MembershipCardAverageMetric @default(OVERALL_LAST_10)
+  membershipCardAverageDiscipline String?
   backupEnabled            Boolean  @default(false)
   ammoSalesLookbackDays    Int      @default(30)
   ammoDefaultLeadTimeDays  Int      @default(14)
@@ -614,6 +631,7 @@ model Competition {
   seasonId        String
   name            String
   organiser       String?
+  discipline      String   @default("General")
   roundCount      Int
   cardsPerRound   Int
   createdAt       DateTime @default(now())
@@ -674,6 +692,24 @@ model Score {
   @@index([userId])
   @@index([roundId])
   @@index([competitionId])
+}
+
+model PracticeScore {
+  id              String   @id @default(cuid())
+  clubId          String
+  userId          String
+  createdByUserId String
+  discipline      String
+  score           Int
+  recordedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  club      Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  member    User @relation("PracticeScoreMember", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User @relation("PracticeScoreCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([clubId, userId, recordedAt])
+  @@index([clubId, discipline, recordedAt])
 }
 
 model AmmunitionStockInput {

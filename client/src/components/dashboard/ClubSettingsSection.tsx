@@ -210,6 +210,14 @@ export default function ClubSettingsSection({
     onCreateAmmunitionType(nextPricePence);
   }
 
+  function updateScoringDisciplinesFromText(value: string) {
+    const list = value
+      .split(/\n|,/)
+      .map(item => item.trim())
+      .filter(Boolean);
+    onFormChange({ scoringDisciplines: list });
+  }
+
   return (
     <section>
       <div className="page-header">
@@ -367,6 +375,50 @@ export default function ClubSettingsSection({
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-group">
+              <label>Scoring Disciplines (one per line)</label>
+              <textarea
+                rows={4}
+                value={(form.scoringDisciplines ?? []).join('\n')}
+                onChange={e => updateScoringDisciplinesFromText(e.target.value)}
+                placeholder={'Air Rifle\nProne\nSporting'}
+              />
+            </div>
+            <div>
+              <div className="form-group">
+                <label>Membership Card Average</label>
+                <select
+                  value={form.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}
+                  onChange={e => onFormChange({ membershipCardAverageMetric: e.target.value as ClubSettings['membershipCardAverageMetric'] })}
+                >
+                  <option value="OVERALL_LAST_10">Overall Last 10</option>
+                  <option value="OVERALL_ALL_TIME">Overall All-Time</option>
+                  <option value="COMPETITION_LAST_10">Competition Last 10</option>
+                  <option value="COMPETITION_ALL_TIME">Competition All-Time</option>
+                  <option value="PRACTICE_LAST_10">Practice Last 10</option>
+                  <option value="PRACTICE_ALL_TIME">Practice All-Time</option>
+                  <option value="DISCIPLINE_LAST_10">Discipline Last 10</option>
+                  <option value="DISCIPLINE_ALL_TIME">Discipline All-Time</option>
+                </select>
+              </div>
+              {(form.membershipCardAverageMetric === 'DISCIPLINE_LAST_10' || form.membershipCardAverageMetric === 'DISCIPLINE_ALL_TIME') && (
+                <div className="form-group">
+                  <label>Membership Card Discipline</label>
+                  <select
+                    value={form.membershipCardAverageDiscipline ?? ''}
+                    onChange={e => onFormChange({ membershipCardAverageDiscipline: e.target.value || null })}
+                  >
+                    <option value="">Select discipline</option>
+                    {(form.scoringDisciplines ?? []).map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save Settings'}
           </button>
@@ -396,6 +448,12 @@ export default function ClubSettingsSection({
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
           <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Scoring Disciplines</dt>
+          <dd>{(settings?.scoringDisciplines ?? []).join(', ') || 'Not set'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Average</dt>
+          <dd>{settings?.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Discipline</dt>
+          <dd>{settings?.membershipCardAverageDiscipline ?? 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Usage Lookback</dt>
           <dd>{settings?.ammoSalesLookbackDays ?? 30} days</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Lead Time</dt>

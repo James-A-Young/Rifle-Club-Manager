@@ -42,6 +42,7 @@ const createCompetitionSchema = z.object({
   seasonId: z.string().min(1),
   name: z.string().trim().min(1),
   organiser: z.string().trim().optional().nullable(),
+  discipline: z.string().trim().min(1).max(80).optional(),
   roundCount: z.number().int().min(1).max(52),
   cardsPerRound: z.number().int().min(1).max(20),
   rounds: z.array(roundDueDateSchema),
@@ -53,6 +54,7 @@ const createCompetitionSchema = z.object({
 const updateCompetitionSchema = z.object({
   name: z.string().trim().min(1).optional(),
   organiser: z.string().trim().optional().nullable(),
+  discipline: z.string().trim().min(1).max(80).optional(),
   roundCount: z.number().int().min(1).max(52).optional(),
   cardsPerRound: z.number().int().min(1).max(20).optional(),
   rounds: z.array(z.object({
@@ -73,6 +75,91 @@ const enrolMembersSchema = z.object({
 const updateScoreSchema = z.object({
   score: z.number().int().min(0).max(10000).nullable(),
 });
+
+const createPracticeScoreSchema = z.object({
+  userId: z.string().min(1),
+  discipline: z.string().trim().min(1).max(80),
+  score: z.number().int().min(0).max(10000),
+  recordedAt: z.string().datetime().optional(),
+});
+
+const listPracticeScoresQuerySchema = z.object({
+  userId: z.string().min(1).optional(),
+  discipline: z.string().trim().min(1).max(80).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+type ScoreSample = {
+  score: number;
+  scoredAt: Date;
+};
+
+type ScoreStats = {
+  totalCardsShot: number;
+  allTimeAverage: number | null;
+  last10Average: number | null;
+  bestScore: number | null;
+};
+
+function normalizeDisciplineLabel(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeDisciplineList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const list: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const normalized = normalizeDisciplineLabel(item);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    list.push(normalized);
+  }
+  return list;
+}
+
+function resolveDisciplineFromSettings(requested: string | undefined, allowedDisciplines: string[]): string {
+  const normalizedRequested = requested ? normalizeDisciplineLabel(requested) : '';
+  if (allowedDisciplines.length === 0) {
+    return normalizedRequested || 'General';
+  }
+
+  if (!normalizedRequested) {
+    return allowedDisciplines[0];
+  }
+
+  const match = allowedDisciplines.find(d => d.toLowerCase() === normalizedRequested.toLowerCase());
+  if (!match) {
+    throw new Error(`Discipline must be one of the configured club disciplines: ${allowedDisciplines.join(', ')}`);
+  }
+  return match;
+}
+
+function calculateScoreStats(samples: ScoreSample[]): ScoreStats {
+  if (samples.length === 0) {
+    return {
+      totalCardsShot: 0,
+      allTimeAverage: null,
+      last10Average: null,
+      bestScore: null,
+    };
+  }
+
+  const values = samples.map(sample => sample.score);
+  const allTimeAvg = values.reduce((sum, score) => sum + score, 0) / values.length;
+  const last10Values = values.slice(0, 10);
+  const last10Avg = last10Values.reduce((sum, score) => sum + score, 0) / last10Values.length;
+
+  return {
+    totalCardsShot: values.length,
+    allTimeAverage: Math.round(allTimeAvg * 100) / 100,
+    last10Average: Math.round(last10Avg * 100) / 100,
+    bestScore: Math.max(...values),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Season CRUD
@@ -184,6 +271,20 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
   });
   if (!season) { res.status(400).json({ error: 'Season not found in this club' }); return; }
 
+  const settings = await prisma.clubSettings.findUnique({
+    where: { clubId },
+    select: { scoringDisciplines: true },
+  });
+  const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+
+  let discipline: string;
+  try {
+    discipline = resolveDisciplineFromSettings(parsed.data.discipline, allowedDisciplines);
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid discipline' });
+    return;
+  }
+
   let competition;
   try {
     competition = await prisma.$transaction(async tx => {
@@ -193,6 +294,7 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
           seasonId: parsed.data.seasonId,
           name: parsed.data.name,
           organiser: parsed.data.organiser ?? null,
+          discipline,
           roundCount: parsed.data.roundCount,
           cardsPerRound: parsed.data.cardsPerRound,
         },
@@ -236,6 +338,21 @@ router.patch('/clubs/:clubId/scoring/competitions/:competitionId', async (req: A
 
   const parsed = updateCompetitionSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  let nextDiscipline: string | undefined;
+  if (parsed.data.discipline !== undefined) {
+    const settings = await prisma.clubSettings.findUnique({
+      where: { clubId },
+      select: { scoringDisciplines: true },
+    });
+    const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+    try {
+      nextDiscipline = resolveDisciplineFromSettings(parsed.data.discipline, allowedDisciplines);
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid discipline' });
+      return;
+    }
+  }
 
   const roundUpdatesByNumber = new Map<number, string>();
   if (parsed.data.rounds) {
@@ -363,6 +480,7 @@ router.patch('/clubs/:clubId/scoring/competitions/:competitionId', async (req: A
         data: {
           ...(parsed.data.name !== undefined && { name: parsed.data.name }),
           ...(parsed.data.organiser !== undefined && { organiser: parsed.data.organiser }),
+          ...(nextDiscipline !== undefined && { discipline: nextDiscipline }),
           roundCount: nextRoundCount,
           cardsPerRound: nextCardsPerRound,
         },
@@ -665,6 +783,7 @@ router.get('/clubs/:clubId/scoring/competitions/:competitionId/scoresheet', asyn
       id: comp.id,
       name: comp.name,
       organiser: comp.organiser,
+      discipline: comp.discipline,
       roundCount: comp.roundCount,
       cardsPerRound: comp.cardsPerRound,
     },
@@ -711,6 +830,121 @@ router.patch('/clubs/:clubId/scoring/scores/:scoreId', async (req: AuthRequest, 
 });
 
 // ---------------------------------------------------------------------------
+// Practice cards (admin)
+// ---------------------------------------------------------------------------
+
+router.post('/clubs/:clubId/scoring/practice-cards', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const createdByUserId = req.user!.id;
+  const isAdmin = await ensureAdminForClub(createdByUserId, clubId);
+  if (!isAdmin) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const parsed = createPracticeScoreSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  const settings = await prisma.clubSettings.findUnique({
+    where: { clubId },
+    select: { scoringDisciplines: true },
+  });
+  const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+
+  let discipline: string;
+  try {
+    discipline = resolveDisciplineFromSettings(parsed.data.discipline, allowedDisciplines);
+  } catch (e) {
+    res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid discipline' });
+    return;
+  }
+
+  const membership = await prisma.clubMembership.findFirst({
+    where: {
+      clubId,
+      userId: parsed.data.userId,
+      status: MembershipStatus.APPROVED,
+    },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+
+  if (!membership) {
+    res.status(400).json({ error: 'Selected member is not approved in this club' });
+    return;
+  }
+
+  const recordedAt = parsed.data.recordedAt ? new Date(parsed.data.recordedAt) : new Date();
+  if (Number.isNaN(recordedAt.getTime())) {
+    res.status(400).json({ error: 'Invalid recordedAt value' });
+    return;
+  }
+
+  const created = await prisma.practiceScore.create({
+    data: {
+      clubId,
+      userId: parsed.data.userId,
+      createdByUserId,
+      discipline,
+      score: parsed.data.score,
+      recordedAt,
+    },
+    include: {
+      member: { select: { id: true, name: true, email: true } },
+      createdBy: { select: { id: true, name: true } },
+    },
+  });
+
+  res.status(201).json({
+    id: created.id,
+    userId: created.userId,
+    userName: created.member.name,
+    userEmail: created.member.email,
+    discipline: created.discipline,
+    score: created.score,
+    recordedAt: created.recordedAt,
+    createdAt: created.createdAt,
+    createdByUserId: created.createdByUserId,
+    createdByName: created.createdBy.name,
+  });
+});
+
+router.get('/clubs/:clubId/scoring/practice-cards/recent', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const parsed = listPracticeScoresQuerySchema.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  const limit = parsed.data.limit ?? 25;
+  const discipline = parsed.data.discipline ? normalizeDisciplineLabel(parsed.data.discipline) : undefined;
+
+  const rows = await prisma.practiceScore.findMany({
+    where: {
+      clubId,
+      ...(parsed.data.userId && { userId: parsed.data.userId }),
+      ...(discipline && { discipline: { equals: discipline, mode: 'insensitive' } }),
+    },
+    orderBy: [{ recordedAt: 'desc' }, { createdAt: 'desc' }],
+    take: limit,
+    include: {
+      member: { select: { id: true, name: true, email: true } },
+      createdBy: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json(rows.map(row => ({
+    id: row.id,
+    userId: row.userId,
+    userName: row.member.name,
+    userEmail: row.member.email,
+    discipline: row.discipline,
+    score: row.score,
+    recordedAt: row.recordedAt,
+    createdAt: row.createdAt,
+    createdByUserId: row.createdByUserId,
+    createdByName: row.createdBy.name,
+  })));
+});
+
+// ---------------------------------------------------------------------------
 // Averages report (admin)
 // ---------------------------------------------------------------------------
 
@@ -722,6 +956,10 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
   const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
   const competitionId = typeof req.query.competitionId === 'string' ? req.query.competitionId : undefined;
   const format = typeof req.query.format === 'string' ? req.query.format : undefined;
+  const includeBreakdown = req.query.includeBreakdown === 'true';
+  const disciplineFilter = typeof req.query.discipline === 'string' && req.query.discipline.trim()
+    ? normalizeDisciplineLabel(req.query.discipline)
+    : undefined;
 
   // Raw score export for a single season
   if (format === 'raw-csv') {
@@ -764,63 +1002,130 @@ router.get('/clubs/:clubId/scoring/report', async (req: AuthRequest, res: Respon
 
   const memberUserIds = memberships.map(m => m.userId);
 
-  // Fetch all scores for all members in one query, ordered by updatedAt desc (needed for last-10)
-  const allScoreRows = await prisma.score.findMany({
+  // Competition scores are excluded when a discipline filter is requested because
+  // competitions are not currently tagged by discipline.
+  const competitionRows = await prisma.score.findMany({
     where: {
       userId: { in: memberUserIds },
       competition: {
         clubId,
         ...(seasonId && { seasonId }),
         ...(competitionId && { id: competitionId }),
+        ...(disciplineFilter && { discipline: { equals: disciplineFilter, mode: 'insensitive' } }),
       },
       score: { not: null },
     },
-    select: { score: true, userId: true, updatedAt: true },
+    select: {
+      score: true,
+      userId: true,
+      updatedAt: true,
+      competition: { select: { discipline: true } },
+    },
     orderBy: { updatedAt: 'desc' },
   });
 
-  // Group scores by userId (already desc by updatedAt, preserving order for last-10)
-  const scoresByUser = new Map<string, number[]>();
-  for (const row of allScoreRows) {
-    const arr = scoresByUser.get(row.userId);
-    if (arr) {
-      arr.push(row.score as number);
-    } else {
-      scoresByUser.set(row.userId, [row.score as number]);
-    }
+  const practiceRows = await prisma.practiceScore.findMany({
+    where: {
+      clubId,
+      userId: { in: memberUserIds },
+      ...(disciplineFilter && { discipline: { equals: disciplineFilter, mode: 'insensitive' } }),
+    },
+    select: { userId: true, score: true, recordedAt: true, discipline: true },
+    orderBy: { recordedAt: 'desc' },
+  });
+
+  const competitionByUser = new Map<string, (ScoreSample & { discipline: string })[]>();
+  for (const row of competitionRows) {
+    const arr = competitionByUser.get(row.userId);
+    const sample = {
+      score: row.score as number,
+      scoredAt: row.updatedAt,
+      discipline: normalizeDisciplineLabel(row.competition.discipline),
+    };
+    if (arr) arr.push(sample);
+    else competitionByUser.set(row.userId, [sample]);
+  }
+
+  const practiceByUser = new Map<string, (ScoreSample & { discipline: string })[]>();
+  for (const row of practiceRows) {
+    const arr = practiceByUser.get(row.userId);
+    const sample = {
+      score: row.score,
+      scoredAt: row.recordedAt,
+      discipline: normalizeDisciplineLabel(row.discipline),
+    };
+    if (arr) arr.push(sample);
+    else practiceByUser.set(row.userId, [sample]);
   }
 
   const results = memberships.map(m => {
-    const values = scoresByUser.get(m.userId) ?? [];
-    const allTimeAvg = values.length > 0
-      ? values.reduce((a, b) => a + b, 0) / values.length
-      : null;
-    const last10 = values.slice(0, 10);
-    const last10Avg = last10.length > 0
-      ? last10.reduce((a, b) => a + b, 0) / last10.length
-      : null;
-    const bestScore = values.length > 0 ? Math.max(...values) : null;
+    const competitionSamples = competitionByUser.get(m.userId) ?? [];
+    const practiceSamples = practiceByUser.get(m.userId) ?? [];
+    const merged = [...competitionSamples, ...practiceSamples]
+      .sort((a, b) => b.scoredAt.getTime() - a.scoredAt.getTime());
+
+    const overallStats = calculateScoreStats(merged);
+    const competitionStats = calculateScoreStats(competitionSamples);
+    const practiceStats = calculateScoreStats(practiceSamples);
+
+    const disciplineBreakdownMap = new Map<string, ScoreSample[]>();
+    for (const sample of merged) {
+      const key = sample.discipline;
+      const existing = disciplineBreakdownMap.get(key);
+      if (existing) {
+        existing.push({ score: sample.score, scoredAt: sample.scoredAt });
+      } else {
+        disciplineBreakdownMap.set(key, [{ score: sample.score, scoredAt: sample.scoredAt }]);
+      }
+    }
+
+    const disciplineBreakdown = Array.from(disciplineBreakdownMap.entries())
+      .map(([discipline, samples]) => ({
+        discipline,
+        ...calculateScoreStats(samples),
+      }))
+      .sort((a, b) => a.discipline.localeCompare(b.discipline));
 
     return {
       userId: m.userId,
       name: m.user.name,
       email: m.user.email,
-      totalCardsShot: values.length,
-      allTimeAverage: allTimeAvg !== null ? Math.round(allTimeAvg * 100) / 100 : null,
-      last10Average: last10Avg !== null ? Math.round(last10Avg * 100) / 100 : null,
-      bestScore,
+      totalCardsShot: overallStats.totalCardsShot,
+      allTimeAverage: overallStats.allTimeAverage,
+      last10Average: overallStats.last10Average,
+      bestScore: overallStats.bestScore,
+      competitionCardsShot: competitionStats.totalCardsShot,
+      practiceCardsShot: practiceStats.totalCardsShot,
+      practiceAllTimeAverage: practiceStats.allTimeAverage,
+      practiceLast10Average: practiceStats.last10Average,
+      ...(includeBreakdown && { byDiscipline: disciplineBreakdown }),
     };
   });
 
   if (format === 'csv') {
-    const headers = ['Name', 'Email', 'Total Cards Shot', 'All-Time Average', 'Last 10 Average', 'Best Score'];
+    const headers = [
+      'Name',
+      'Email',
+      'Total Cards Shot',
+      'Competition Cards',
+      'Practice Cards',
+      'All-Time Average',
+      'Last 10 Average',
+      'Best Score',
+      'Practice All-Time Average',
+      'Practice Last 10 Average',
+    ];
     const rows = results.map(r => [
       escapeCsvCell(r.name),
       escapeCsvCell(r.email),
       escapeCsvCell(r.totalCardsShot),
+      escapeCsvCell(r.competitionCardsShot),
+      escapeCsvCell(r.practiceCardsShot),
       escapeCsvCell(r.allTimeAverage ?? ''),
       escapeCsvCell(r.last10Average ?? ''),
       escapeCsvCell(r.bestScore ?? ''),
+      escapeCsvCell(r.practiceAllTimeAverage ?? ''),
+      escapeCsvCell(r.practiceLast10Average ?? ''),
     ].join(','));
 
     const csv = [headers.map(h => escapeCsvCell(h)).join(','), ...rows].join('\n');
@@ -875,30 +1180,86 @@ router.get('/clubs/:clubId/scoring/mine/due', async (req: AuthRequest, res: Resp
 router.get('/clubs/:clubId/scoring/mine/averages', async (req: AuthRequest, res: Response) => {
   const clubId = req.params.clubId as string;
   const userId = req.user!.id;
+  const disciplineFilter = typeof req.query.discipline === 'string' && req.query.discipline.trim()
+    ? normalizeDisciplineLabel(req.query.discipline)
+    : undefined;
 
   const isMember = await ensureMemberOfClub(userId, clubId);
   if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
 
-  const allScores = await prisma.score.findMany({
+  const competitionScores = await prisma.score.findMany({
     where: {
       userId,
       score: { not: null },
-      competition: { clubId },
+      competition: {
+        clubId,
+        ...(disciplineFilter && { discipline: { equals: disciplineFilter, mode: 'insensitive' } }),
+      },
     },
-    select: { score: true },
+    select: {
+      score: true,
+      updatedAt: true,
+      competition: { select: { discipline: true } },
+    },
     orderBy: { updatedAt: 'desc' },
   });
 
-  const values = allScores.map(s => s.score as number);
-  const allTimeAvg = values.length > 0
-    ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100
-    : null;
-  const last10 = values.slice(0, 10);
-  const last10Avg = last10.length > 0
-    ? Math.round((last10.reduce((a, b) => a + b, 0) / last10.length) * 100) / 100
-    : null;
+  const practiceScores = await prisma.practiceScore.findMany({
+    where: {
+      clubId,
+      userId,
+      ...(disciplineFilter && { discipline: { equals: disciplineFilter, mode: 'insensitive' } }),
+    },
+    select: { score: true, recordedAt: true, discipline: true },
+    orderBy: { recordedAt: 'desc' },
+  });
 
-  res.json({ allTimeAverage: allTimeAvg, last10Average: last10Avg, totalCardsShot: values.length });
+  const competitionSamples = competitionScores.map(s => ({
+    score: s.score as number,
+    scoredAt: s.updatedAt,
+    discipline: normalizeDisciplineLabel(s.competition.discipline),
+  }));
+  const practiceSamples = practiceScores.map(s => ({
+    score: s.score,
+    scoredAt: s.recordedAt,
+    discipline: normalizeDisciplineLabel(s.discipline),
+  }));
+
+  const merged = [...competitionSamples, ...practiceSamples]
+    .sort((a, b) => b.scoredAt.getTime() - a.scoredAt.getTime());
+
+  const overallStats = calculateScoreStats(merged);
+  const competitionStats = calculateScoreStats(competitionSamples);
+  const practiceStats = calculateScoreStats(practiceSamples);
+
+  const byDisciplineMap = new Map<string, ScoreSample[]>();
+  for (const sample of merged) {
+    const existing = byDisciplineMap.get(sample.discipline);
+    const normalizedSample = { score: sample.score, scoredAt: sample.scoredAt };
+    if (existing) {
+      existing.push(normalizedSample);
+    } else {
+      byDisciplineMap.set(sample.discipline, [normalizedSample]);
+    }
+  }
+
+  const byDiscipline = Array.from(byDisciplineMap.entries())
+    .map(([discipline, samples]) => ({
+      discipline,
+      ...calculateScoreStats(samples),
+    }))
+    .sort((a, b) => a.discipline.localeCompare(b.discipline));
+
+  res.json({
+    allTimeAverage: overallStats.allTimeAverage,
+    last10Average: overallStats.last10Average,
+    totalCardsShot: overallStats.totalCardsShot,
+    competitionCardsShot: competitionStats.totalCardsShot,
+    practiceCardsShot: practiceStats.totalCardsShot,
+    practiceAllTimeAverage: practiceStats.allTimeAverage,
+    practiceLast10Average: practiceStats.last10Average,
+    byDiscipline,
+  });
 });
 
 router.get('/clubs/:clubId/scoring/mine/recent', async (req: AuthRequest, res: Response) => {

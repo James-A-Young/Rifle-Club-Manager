@@ -160,6 +160,17 @@ export interface ClubSettings {
   accentColor: string;
   passIssuingEnabled: boolean;
   memberCardSignInEnabled: boolean;
+  scoringDisciplines?: string[] | null;
+  membershipCardAverageMetric?:
+    | 'OVERALL_LAST_10'
+    | 'OVERALL_ALL_TIME'
+    | 'COMPETITION_LAST_10'
+    | 'COMPETITION_ALL_TIME'
+    | 'PRACTICE_LAST_10'
+    | 'PRACTICE_ALL_TIME'
+    | 'DISCIPLINE_LAST_10'
+    | 'DISCIPLINE_ALL_TIME';
+  membershipCardAverageDiscipline?: string | null;
   backupEnabled: boolean;
   ammoSalesLookbackDays: number;
   ammoDefaultLeadTimeDays: number;
@@ -391,6 +402,7 @@ export interface Competition {
   seasonId: string;
   name: string;
   organiser: string | null;
+  discipline: string;
   roundCount: number;
   cardsPerRound: number;
   createdAt: string;
@@ -425,6 +437,7 @@ export interface ScoreSheet {
     id: string;
     name: string;
     organiser: string | null;
+    discipline: string;
     roundCount: number;
     cardsPerRound: number;
   };
@@ -446,6 +459,17 @@ export interface ScoringAverages {
   allTimeAverage: number | null;
   last10Average: number | null;
   totalCardsShot: number;
+  competitionCardsShot?: number;
+  practiceCardsShot?: number;
+  practiceAllTimeAverage?: number | null;
+  practiceLast10Average?: number | null;
+  byDiscipline?: {
+    discipline: string;
+    totalCardsShot: number;
+    allTimeAverage: number | null;
+    last10Average: number | null;
+    bestScore: number | null;
+  }[];
 }
 
 export interface RecentScore {
@@ -454,4 +478,17 @@ export interface RecentScore {
   competitionName: string;
   score: number;
   scoredAt: string;
+}
+
+export interface PracticeCardRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  discipline: string;
+  score: number;
+  recordedAt: string;
+  createdAt: string;
+  createdByUserId: string;
+  createdByName: string;
 }

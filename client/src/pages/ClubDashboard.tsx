@@ -166,6 +166,9 @@ export default function ClubDashboard() {
     accentColor: '#3b82f6',
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
+    scoringDisciplines: [],
+    membershipCardAverageMetric: 'OVERALL_LAST_10',
+    membershipCardAverageDiscipline: null,
     backupEnabled: false,
     ammoSalesLookbackDays: 30,
     ammoDefaultLeadTimeDays: 14,
@@ -278,8 +281,14 @@ export default function ClubDashboard() {
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
     api.get<ClubSettings>(`/api/clubs/${id}/settings`)
       .then(s => {
-        setSettings(s);
-        setSettingsForm(s);
+        const normalized = {
+          ...s,
+          scoringDisciplines: normalizeDisciplines(s.scoringDisciplines),
+          membershipCardAverageMetric: s.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
+          membershipCardAverageDiscipline: s.membershipCardAverageDiscipline ?? null,
+        };
+        setSettings(normalized);
+        setSettingsForm(normalized);
       })
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading settings'));
     api.get<GoogleDriveBackupStatus>(`/api/clubs/${id}/settings/backups/google-drive/status`)
@@ -701,14 +710,23 @@ export default function ClubDashboard() {
         accentColor: settingsForm.accentColor,
         passIssuingEnabled: settingsForm.passIssuingEnabled,
         memberCardSignInEnabled: settingsForm.memberCardSignInEnabled,
+        scoringDisciplines: normalizeDisciplines(settingsForm.scoringDisciplines),
+        membershipCardAverageMetric: settingsForm.membershipCardAverageMetric,
+        membershipCardAverageDiscipline: settingsForm.membershipCardAverageDiscipline || null,
         backupEnabled: settingsForm.backupEnabled,
         ammoSalesLookbackDays: settingsForm.ammoSalesLookbackDays,
         ammoDefaultLeadTimeDays: settingsForm.ammoDefaultLeadTimeDays,
         ammoDefaultSafetyStockDays: settingsForm.ammoDefaultSafetyStockDays,
         ammoDefaultSalesSafeId: settingsForm.ammoDefaultSalesSafeId || null,
       });
-      setSettings(updated);
-      setSettingsForm(updated);
+      const normalized = {
+        ...updated,
+        scoringDisciplines: normalizeDisciplines(updated.scoringDisciplines),
+        membershipCardAverageMetric: updated.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
+        membershipCardAverageDiscipline: updated.membershipCardAverageDiscipline ?? null,
+      };
+      setSettings(normalized);
+      setSettingsForm(normalized);
       setEditingSettings(false);
       await loadReorderAnalysis();
     } catch (e) {
@@ -1495,7 +1513,11 @@ export default function ClubDashboard() {
           {!isAdmin ? (
             <div className="alert alert-info">Only club admins can access match secretary features.</div>
           ) : (
-            <MatchSecretarySection clubId={id ?? ''} members={members} />
+            <MatchSecretarySection
+              clubId={id ?? ''}
+              members={members}
+              disciplineOptions={normalizeDisciplines(settingsForm.scoringDisciplines)}
+            />
           )}
         </>
       )}
