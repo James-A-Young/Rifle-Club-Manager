@@ -98,7 +98,7 @@ export function createApp() {
           'https://www.googletagmanager.com',
           'https://cloudflareinsights.com',
         ],
-        imgSrc: ["'self'", 'data:', 'https://*.google-analytics.com', 'https://www.googletagmanager.com'],
+        imgSrc: ["'self'", 'data:', 'https:', 'https://*.google-analytics.com', 'https://www.googletagmanager.com'],
       },
     },
   }));

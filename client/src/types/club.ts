@@ -23,6 +23,91 @@ export interface Club {
   description?: string | null;
 }
 
+export type PublicAnnouncementVariant = 'INFO' | 'WARNING' | 'SUCCESS';
+
+export interface ClubPublicSessionBlock {
+  id: string;
+  clubId: string;
+  dayLabel: string;
+  sessionType: string;
+  startsAt: string;
+  endsAt: string;
+  notes?: string | null;
+  sortOrder: number;
+}
+
+export interface ClubPublicAnnouncement {
+  id: string;
+  clubId: string;
+  title: string;
+  message: string;
+  variant: PublicAnnouncementVariant;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
+export interface ClubPublicBlogPostPreview {
+  id: string;
+  clubId: string;
+  title: string;
+  slug: string;
+  excerpt?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ClubPublicBlogPost extends ClubPublicBlogPostPreview {
+  markdownBody: string;
+  renderedHtml?: string;
+  isPublished: boolean;
+  updatedAt?: string;
+}
+
+export interface ClubPublicBlogPostListResponse {
+  posts: ClubPublicBlogPostPreview[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface ClubPublicDomain {
+  id: string;
+  clubId: string;
+  domain: string;
+  verificationToken: string;
+  expectedCnameTarget: string;
+  status: 'PENDING' | 'VERIFIED';
+  isActive: boolean;
+  verifiedAt?: string | null;
+  lastCheckedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClubPublicSiteProfile {
+  vanitySlug?: string | null;
+  heroTitle?: string | null;
+  heroSubtitle?: string | null;
+  headerImageUrl?: string | null;
+  headerImageAlt?: string | null;
+  sessions: ClubPublicSessionBlock[];
+  announcements: ClubPublicAnnouncement[];
+  blogPosts: ClubPublicBlogPostPreview[];
+  canonicalUrl: string;
+  resolvedBy: 'id' | 'vanity' | 'domain';
+}
+
+export interface ClubPublicPageData extends Club {
+  createdAt: string;
+  _count: { memberships: number };
+  publicSite: ClubPublicSiteProfile;
+}
+
 export interface MemberUser {
   id: string;
   name: string;
@@ -76,6 +161,16 @@ export interface ClubSettings {
   accentColor: string;
   passIssuingEnabled: boolean;
   memberCardSignInEnabled: boolean;
+  membershipCardAverageMetric?:
+    | 'OVERALL_LAST_10'
+    | 'OVERALL_ALL_TIME'
+    | 'COMPETITION_LAST_10'
+    | 'COMPETITION_ALL_TIME'
+    | 'PRACTICE_LAST_10'
+    | 'PRACTICE_ALL_TIME'
+    | 'DISCIPLINE_LAST_10'
+    | 'DISCIPLINE_ALL_TIME';
+  membershipCardAverageDiscipline?: string | null;
   backupEnabled: boolean;
   ammoSalesLookbackDays: number;
   ammoDefaultLeadTimeDays: number;
@@ -307,6 +402,7 @@ export interface Competition {
   seasonId: string;
   name: string;
   organiser: string | null;
+  discipline: string;
   roundCount: number;
   cardsPerRound: number;
   createdAt: string;
@@ -341,6 +437,7 @@ export interface ScoreSheet {
     id: string;
     name: string;
     organiser: string | null;
+    discipline: string;
     roundCount: number;
     cardsPerRound: number;
   };
@@ -362,6 +459,17 @@ export interface ScoringAverages {
   allTimeAverage: number | null;
   last10Average: number | null;
   totalCardsShot: number;
+  competitionCardsShot?: number;
+  practiceCardsShot?: number;
+  practiceAllTimeAverage?: number | null;
+  practiceLast10Average?: number | null;
+  byDiscipline?: {
+    discipline: string;
+    totalCardsShot: number;
+    allTimeAverage: number | null;
+    last10Average: number | null;
+    bestScore: number | null;
+  }[];
 }
 
 export interface RecentScore {
@@ -370,4 +478,17 @@ export interface RecentScore {
   competitionName: string;
   score: number;
   scoredAt: string;
+}
+
+export interface PracticeCardRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  discipline: string;
+  score: number;
+  recordedAt: string;
+  createdAt: string;
+  createdByUserId: string;
+  createdByName: string;
 }

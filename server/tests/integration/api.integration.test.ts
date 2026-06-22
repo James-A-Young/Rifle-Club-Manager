@@ -717,6 +717,79 @@ describe('clubs routes', () => {
     expect(res.body.id).toBe(club.id);
   });
 
+  it('resolves public page by vanity slug', async () => {
+    const { club } = await createClubWithAdmin();
+    await prisma.clubPublicSiteProfile.create({
+      data: {
+        clubId: club.id,
+        vanitySlug: `club-${unique('vanity')}`,
+      },
+    });
+    const profile = await prisma.clubPublicSiteProfile.findUnique({ where: { clubId: club.id } });
+    const res = await request(app).get(`/api/clubs/public/by-vanity/${profile?.vanitySlug}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(club.id);
+    expect(res.body.publicSite.vanitySlug).toBe(profile?.vanitySlug);
+  });
+
+  it('allows admin to configure and read public-site settings', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const updateRes = await request(app)
+      .patch(`/api/clubs/${club.id}/public-site`)
+      .set(authHeader(admin))
+      .send({
+        vanitySlug: `club-${unique('public')}`,
+        heroTitle: 'Welcome to the range',
+        heroSubtitle: 'Saturday practice and training',
+      });
+    expect(updateRes.status).toBe(200);
+
+    const readRes = await request(app)
+      .get(`/api/clubs/${club.id}/public-site`)
+      .set(authHeader(admin));
+    expect(readRes.status).toBe(200);
+    expect(readRes.body.publicSite.heroTitle).toBe('Welcome to the range');
+  });
+
+  it('rejects activating unverified custom domain', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const domainRes = await request(app)
+      .post(`/api/clubs/${club.id}/public-site/domains`)
+      .set(authHeader(admin))
+      .send({ domain: `www.${unique('club')}.example.com` });
+    expect(domainRes.status).toBe(201);
+
+    const activateRes = await request(app)
+      .patch(`/api/clubs/${club.id}/public-site/domains/${domainRes.body.id}/activation`)
+      .set(authHeader(admin))
+      .send({ isActive: true });
+    expect(activateRes.status).toBe(409);
+  });
+
+  it('returns preview posts in list payload and rendered html in single-post payload', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const createRes = await request(app)
+      .post(`/api/clubs/${club.id}/public-site/blog-posts`)
+      .set(authHeader(admin))
+      .send({
+        title: 'Safety update',
+        markdownBody: '# Headline\\n<script>alert(1)</script> **safe**',
+        isPublished: true,
+      });
+    expect(createRes.status).toBe(201);
+
+    const payloadRes = await request(app).get(`/api/clubs/profile/${club.id}`);
+    expect(payloadRes.status).toBe(200);
+    expect(payloadRes.body.publicSite.blogPosts).toHaveLength(1);
+    expect(payloadRes.body.publicSite.blogPosts[0].renderedHtml).toBeUndefined();
+    expect(payloadRes.body.publicSite.blogPosts[0].markdownBody).toBeUndefined();
+
+    const postRes = await request(app).get(`/api/clubs/profile/${club.id}/blog/${createRes.body.slug}`);
+    expect(postRes.status).toBe(200);
+    expect(postRes.body.post.renderedHtml).not.toContain('<script>');
+    expect(postRes.body.post.renderedHtml).toContain('<strong>safe</strong>');
+  });
+
   it('forbids non-admin club profile updates', async () => {
     const { club } = await createClubWithAdmin();
     const member = await createUser({ email: `${unique('member')}@test.com` });

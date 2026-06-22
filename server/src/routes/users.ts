@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { OwnerType, MembershipStatus } from '@prisma/client';
+import { OwnerType, MembershipStatus, MembershipCardAverageMetric } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
@@ -89,6 +89,50 @@ function parseOptionalDate(value: string | null | undefined, field: string): Dat
     throw new Error(`Invalid ${field}`);
   }
   return parsed;
+}
+
+type ScoreSample = {
+  score: number;
+  scoredAt: Date;
+};
+
+function normalizeDiscipline(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function scoreStats(samples: ScoreSample[]): { allTime: number | null; last10: number | null } {
+  if (samples.length === 0) {
+    return { allTime: null, last10: null };
+  }
+  const sorted = [...samples].sort((a, b) => b.scoredAt.getTime() - a.scoredAt.getTime());
+  const allValues = sorted.map(s => s.score);
+  const allTime = allValues.reduce((sum, value) => sum + value, 0) / allValues.length;
+  const last10Values = allValues.slice(0, 10);
+  const last10 = last10Values.reduce((sum, value) => sum + value, 0) / last10Values.length;
+  return { allTime, last10 };
+}
+
+function metricLabel(metric: MembershipCardAverageMetric, discipline: string | null): string {
+  switch (metric) {
+    case MembershipCardAverageMetric.OVERALL_ALL_TIME:
+      return 'Overall Avg';
+    case MembershipCardAverageMetric.OVERALL_LAST_10:
+      return 'Overall Last 10';
+    case MembershipCardAverageMetric.COMPETITION_ALL_TIME:
+      return 'Competition Avg';
+    case MembershipCardAverageMetric.COMPETITION_LAST_10:
+      return 'Competition Last 10';
+    case MembershipCardAverageMetric.PRACTICE_ALL_TIME:
+      return 'Practice Avg';
+    case MembershipCardAverageMetric.PRACTICE_LAST_10:
+      return 'Practice Last 10';
+    case MembershipCardAverageMetric.DISCIPLINE_ALL_TIME:
+      return `${discipline ?? 'Discipline'} Avg`;
+    case MembershipCardAverageMetric.DISCIPLINE_LAST_10:
+      return `${discipline ?? 'Discipline'} Last 10`;
+    default:
+      return 'Average';
+  }
 }
 
 router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
@@ -475,19 +519,84 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
       },
     });
     
-    // get average score for last 10 cards
-    const average = await prisma.score.aggregate({
+    const competitionRows = await prisma.score.findMany({
       where: {
         userId: req.user!.id,
+        score: { not: null },
+        competition: { clubId },
       },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-      take: 10,
-      _avg: {
+      select: {
         score: true,
+        updatedAt: true,
+        competition: { select: { discipline: true } },
       },
     });
+
+    const practiceRows = await prisma.practiceScore.findMany({
+      where: {
+        clubId,
+        userId: req.user!.id,
+      },
+      select: {
+        score: true,
+        recordedAt: true,
+        discipline: true,
+      },
+    });
+
+    const competitionSamples = competitionRows.map(row => ({
+      score: row.score as number,
+      scoredAt: row.updatedAt,
+      discipline: normalizeDiscipline(row.competition.discipline),
+    }));
+    const practiceSamples = practiceRows.map(row => ({
+      score: row.score,
+      scoredAt: row.recordedAt,
+      discipline: normalizeDiscipline(row.discipline),
+    }));
+    const allSamples = [...competitionSamples, ...practiceSamples];
+
+    const overall = scoreStats(allSamples);
+    const competitionStats = scoreStats(competitionSamples);
+    const practiceStats = scoreStats(practiceSamples);
+
+    const selectedMetric = settings.membershipCardAverageMetric ?? MembershipCardAverageMetric.OVERALL_LAST_10;
+    const selectedDiscipline = settings.membershipCardAverageDiscipline ? normalizeDiscipline(settings.membershipCardAverageDiscipline) : null;
+    const disciplineSamples = selectedDiscipline
+      ? allSamples.filter(sample => sample.discipline.toLowerCase() === selectedDiscipline.toLowerCase())
+      : [];
+    const disciplineStats = scoreStats(disciplineSamples);
+
+    let averageValue: number | null;
+    switch (selectedMetric) {
+      case MembershipCardAverageMetric.OVERALL_ALL_TIME:
+        averageValue = overall.allTime;
+        break;
+      case MembershipCardAverageMetric.OVERALL_LAST_10:
+        averageValue = overall.last10;
+        break;
+      case MembershipCardAverageMetric.COMPETITION_ALL_TIME:
+        averageValue = competitionStats.allTime;
+        break;
+      case MembershipCardAverageMetric.COMPETITION_LAST_10:
+        averageValue = competitionStats.last10;
+        break;
+      case MembershipCardAverageMetric.PRACTICE_ALL_TIME:
+        averageValue = practiceStats.allTime;
+        break;
+      case MembershipCardAverageMetric.PRACTICE_LAST_10:
+        averageValue = practiceStats.last10;
+        break;
+      case MembershipCardAverageMetric.DISCIPLINE_ALL_TIME:
+        averageValue = disciplineStats.allTime;
+        break;
+      case MembershipCardAverageMetric.DISCIPLINE_LAST_10:
+        averageValue = disciplineStats.last10;
+        break;
+      default:
+        averageValue = overall.last10;
+        break;
+    }
 
 
 
@@ -498,7 +607,8 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
       membershipType: membership.club.name,
       visitCount,
       roundsThisYear: roundsThisYear._sum.quantity || 0,
-      average: average._avg.score || 0,
+      average: averageValue ?? 0,
+      averageLabel: metricLabel(selectedMetric, selectedDiscipline),
       clubName: membership.club.name,
       settings: {
         secondaryColor: settings.secondaryColor || '#374151',
@@ -515,7 +625,8 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
   }
 }
 
-router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassStatusRequest);
+router.get('/me/membership-passes/:clubId/status', requireAuth, handleMembershipPassStatusRequest);
+router.get('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 router.post('/me/membership-passes/:clubId', requireAuth, handleMembershipPassGenerateRequest);
 
 export default router;

@@ -906,4 +906,94 @@ describe('member averages', () => {
     expect(avgsRes.body.allTimeAverage).toBe(43); // (40+42+44+46)/4
     expect(avgsRes.body.last10Average).toBe(43);
   });
+
+  it('includes practice cards and supports discipline filtering', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Practice Avg Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Practice Avg Comp',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2024-11-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const compStub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${compStub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 40 });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/practice-cards`)
+      .set(authHeader(admin))
+      .send({ userId: member.id, discipline: 'Air Rifle', score: 50 });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/practice-cards`)
+      .set(authHeader(admin))
+      .send({ userId: member.id, discipline: 'Air Rifle', score: 60 });
+
+    const blendedRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/averages`)
+      .set(authHeader(member));
+
+    expect(blendedRes.status).toBe(200);
+    expect(blendedRes.body.totalCardsShot).toBe(3);
+    expect(blendedRes.body.allTimeAverage).toBe(50);
+    expect(blendedRes.body.competitionCardsShot).toBe(1);
+    expect(blendedRes.body.practiceCardsShot).toBe(2);
+
+    const disciplineRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/averages?discipline=Air Rifle`)
+      .set(authHeader(member));
+
+    expect(disciplineRes.status).toBe(200);
+    expect(disciplineRes.body.totalCardsShot).toBe(2);
+    expect(disciplineRes.body.allTimeAverage).toBe(55);
+    expect(disciplineRes.body.competitionCardsShot).toBe(0);
+    expect(disciplineRes.body.practiceCardsShot).toBe(2);
+    expect(disciplineRes.body.byDiscipline).toHaveLength(1);
+    expect(disciplineRes.body.byDiscipline[0].discipline).toBe('Air Rifle');
+  });
+});
+
+describe('practice cards', () => {
+  it('admin can log and list recent practice cards', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const createRes = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/practice-cards`)
+      .set(authHeader(admin))
+      .send({ userId: member.id, discipline: 'Benchrest', score: 57 });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.userId).toBe(member.id);
+    expect(createRes.body.discipline).toBe('Benchrest');
+    expect(createRes.body.score).toBe(57);
+
+    const listRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/practice-cards/recent?discipline=Benchrest`)
+      .set(authHeader(admin));
+
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.body)).toBe(true);
+    expect(listRes.body.length).toBe(1);
+    expect(listRes.body[0].discipline).toBe('Benchrest');
+  });
 });

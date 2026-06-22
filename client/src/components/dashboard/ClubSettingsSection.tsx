@@ -8,6 +8,7 @@ interface Props {
   editing: boolean;
   saving: boolean;
   form: ClubSettings;
+  disciplinesOffered: string[];
   onToggleEdit: () => void;
   onSave: (e: React.FormEvent) => void;
   onFormChange: (partial: Partial<ClubSettings>) => void;
@@ -56,6 +57,7 @@ export default function ClubSettingsSection({
   editing,
   saving,
   form,
+  disciplinesOffered,
   onToggleEdit,
   onSave,
   onFormChange,
@@ -367,6 +369,42 @@ export default function ClubSettingsSection({
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+
+            <div>
+              <div className="form-group">
+                <label>Membership Card Average</label>
+                <select
+                  value={form.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}
+                  onChange={e => onFormChange({ membershipCardAverageMetric: e.target.value as ClubSettings['membershipCardAverageMetric'] })}
+                >
+                  <option value="OVERALL_LAST_10">Overall Last 10</option>
+                  <option value="OVERALL_ALL_TIME">Overall All-Time</option>
+                  <option value="COMPETITION_LAST_10">Competition Last 10</option>
+                  <option value="COMPETITION_ALL_TIME">Competition All-Time</option>
+                  <option value="PRACTICE_LAST_10">Practice Last 10</option>
+                  <option value="PRACTICE_ALL_TIME">Practice All-Time</option>
+                  <option value="DISCIPLINE_LAST_10">Discipline Last 10</option>
+                  <option value="DISCIPLINE_ALL_TIME">Discipline All-Time</option>
+                </select>
+              </div>
+              {(form.membershipCardAverageMetric === 'DISCIPLINE_LAST_10' || form.membershipCardAverageMetric === 'DISCIPLINE_ALL_TIME') && (
+                <div className="form-group">
+                  <label>Membership Card Discipline</label>
+                  <select
+                    value={form.membershipCardAverageDiscipline ?? ''}
+                    onChange={e => onFormChange({ membershipCardAverageDiscipline: e.target.value || null })}
+                  >
+                    <option value="">Select discipline</option>
+                    {disciplinesOffered.map(option => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? 'Saving…' : 'Save Settings'}
           </button>
@@ -396,6 +434,12 @@ export default function ClubSettingsSection({
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
           <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
+          <dt id="disciplines" style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Scoring Disciplines</dt>
+          <dd>{disciplinesOffered.length > 0 ? disciplinesOffered.join(', ') : 'Not set (manage in Club Profile)'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Average</dt>
+          <dd>{settings?.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Discipline</dt>
+          <dd>{settings?.membershipCardAverageDiscipline ?? 'N/A'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Usage Lookback</dt>
           <dd>{settings?.ammoSalesLookbackDays ?? 30} days</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Ammo Default Lead Time</dt>
