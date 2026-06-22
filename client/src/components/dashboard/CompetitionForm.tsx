@@ -16,12 +16,13 @@ export interface CompetitionFormData {
 
 interface Props {
   seasonId: string;
+  clubId: string;
   disciplineOptions: string[];
   onSubmit: (data: CompetitionFormData) => Promise<void>;
   onCancel: () => void;
 }
 
-export default function CompetitionForm({ seasonId, disciplineOptions, onSubmit, onCancel }: Props) {
+export default function CompetitionForm({ seasonId, clubId, disciplineOptions, onSubmit, onCancel }: Props) {
   const [name, setName] = useState('');
   const [organiser, setOrganiser] = useState('');
   const [discipline, setDiscipline] = useState(disciplineOptions[0] ?? '');
@@ -103,7 +104,13 @@ export default function CompetitionForm({ seasonId, disciplineOptions, onSubmit,
               ))}
             </select>
           ) : (
-            <input value={discipline} onChange={e => setDiscipline(e.target.value)} placeholder="e.g. Air Rifle" />
+            <div style={{ color: 'var(--gray-600)', fontSize: '0.9rem', padding: '0.5rem', border: '1px solid var(--gray-200)', borderRadius: '4px', background: 'var(--gray-50)' }}>
+              No disciplines configured.
+              {' '}
+              <a href={`/clubs/${clubId}/?tab=settings`} style={{ color: 'var(--primary-600)', textDecoration: 'underline' }}>
+                Add disciplines in Club Settings
+              </a>
+            </div>
           )}
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -146,7 +153,7 @@ export default function CompetitionForm({ seasonId, disciplineOptions, onSubmit,
       </div>
 
       <div className="actions" style={{ marginTop: '1rem' }}>
-        <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={saving || disciplineOptions.length === 0}>
           {saving ? 'Creating…' : 'Create Competition'}
         </button>
         <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} disabled={saving}>

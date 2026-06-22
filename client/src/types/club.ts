@@ -160,7 +160,6 @@ export interface ClubSettings {
   accentColor: string;
   passIssuingEnabled: boolean;
   memberCardSignInEnabled: boolean;
-  scoringDisciplines?: string[] | null;
   membershipCardAverageMetric?:
     | 'OVERALL_LAST_10'
     | 'OVERALL_ALL_TIME'

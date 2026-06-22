@@ -443,6 +443,15 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
 
         <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '1rem', marginBottom: '1rem', border: '1px solid var(--gray-200)' }}>
           <h3 style={{ marginBottom: '0.75rem' }}>Practice Cards</h3>
+          {disciplineOptions.length === 0 && (
+            <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
+              No scoring disciplines configured for this club.
+              {' '}
+              <a href={`/clubs/${clubId}/?tab=settings`} style={{ textDecoration: 'underline' }}>
+                Add disciplines in Club Settings
+              </a>
+            </div>
+          )}
           <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '0.75rem' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Member</label>
@@ -495,7 +504,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
             </div>
           </div>
           <div className="actions" style={{ marginBottom: '0.75rem' }}>
-            <button className="btn btn-primary btn-sm" disabled={practiceSaving || approvedMembers.length === 0} onClick={createPracticeCard}>
+            <button className="btn btn-primary btn-sm" disabled={practiceSaving || approvedMembers.length === 0 || disciplineOptions.length === 0} onClick={createPracticeCard}>
               {practiceSaving ? 'Saving…' : 'Log Practice Card'}
             </button>
           </div>
@@ -603,12 +612,23 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
           {showCompetitionForm && (
             <div style={{ background: 'var(--gray-50)', borderRadius: 6, padding: '1rem', marginBottom: '1rem', border: '1px solid var(--gray-200)' }}>
               <h3>New Competition</h3>
-              <CompetitionForm
-                seasonId={selectedSeasonId}
-                disciplineOptions={disciplineOptions}
-                onSubmit={createCompetition}
-                onCancel={() => setShowCompetitionForm(false)}
-              />
+              {disciplineOptions.length === 0 ? (
+                <div className="alert alert-info">
+                  No scoring disciplines configured for this club.
+                  {' '}
+                  <a href={`/clubs/${clubId}/dashboard?tab=settings`} style={{ textDecoration: 'underline' }}>
+                    Add disciplines in Club Settings
+                  </a>
+                </div>
+              ) : (
+                <CompetitionForm
+                  seasonId={selectedSeasonId}
+                  clubId={clubId}
+                  disciplineOptions={disciplineOptions}
+                  onSubmit={createCompetition}
+                  onCancel={() => setShowCompetitionForm(false)}
+                />
+              )}
             </div>
           )}
 

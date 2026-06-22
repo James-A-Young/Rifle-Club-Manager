@@ -166,7 +166,6 @@ export default function ClubDashboard() {
     accentColor: '#3b82f6',
     passIssuingEnabled: false,
     memberCardSignInEnabled: false,
-    scoringDisciplines: [],
     membershipCardAverageMetric: 'OVERALL_LAST_10',
     membershipCardAverageDiscipline: null,
     backupEnabled: false,
@@ -283,7 +282,6 @@ export default function ClubDashboard() {
       .then(s => {
         const normalized = {
           ...s,
-          scoringDisciplines: normalizeDisciplines(s.scoringDisciplines),
           membershipCardAverageMetric: s.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
           membershipCardAverageDiscipline: s.membershipCardAverageDiscipline ?? null,
         };
@@ -710,7 +708,6 @@ export default function ClubDashboard() {
         accentColor: settingsForm.accentColor,
         passIssuingEnabled: settingsForm.passIssuingEnabled,
         memberCardSignInEnabled: settingsForm.memberCardSignInEnabled,
-        scoringDisciplines: normalizeDisciplines(settingsForm.scoringDisciplines),
         membershipCardAverageMetric: settingsForm.membershipCardAverageMetric,
         membershipCardAverageDiscipline: settingsForm.membershipCardAverageDiscipline || null,
         backupEnabled: settingsForm.backupEnabled,
@@ -721,7 +718,6 @@ export default function ClubDashboard() {
       });
       const normalized = {
         ...updated,
-        scoringDisciplines: normalizeDisciplines(updated.scoringDisciplines),
         membershipCardAverageMetric: updated.membershipCardAverageMetric ?? 'OVERALL_LAST_10',
         membershipCardAverageDiscipline: updated.membershipCardAverageDiscipline ?? null,
       };
@@ -1297,6 +1293,7 @@ export default function ClubDashboard() {
               editing={editingSettings}
               saving={savingSettings}
               form={settingsForm}
+              disciplinesOffered={normalizeDisciplines(clubForm.disciplinesOffered)}
               onToggleEdit={() => setEditingSettings(v => !v)}
               onSave={saveSettings}
               onFormChange={partial => setSettingsForm(prev => ({ ...prev, ...partial }))}
@@ -1516,7 +1513,7 @@ export default function ClubDashboard() {
             <MatchSecretarySection
               clubId={id ?? ''}
               members={members}
-              disciplineOptions={normalizeDisciplines(settingsForm.scoringDisciplines)}
+              disciplineOptions={normalizeDisciplines(clubForm.disciplinesOffered)}
             />
           )}
         </>

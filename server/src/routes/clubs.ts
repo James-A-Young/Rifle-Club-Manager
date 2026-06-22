@@ -1872,8 +1872,6 @@ router.patch('/:id/firearms/:firearmId/favorite', async (req: AuthRequest, res: 
 // Club Settings endpoints for Google Wallet
 const hexColorSchema = z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid hex color format').optional();
 
-const scoringDisciplinesSchema = z.array(z.string().trim().min(1).max(80)).max(100).optional();
-
 const updateClubSettingsSchema = z.object({
   logoUrl: z.string().url('Invalid URL').optional().nullable(),
   primaryColor: hexColorSchema,
@@ -1881,7 +1879,6 @@ const updateClubSettingsSchema = z.object({
   accentColor: hexColorSchema,
   passIssuingEnabled: z.boolean().optional(),
   memberCardSignInEnabled: z.boolean().optional(),
-  scoringDisciplines: scoringDisciplinesSchema,
   membershipCardAverageMetric: z.nativeEnum(MembershipCardAverageMetric).optional(),
   membershipCardAverageDiscipline: z.string().trim().min(1).max(80).optional().nullable(),
   backupEnabled: z.boolean().optional(),
@@ -1926,7 +1923,6 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         accentColor: '#3b82f6',
         passIssuingEnabled: false,
         memberCardSignInEnabled: false,
-        scoringDisciplines: [],
         membershipCardAverageMetric: MembershipCardAverageMetric.OVERALL_LAST_10,
         membershipCardAverageDiscipline: null,
         backupEnabled: false,
@@ -1962,7 +1958,6 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     accentColor?: string;
     passIssuingEnabled?: boolean;
     memberCardSignInEnabled?: boolean;
-    scoringDisciplines?: Prisma.InputJsonValue;
     membershipCardAverageMetric?: MembershipCardAverageMetric;
     membershipCardAverageDiscipline?: string | null;
     backupEnabled?: boolean;
@@ -1989,19 +1984,6 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   }
   if ('memberCardSignInEnabled' in parsed.data && typeof parsed.data.memberCardSignInEnabled === 'boolean') {
     updateData.memberCardSignInEnabled = parsed.data.memberCardSignInEnabled;
-  }
-  if ('scoringDisciplines' in parsed.data && parsed.data.scoringDisciplines !== undefined) {
-    const seen = new Set<string>();
-    const normalized = parsed.data.scoringDisciplines
-      .map(v => v.trim().replace(/\s+/g, ' '))
-      .filter(Boolean)
-      .filter(v => {
-        const key = v.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    updateData.scoringDisciplines = normalized;
   }
   if ('membershipCardAverageMetric' in parsed.data && parsed.data.membershipCardAverageMetric) {
     updateData.membershipCardAverageMetric = parsed.data.membershipCardAverageMetric;
@@ -2045,16 +2027,17 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
     where: { clubId },
   });
 
-  const existingDisciplines = Array.isArray(settings?.scoringDisciplines)
-    ? settings!.scoringDisciplines
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { disciplinesOffered: true },
+  });
+
+  const existingDisciplines = Array.isArray(club?.disciplinesOffered)
+    ? club!.disciplinesOffered
       .map(v => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''))
       .filter(Boolean)
     : [];
-  const nextDisciplines = Array.isArray(updateData.scoringDisciplines)
-    ? (updateData.scoringDisciplines as unknown[])
-      .map(v => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''))
-      .filter(Boolean)
-    : existingDisciplines;
+  const nextDisciplines = existingDisciplines;
 
   const nextMetric = updateData.membershipCardAverageMetric
     ?? settings?.membershipCardAverageMetric
@@ -2075,7 +2058,7 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
   if (nextDiscipline && nextDisciplines.length > 0) {
     const matched = nextDisciplines.some(d => d.toLowerCase() === nextDiscipline.toLowerCase());
     if (!matched) {
-      res.status(400).json({ error: 'membershipCardAverageDiscipline must be one of the configured scoring disciplines' });
+      res.status(400).json({ error: 'membershipCardAverageDiscipline must be one of the club\'s offered disciplines' });
       return;
     }
   }

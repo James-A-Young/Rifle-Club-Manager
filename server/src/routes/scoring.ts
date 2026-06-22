@@ -271,11 +271,11 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
   });
   if (!season) { res.status(400).json({ error: 'Season not found in this club' }); return; }
 
-  const settings = await prisma.clubSettings.findUnique({
-    where: { clubId },
-    select: { scoringDisciplines: true },
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { disciplinesOffered: true },
   });
-  const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+  const allowedDisciplines = normalizeDisciplineList(club?.disciplinesOffered);
 
   let discipline: string;
   try {
@@ -341,11 +341,11 @@ router.patch('/clubs/:clubId/scoring/competitions/:competitionId', async (req: A
 
   let nextDiscipline: string | undefined;
   if (parsed.data.discipline !== undefined) {
-    const settings = await prisma.clubSettings.findUnique({
-      where: { clubId },
-      select: { scoringDisciplines: true },
+    const club = await prisma.club.findUnique({
+      where: { id: clubId },
+      select: { disciplinesOffered: true },
     });
-    const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+    const allowedDisciplines = normalizeDisciplineList(club?.disciplinesOffered);
     try {
       nextDiscipline = resolveDisciplineFromSettings(parsed.data.discipline, allowedDisciplines);
     } catch (e) {
@@ -842,11 +842,11 @@ router.post('/clubs/:clubId/scoring/practice-cards', async (req: AuthRequest, re
   const parsed = createPracticeScoreSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
 
-  const settings = await prisma.clubSettings.findUnique({
-    where: { clubId },
-    select: { scoringDisciplines: true },
+  const club = await prisma.club.findUnique({
+    where: { id: clubId },
+    select: { disciplinesOffered: true },
   });
-  const allowedDisciplines = normalizeDisciplineList(settings?.scoringDisciplines);
+  const allowedDisciplines = normalizeDisciplineList(club?.disciplinesOffered);
 
   let discipline: string;
   try {

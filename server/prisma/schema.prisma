@@ -393,7 +393,6 @@ model ClubSettings {
   accentColor              String?  @default("#3b82f6")
   passIssuingEnabled       Boolean  @default(false)
   memberCardSignInEnabled  Boolean  @default(false)
-  scoringDisciplines       Json?
   membershipCardAverageMetric MembershipCardAverageMetric @default(OVERALL_LAST_10)
   membershipCardAverageDiscipline String?
   backupEnabled            Boolean  @default(false)

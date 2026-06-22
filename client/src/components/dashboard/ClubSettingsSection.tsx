@@ -8,6 +8,7 @@ interface Props {
   editing: boolean;
   saving: boolean;
   form: ClubSettings;
+  disciplinesOffered: string[];
   onToggleEdit: () => void;
   onSave: (e: React.FormEvent) => void;
   onFormChange: (partial: Partial<ClubSettings>) => void;
@@ -56,6 +57,7 @@ export default function ClubSettingsSection({
   editing,
   saving,
   form,
+  disciplinesOffered,
   onToggleEdit,
   onSave,
   onFormChange,
@@ -208,14 +210,6 @@ export default function ClubSettingsSection({
     const nextPricePence = getPricePenceFromMode(createMode, newAmmunitionTypePricePence, newAmmunitionTypeBoxSize, boxPricePence);
     if (!Number.isFinite(nextPricePence) || nextPricePence <= 0) return;
     onCreateAmmunitionType(nextPricePence);
-  }
-
-  function updateScoringDisciplinesFromText(value: string) {
-    const list = value
-      .split(/\n|,/)
-      .map(item => item.trim())
-      .filter(Boolean);
-    onFormChange({ scoringDisciplines: list });
   }
 
   return (
@@ -376,15 +370,7 @@ export default function ClubSettingsSection({
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="form-group">
-              <label>Scoring Disciplines (one per line)</label>
-              <textarea
-                rows={4}
-                value={(form.scoringDisciplines ?? []).join('\n')}
-                onChange={e => updateScoringDisciplinesFromText(e.target.value)}
-                placeholder={'Air Rifle\nProne\nSporting'}
-              />
-            </div>
+
             <div>
               <div className="form-group">
                 <label>Membership Card Average</label>
@@ -410,7 +396,7 @@ export default function ClubSettingsSection({
                     onChange={e => onFormChange({ membershipCardAverageDiscipline: e.target.value || null })}
                   >
                     <option value="">Select discipline</option>
-                    {(form.scoringDisciplines ?? []).map(option => (
+                    {disciplinesOffered.map(option => (
                       <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
@@ -449,7 +435,7 @@ export default function ClubSettingsSection({
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>
           <dd>{settings?.backupEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Scoring Disciplines</dt>
-          <dd>{(settings?.scoringDisciplines ?? []).join(', ') || 'Not set'}</dd>
+          <dd>{disciplinesOffered.length > 0 ? disciplinesOffered.join(', ') : 'Not set (manage in Club Profile)'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Average</dt>
           <dd>{settings?.membershipCardAverageMetric ?? 'OVERALL_LAST_10'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Membership Card Discipline</dt>
