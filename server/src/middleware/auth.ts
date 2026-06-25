@@ -8,6 +8,16 @@ export interface AuthRequest extends Request {
 }
 
 const EMAIL_VERIFICATION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
+const EMAIL_VERIFICATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const EMAIL_VERIFICATION_CACHE_MAX_SIZE = 10_000;
+
+type VerificationCacheEntry = {
+  createdAtMs: number;
+  isEmailVerified: boolean;
+  expiresAtMs: number;
+};
+
+const emailVerificationCache = new Map<string, VerificationCacheEntry>();
 
 /** Name of the HttpOnly cookie that carries the auth JWT. */
 export const AUTH_COOKIE_NAME = 'auth_token';
@@ -51,6 +61,39 @@ function extractToken(req: Request): string | null {
   return typeof cookieToken === 'string' ? cookieToken : null;
 }
 
+function getVerificationCacheEntry(userId: string): VerificationCacheEntry | null {
+  const entry = emailVerificationCache.get(userId);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAtMs <= Date.now()) {
+    emailVerificationCache.delete(userId);
+    return null;
+  }
+
+  return entry;
+}
+
+function setVerificationCacheEntry(userId: string, createdAt: Date, emailVerifiedAt: Date | null): void {
+  if (emailVerificationCache.size >= EMAIL_VERIFICATION_CACHE_MAX_SIZE) {
+    const oldestKey = emailVerificationCache.keys().next().value;
+    if (oldestKey) {
+      emailVerificationCache.delete(oldestKey);
+    }
+  }
+
+  emailVerificationCache.set(userId, {
+    createdAtMs: createdAt.getTime(),
+    isEmailVerified: Boolean(emailVerifiedAt),
+    expiresAtMs: Date.now() + EMAIL_VERIFICATION_CACHE_TTL_MS,
+  });
+}
+
+export function resetAuthVerificationCacheForTests(): void {
+  emailVerificationCache.clear();
+}
+
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
   if (!token) {
@@ -71,28 +114,43 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   );
 
   if (!shouldBypassVerificationGate && process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()) {
-    let dbUser;
-    try {
-      dbUser = await prisma.user.findUnique({
-        where: { id: payload.id },
-        select: {
-          id: true,
-          createdAt: true,
-          emailVerifiedAt: true,
-        },
-      });
-    } catch (err) {
-      next(err);
-      return;
+    const cachedVerificationState = getVerificationCacheEntry(payload.id);
+
+    let createdAtMs: number;
+    let isEmailVerified: boolean;
+
+    if (cachedVerificationState) {
+      createdAtMs = cachedVerificationState.createdAtMs;
+      isEmailVerified = cachedVerificationState.isEmailVerified;
+    } else {
+      let dbUser;
+      try {
+        dbUser = await prisma.user.findUnique({
+          where: { id: payload.id },
+          select: {
+            id: true,
+            createdAt: true,
+            emailVerifiedAt: true,
+          },
+        });
+      } catch (err) {
+        next(err);
+        return;
+      }
+
+      if (!dbUser) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      setVerificationCacheEntry(payload.id, dbUser.createdAt, dbUser.emailVerifiedAt);
+
+      createdAtMs = dbUser.createdAt.getTime();
+      isEmailVerified = Boolean(dbUser.emailVerifiedAt);
     }
 
-    if (!dbUser) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
-    if (!dbUser.emailVerifiedAt) {
-      const verificationDeadline = new Date(dbUser.createdAt.getTime() + EMAIL_VERIFICATION_GRACE_PERIOD_MS);
+    if (!isEmailVerified) {
+      const verificationDeadline = new Date(createdAtMs + EMAIL_VERIFICATION_GRACE_PERIOD_MS);
       if (verificationDeadline < new Date()) {
         res.status(403).json({
           error: 'Email verification required to continue using the system.',
