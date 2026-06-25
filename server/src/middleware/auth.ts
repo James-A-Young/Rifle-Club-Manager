@@ -111,6 +111,10 @@ export function resetAuthVerificationCacheForTests(): void {
   emailVerificationCache.clear();
 }
 
+export function invalidateAuthVerificationCacheForUser(userId: string): void {
+  emailVerificationCache.delete(userId);
+}
+
 export function setVerificationLookupForTests(lookup: VerificationLookup): void {
   verificationLookup = lookup;
 }

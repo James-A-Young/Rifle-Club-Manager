@@ -7,7 +7,13 @@ import { MembershipRole, MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
-import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS, requireAuth, AuthRequest } from '../middleware/auth';
+import {
+  AUTH_COOKIE_NAME,
+  AUTH_COOKIE_OPTIONS,
+  requireAuth,
+  AuthRequest,
+  invalidateAuthVerificationCacheForUser,
+} from '../middleware/auth';
 import {
   auditAuthLoginFailed,
   auditAuthLoginSuccess,
@@ -549,6 +555,8 @@ router.post('/email-verification/confirm', async (req: Request, res: Response) =
   if (res.headersSent) {
     return;
   }
+
+  invalidateAuthVerificationCacheForUser(tokenRow.userId);
 
   res.json({ success: true, message: 'Email verified successfully.' });
 });
