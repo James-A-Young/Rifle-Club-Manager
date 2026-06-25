@@ -121,6 +121,7 @@ PORT=3000
 CLIENT_ORIGIN=http://localhost:5173
 TURNSTILE_SECRET_KEY=
 VITE_TURNSTILE_SITE_KEY=
+GA_MEASUREMENT_ID=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
 GOOGLE_DRIVE_OAUTH_CLIENT_ID=
@@ -206,6 +207,18 @@ Behavior:
 - If `TURNSTILE_SECRET_KEY` is set, `POST /api/auth/register` requires a valid Turnstile token
 - If `VITE_TURNSTILE_SITE_KEY` is set, the register page renders the Turnstile widget
 - Leave both empty to disable captcha in local/dev environments
+
+### Optional: Google Analytics 4 (GA4)
+
+To enable client-side analytics pageview tracking, set either variable:
+
+```env
+GA_MEASUREMENT_ID=<your_ga4_measurement_id>
+```
+
+Notes:
+- `GA_MEASUREMENT_ID` is the preferred runtime variable for server deployment.
+- Use a GA4 measurement ID format like `G-XXXXXXXXXX`.
 
 ### Optional: Resend Email Delivery (Invites + Password Reset)
 
