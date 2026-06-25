@@ -160,9 +160,9 @@ async function issueAndSendEmailVerification(params: {
   email: string;
   name?: string | null;
   ip: string;
-}): Promise<void> {
+}): Promise<{ tokenIssued: boolean; emailSent: boolean }> {
   if (!emailService.isConfigured()) {
-    return;
+    return { tokenIssued: false, emailSent: false };
   }
 
   const verificationToken = `email_verify_${crypto.randomBytes(32).toString('hex')}`;
@@ -190,12 +190,17 @@ async function issueAndSendEmailVerification(params: {
     });
   });
 
-  await emailService.sendEmailVerificationEmail({
+  const emailSent = await emailService.sendEmailVerificationEmail({
     to: params.email,
     name: params.name,
     verificationToken,
     expiresInDays: EMAIL_VERIFICATION_TOKEN_TTL_DAYS,
   });
+
+  return {
+    tokenIssued: true,
+    emailSent,
+  };
 }
 
 /** Returns true when no users exist — bootstrap mode is active. */
@@ -412,6 +417,10 @@ router.post('/register', async (req: Request, res: Response) => {
       email: user.email,
       name: user.name,
       ip: req.ip ?? 'unknown',
+    }).then((result) => {
+      if (!result.emailSent) {
+        console.warn('Email verification token issued after registration but email delivery failed.');
+      }
     }).catch((error: unknown) => {
       console.error('Failed to issue email verification after registration:', error);
     });
@@ -464,23 +473,26 @@ router.post('/email-verification/resend', requireAuth, async (req: AuthRequest, 
     return;
   }
 
-  const emailSent = await issueAndSendEmailVerification({
+  const delivery = await issueAndSendEmailVerification({
     userId: user.id,
     email: user.email,
     name: user.name,
     ip: req.ip ?? 'unknown',
-  }).then(() => true).catch((error: unknown) => {
+  }).catch((error: unknown) => {
     console.error('Failed to resend verification email:', error);
-    return false;
+    return { tokenIssued: false, emailSent: false };
   });
 
   res.json({
-    success: true,
+    success: delivery.tokenIssued,
     verified: false,
-    emailSent,
-    message: emailSent
+    tokenIssued: delivery.tokenIssued,
+    emailSent: delivery.emailSent,
+    message: delivery.emailSent
       ? 'Verification email sent.'
-      : 'Verification email could not be sent. Please try again shortly.',
+      : delivery.tokenIssued
+        ? 'Verification token issued, but email could not be sent. Please try again shortly.'
+        : 'Verification token could not be issued. Please try again shortly.',
   });
 });
 

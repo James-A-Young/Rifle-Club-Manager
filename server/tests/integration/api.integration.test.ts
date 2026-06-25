@@ -517,7 +517,44 @@ describe('auth routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.body.tokenIssued).toBe(true);
       expect(res.body.emailSent).toBe(true);
+      expect(emailSpy).toHaveBeenCalledTimes(1);
+
+      const token = await prisma.emailVerificationToken.findFirst({
+        where: { userId: user.id, usedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(token?.token).toBeTruthy();
+    } finally {
+      if (originalApiKey) process.env.RESEND_API_KEY = originalApiKey; else delete process.env.RESEND_API_KEY;
+      if (originalFrom) process.env.RESEND_FROM_EMAIL = originalFrom; else delete process.env.RESEND_FROM_EMAIL;
+    }
+  });
+
+  it('returns token-issued-but-email-failed when resend delivery fails', async () => {
+    const originalApiKey = process.env.RESEND_API_KEY;
+    const originalFrom = process.env.RESEND_FROM_EMAIL;
+    process.env.RESEND_API_KEY = 'test-resend-key';
+    process.env.RESEND_FROM_EMAIL = 'noreply@example.com';
+    try {
+      const user = await createUser({ email: `${unique('verify-resend-fail')}@test.com` });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: null },
+      });
+      const emailSpy = vi.spyOn(emailService, 'sendEmailVerificationEmail').mockResolvedValue(false);
+
+      const res = await request(app)
+        .post('/api/auth/email-verification/resend')
+        .set(authHeader(user))
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.tokenIssued).toBe(true);
+      expect(res.body.emailSent).toBe(false);
+      expect(res.body.message).toContain('token issued');
       expect(emailSpy).toHaveBeenCalledTimes(1);
 
       const token = await prisma.emailVerificationToken.findFirst({
