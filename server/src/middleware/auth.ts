@@ -71,14 +71,20 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   );
 
   if (!shouldBypassVerificationGate && process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim()) {
-    const dbUser = await prisma.user.findUnique({
-      where: { id: payload.id },
-      select: {
-        id: true,
-        createdAt: true,
-        emailVerifiedAt: true,
-      },
-    });
+    let dbUser;
+    try {
+      dbUser = await prisma.user.findUnique({
+        where: { id: payload.id },
+        select: {
+          id: true,
+          createdAt: true,
+          emailVerifiedAt: true,
+        },
+      });
+    } catch (err) {
+      next(err);
+      return;
+    }
 
     if (!dbUser) {
       res.status(401).json({ error: 'Unauthorized' });
