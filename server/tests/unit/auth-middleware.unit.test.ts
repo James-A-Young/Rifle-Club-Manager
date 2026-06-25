@@ -8,24 +8,16 @@ vi.mock('jsonwebtoken', () => ({
   },
 }));
 
-const { findUniqueMock } = vi.hoisted(() => ({
-  findUniqueMock: vi.fn(),
-}));
-
-vi.mock('../../src/prisma', () => ({
-  prisma: {
-    user: {
-      findUnique: findUniqueMock,
-    },
-  },
-}));
-
 import {
   requireAuth,
   attachOptionalAuth,
   resetAuthVerificationCacheForTests,
+  setVerificationLookupForTests,
+  resetVerificationLookupForTests,
   type AuthRequest,
 } from '../../src/middleware/auth';
+
+const findUniqueMock = vi.fn();
 
 function mockResponse() {
   const status = vi.fn().mockReturnThis();
@@ -37,6 +29,8 @@ describe('auth middleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetAuthVerificationCacheForTests();
+    resetVerificationLookupForTests();
+    setVerificationLookupForTests(findUniqueMock);
     delete process.env.RESEND_API_KEY;
     delete process.env.RESEND_FROM_EMAIL;
   });

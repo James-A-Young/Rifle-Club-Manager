@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { jwtSecret } from '../config/jwt';
-import { prisma } from '../prisma';
 
 export interface AuthRequest extends Request {
   user?: { id: string; email: string };
@@ -17,7 +16,25 @@ type VerificationCacheEntry = {
   expiresAtMs: number;
 };
 
+type VerificationLookupResult = {
+  createdAt: Date;
+  emailVerifiedAt: Date | null;
+} | null;
+
+type VerificationLookup = (userId: string) => Promise<VerificationLookupResult>;
+
 const emailVerificationCache = new Map<string, VerificationCacheEntry>();
+
+let verificationLookup: VerificationLookup = async (userId: string) => {
+  const { prisma } = await import('../prisma');
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      createdAt: true,
+      emailVerifiedAt: true,
+    },
+  });
+};
 
 /** Name of the HttpOnly cookie that carries the auth JWT. */
 export const AUTH_COOKIE_NAME = 'auth_token';
@@ -94,6 +111,23 @@ export function resetAuthVerificationCacheForTests(): void {
   emailVerificationCache.clear();
 }
 
+export function setVerificationLookupForTests(lookup: VerificationLookup): void {
+  verificationLookup = lookup;
+}
+
+export function resetVerificationLookupForTests(): void {
+  verificationLookup = async (userId: string) => {
+    const { prisma } = await import('../prisma');
+    return prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        createdAt: true,
+        emailVerifiedAt: true,
+      },
+    });
+  };
+}
+
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const token = extractToken(req);
   if (!token) {
@@ -125,14 +159,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     } else {
       let dbUser;
       try {
-        dbUser = await prisma.user.findUnique({
-          where: { id: payload.id },
-          select: {
-            id: true,
-            createdAt: true,
-            emailVerifiedAt: true,
-          },
-        });
+        dbUser = await verificationLookup(payload.id);
       } catch (err) {
         next(err);
         return;
