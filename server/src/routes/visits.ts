@@ -9,6 +9,7 @@ import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { isKioskLink } from '../utils/signInLinks';
 import { streamSignInHistoryCsv } from '../services/exports/signInHistoryExport';
 
 const router = Router();
@@ -109,10 +110,6 @@ async function fetchFirearmSnapshot(firearmId: string | undefined): Promise<Fire
   }
 
   return toFirearmSnapshot(firearm);
-}
-
-function isKioskLink(expiresAt: Date): boolean {
-  return expiresAt.getTime() - Date.now() > 365 * 24 * 60 * 60 * 1000;
 }
 
 function verifySignInAccessToken(signInAccessToken: string): SignInAccessTokenPayload | null {

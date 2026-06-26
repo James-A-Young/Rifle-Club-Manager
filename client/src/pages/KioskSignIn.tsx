@@ -66,7 +66,11 @@ export default function KioskSignIn() {
   const [cardSignInError, setCardSignInError] = useState('');
   const [cardPreview, setCardPreview] = useState<MemberCardPreviewResponse | null>(null);
   const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [manualSignInSubmitting, setManualSignInSubmitting] = useState(false);
+  const [cardSignInSubmitting, setCardSignInSubmitting] = useState(false);
   const isAuthenticatedKioskUser = Boolean(kioskData?.isAuthenticated);
+  const isSignInInteractionInProgress =
+    cardScanOpen || cardModalOpen || manualSignInSubmitting || cardSignInSubmitting;
 
   function resetCardFlowState() {
     setCardPreview(null);
@@ -120,13 +124,20 @@ export default function KioskSignIn() {
     };
 
     issue();
+
+    if (isSignInInteractionInProgress) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const interval = window.setInterval(issue, ISSUE_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [token, kioskData]);
+  }, [token, kioskData, isSignInInteractionInProgress]);
 
   // Load active visits and check admin status
   useEffect(() => {
@@ -161,12 +172,17 @@ export default function KioskSignIn() {
 
     loadVisits();
     checkAdmin();
+
+    if (isSignInInteractionInProgress) {
+      return;
+    }
+
     const interval = window.setInterval(loadVisits, REFRESH_VISITS_INTERVAL_MS);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [token, kioskData, user?.id]);
+  }, [token, kioskData, user?.id, isSignInInteractionInProgress]);
 
   const qrUrl = useMemo(() => {
     if (!issuedLink) return '';
@@ -176,6 +192,7 @@ export default function KioskSignIn() {
   async function handleManualSubmit(payload: VisitFormPayload) {
     if (!kioskData) return;
     setError('');
+    setManualSignInSubmitting(true);
     try {
       await api.post('/api/visits/public', {
         signInAccessToken: kioskData.accessToken,
@@ -195,6 +212,8 @@ export default function KioskSignIn() {
       setError(err instanceof Error ? err.message : 'Error signing in');
       // Re-throw so VisitSignInForm keeps the form populated (doesn't reset on error)
       throw err;
+    } finally {
+      setManualSignInSubmitting(false);
     }
   }
 
@@ -204,6 +223,7 @@ export default function KioskSignIn() {
     }
 
     setCardSignInError('');
+    setCardSignInSubmitting(true);
 
     try {
       await api.post('/api/visits/kiosk/qr-signin-confirm', {
@@ -241,6 +261,8 @@ export default function KioskSignIn() {
 
       setCardSignInError(message);
       throw err;
+    } finally {
+      setCardSignInSubmitting(false);
     }
   }
 
