@@ -27,6 +27,90 @@ type HistoryFilters = {
   to?: Date;
 };
 
+type MemberSnapshot = {
+  memberUserIdSnapshot: string;
+  memberNameSnapshot: string;
+  memberEmailSnapshot: string;
+};
+
+type FirearmSnapshot = {
+  firearmSerialSnapshot: string;
+  firearmMakeSnapshot: string;
+  firearmModelSnapshot: string;
+  firearmCaliberSnapshot: string;
+};
+
+async function fetchMemberSnapshot(userId: string): Promise<MemberSnapshot | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    memberUserIdSnapshot: user.id,
+    memberNameSnapshot: user.name,
+    memberEmailSnapshot: user.email,
+  };
+}
+
+function toFirearmSnapshot(firearm: {
+  serialNumber: string;
+  make: string;
+  model: string;
+  caliber: string;
+}): FirearmSnapshot {
+  return {
+    firearmSerialSnapshot: firearm.serialNumber,
+    firearmMakeSnapshot: firearm.make,
+    firearmModelSnapshot: firearm.model,
+    firearmCaliberSnapshot: firearm.caliber,
+  };
+}
+
+async function fetchFirearmSnapshot(firearmId: string | undefined): Promise<FirearmSnapshot | null> {
+  if (!firearmId) {
+    return null;
+  }
+
+  const firearm = await prisma.firearm.findUnique({
+    where: { id: firearmId },
+    select: {
+      serialNumber: true,
+      make: true,
+      model: true,
+      caliber: true,
+    },
+  });
+
+  if (!firearm) {
+    return null;
+  }
+
+  return toFirearmSnapshot(firearm);
+}
+
+async function resolveHistoricalSearchMemberIds(clubId: string, search: string): Promise<string[]> {
+  if (!search) {
+    return [];
+  }
+
+  const pattern = `%${search}%`;
+  const rows = await prisma.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
+    SELECT DISTINCT h."userId"
+    FROM "UserProfileHistory" h
+    INNER JOIN "ClubMembership" m
+      ON m."userId" = h."userId"
+    WHERE m."clubId" = ${clubId}
+      AND CAST(h."changes" AS TEXT) ILIKE ${pattern}
+  `);
+
+  return rows.map(row => row.userId);
+}
+
 function isValidDateValue(value: unknown): value is string {
   return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 }
@@ -94,7 +178,11 @@ function parseHistoryFilters(req: AuthRequest): HistoryFilters {
   };
 }
 
-function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.VisitLogWhereInput {
+function buildHistoryWhere(
+  clubId: string,
+  filters: HistoryFilters,
+  searchMemberIds: string[] = []
+): Prisma.VisitLogWhereInput {
   const andFilters: Prisma.VisitLogWhereInput[] = [{ clubId }];
 
   if (filters.from || filters.to) {
@@ -107,7 +195,12 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
   }
 
   if (filters.memberId) {
-    andFilters.push({ userId: filters.memberId });
+    andFilters.push({
+      OR: [
+        { userId: filters.memberId },
+        { memberUserIdSnapshot: filters.memberId },
+      ],
+    });
   }
 
   if (filters.firearmId) {
@@ -116,14 +209,24 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
 
   if (filters.firearmSerial) {
     andFilters.push({
-      firearmUsed: {
-        is: {
-          serialNumber: {
+      OR: [
+        {
+          firearmUsed: {
+            is: {
+              serialNumber: {
+                contains: filters.firearmSerial,
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+        {
+          firearmSerialSnapshot: {
             contains: filters.firearmSerial,
             mode: 'insensitive',
           },
         },
-      },
+      ],
     });
   }
 
@@ -149,6 +252,18 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
                 mode: 'insensitive',
               },
             },
+          },
+        },
+        {
+          memberNameSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          memberEmailSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
           },
         },
         // Guest search: in guest name/email/club represented
@@ -180,19 +295,57 @@ function buildHistoryWhere(clubId: string, filters: HistoryFilters): Prisma.Visi
             },
           },
         },
+        {
+          firearmSerialSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          firearmMakeSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          firearmModelSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          firearmCaliberSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
+          },
+        },
+        ...(searchMemberIds.length > 0
+          ? [
+              {
+                userId: {
+                  in: searchMemberIds,
+                },
+              },
+              {
+                memberUserIdSnapshot: {
+                  in: searchMemberIds,
+                },
+              },
+            ]
+          : []),
       ],
     });
   }
 
   if (filters.visitorType === 'guest') {
     andFilters.push({
-      userId: null,
+      memberUserIdSnapshot: null,
     });
   }
 
   if (filters.visitorType === 'member') {
     andFilters.push({
-      userId: { not: null },
+      memberUserIdSnapshot: { not: null },
     });
   }
 
@@ -287,7 +440,9 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
         include: {
           club: {
             include: {
-              firearms: true,
+              firearms: {
+                where: { deletedAt: null },
+              },
             },
           },
         },
@@ -297,7 +452,9 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
         include: {
           club: {
             include: {
-              firearms: true,
+              firearms: {
+                where: { deletedAt: null },
+              },
             },
           },
         },
@@ -330,6 +487,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     const ownedFirearm = await prisma.firearm.findFirst({
       where: {
         id: firearmUsedId,
+        deletedAt: null,
         OR: [
           { clubId },
           ...(userId ? [{ userId, ownerType: OwnerType.USER }] : []),
@@ -351,6 +509,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     const existingFirearm = await prisma.firearm.findFirst({
       where: {
         serialNumber: parsed.data.firearmSerialNumber,
+        deletedAt: null,
         OR: [
           { clubId, ownerType: OwnerType.CLUB },
           ...(userId ? [{ userId, ownerType: OwnerType.USER }] : []),
@@ -384,18 +543,36 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     purpose: string;
     firearmUsedId?: string;
     userId?: string | null;
+    memberUserIdSnapshot?: string;
+    memberNameSnapshot?: string;
+    memberEmailSnapshot?: string;
     guestName?: string;
     guestClubRepresented?: string;
     guestEmail?: string | null;
+    firearmSerialSnapshot?: string;
+    firearmMakeSnapshot?: string;
+    firearmModelSnapshot?: string;
+    firearmCaliberSnapshot?: string;
   } = {
     clubId,
     purpose: parsed.data.purpose,
     firearmUsedId,
   };
 
+  const firearmSnapshot = await fetchFirearmSnapshot(firearmUsedId);
+  if (firearmSnapshot) {
+    Object.assign(visitData, firearmSnapshot);
+  }
+
   if (isAuthenticatedUser) {
     // Authenticated user: set userId only
     visitData.userId = userId;
+    if (userId) {
+      const memberSnapshot = await fetchMemberSnapshot(userId);
+      if (memberSnapshot) {
+        Object.assign(visitData, memberSnapshot);
+      }
+    }
   } else {
     // Guest visit: populate guest fields
     const guestDetails = parsed.data.guestDetails;
@@ -464,12 +641,16 @@ router.get('/kiosk/:kioskToken/active', async (req: AuthRequest, res: Response) 
   // Return only safe public fields, using publicVisitRef instead of id
   const safeVisits = visits.map(v => ({
     publicVisitRef: v.publicVisitRef,
-    visitorName: v.userId ? v.user?.name : v.guestName,
-    visitorEmail: v.userId ? v.user?.email : v.guestEmail,
+    visitorName: v.memberUserIdSnapshot ? (v.user?.name ?? v.memberNameSnapshot) : v.guestName,
+    visitorEmail: v.memberUserIdSnapshot ? (v.user?.email ?? v.memberEmailSnapshot) : v.guestEmail,
     guestClubRepresented: v.guestClubRepresented,
     purpose: v.purpose,
     timeIn: v.timeIn,
-    firearm: v.firearmUsed ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})` : null,
+    firearm: v.firearmUsed
+      ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})`
+      : (v.firearmMakeSnapshot && v.firearmModelSnapshot && v.firearmCaliberSnapshot
+        ? `${v.firearmMakeSnapshot} ${v.firearmModelSnapshot} (${v.firearmCaliberSnapshot})`
+        : null),
   }));
 
   res.json(safeVisits);
@@ -562,12 +743,47 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
     return;
   }
 
+  let firearmSnapshot: FirearmSnapshot | null = null;
+  if (parsed.data.firearmUsedId) {
+    const firearm = await prisma.firearm.findFirst({
+      where: {
+        id: parsed.data.firearmUsedId,
+        deletedAt: null,
+        OR: [
+          { clubId: parsed.data.clubId, ownerType: OwnerType.CLUB },
+          { userId: req.user!.id, ownerType: OwnerType.USER },
+        ],
+      },
+      select: {
+        serialNumber: true,
+        make: true,
+        model: true,
+        caliber: true,
+      },
+    });
+
+    if (!firearm) {
+      res.status(400).json({ error: 'Firearm not found or does not belong to this club or user' });
+      return;
+    }
+
+    firearmSnapshot = toFirearmSnapshot(firearm);
+  }
+
+  const memberSnapshot = await fetchMemberSnapshot(req.user!.id);
+  if (!memberSnapshot) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
   const visit = await prisma.visitLog.create({
     data: {
       userId: req.user!.id,
+      ...memberSnapshot,
       clubId: parsed.data.clubId,
       purpose: parsed.data.purpose,
       firearmUsedId: parsed.data.firearmUsedId,
+      ...(firearmSnapshot ?? {}),
     },
   });
   res.status(201).json(visit);
@@ -677,12 +893,16 @@ router.get('/club/:clubId/active', requireAuth, async (req: AuthRequest, res: Re
   const safeVisits = visits.map(v => ({
     id: v.id,
     publicVisitRef: v.publicVisitRef,
-    visitorName: v.userId ? v.user?.name : v.guestName,
-    visitorEmail: v.userId ? v.user?.email : v.guestEmail,
+    visitorName: v.memberUserIdSnapshot ? (v.user?.name ?? v.memberNameSnapshot) : v.guestName,
+    visitorEmail: v.memberUserIdSnapshot ? (v.user?.email ?? v.memberEmailSnapshot) : v.guestEmail,
     guestClubRepresented: v.guestClubRepresented,
     purpose: v.purpose,
     timeIn: v.timeIn,
-    firearm: v.firearmUsed ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})` : null,
+    firearm: v.firearmUsed
+      ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})`
+      : (v.firearmMakeSnapshot && v.firearmModelSnapshot && v.firearmCaliberSnapshot
+        ? `${v.firearmMakeSnapshot} ${v.firearmModelSnapshot} (${v.firearmCaliberSnapshot})`
+        : null),
   }));
 
   res.json(safeVisits);
@@ -751,7 +971,10 @@ router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: R
   const pageSize = parsePageSize(req.query.pageSize);
   const cursor = parseCursor(req.query.cursor);
   const filters = parseHistoryFilters(req);
-  const baseWhere = buildHistoryWhere(clubId, filters);
+  const searchMemberIds = filters.search
+    ? await resolveHistoricalSearchMemberIds(clubId, filters.search)
+    : [];
+  const baseWhere = buildHistoryWhere(clubId, filters, searchMemberIds);
   const where = applyHistoryCursor(baseWhere, cursor);
 
   const rows = await prisma.visitLog.findMany({
@@ -771,6 +994,13 @@ router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: R
       guestName: true,
       guestEmail: true,
       guestClubRepresented: true,
+      memberUserIdSnapshot: true,
+      memberNameSnapshot: true,
+      memberEmailSnapshot: true,
+      firearmSerialSnapshot: true,
+      firearmMakeSnapshot: true,
+      firearmModelSnapshot: true,
+      firearmCaliberSnapshot: true,
       user: {
         select: {
           id: true,
@@ -794,8 +1024,16 @@ router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: R
   const visibleRows = hasNextPage ? rows.slice(0, pageSize) : rows;
   const lastRow = visibleRows[visibleRows.length - 1];
 
+  const normalizedRows = visibleRows.map(row => ({
+    ...row,
+    visitorType: row.memberUserIdSnapshot ? 'member' : 'guest',
+    memberUserId: row.userId ?? row.memberUserIdSnapshot,
+    visitorName: row.memberUserIdSnapshot ? (row.user?.name ?? row.memberNameSnapshot) : (row.guestName ?? 'Guest Visitor'),
+    visitorEmail: row.memberUserIdSnapshot ? (row.user?.email ?? row.memberEmailSnapshot) : row.guestEmail,
+  }));
+
   res.json({
-    rows: visibleRows,
+    rows: normalizedRows,
     nextCursor: hasNextPage && lastRow ? encodeCursor({ timeIn: lastRow.timeIn, id: lastRow.id }) : null,
   });
 });
@@ -809,7 +1047,10 @@ router.get('/club/:clubId/history/summary', requireAuth, async (req: AuthRequest
   }
 
   const filters = parseHistoryFilters(req);
-  const where = buildHistoryWhere(clubId, filters);
+  const searchMemberIds = filters.search
+    ? await resolveHistoricalSearchMemberIds(clubId, filters.search)
+    : [];
+  const where = buildHistoryWhere(clubId, filters, searchMemberIds);
 
   const [memberships, groupedByMember] = await Promise.all([
     prisma.clubMembership.findMany({
@@ -846,9 +1087,9 @@ router.get('/club/:clubId/history/summary', requireAuth, async (req: AuthRequest
   const firearmSerial = typeof req.query.firearmSerial === 'string' ? req.query.firearmSerial : undefined;
 
   const firearm = firearmId
-    ? await prisma.firearm.findFirst({ where: { id: firearmId, clubId } })
+    ? await prisma.firearm.findFirst({ where: { id: firearmId, clubId, deletedAt: null } })
     : firearmSerial
-      ? await prisma.firearm.findFirst({ where: { serialNumber: firearmSerial } })
+      ? await prisma.firearm.findFirst({ where: { serialNumber: firearmSerial, deletedAt: null } })
       : null;
 
   const firearmLastUsed = firearm
@@ -916,7 +1157,10 @@ router.get('/club/:clubId/history/export.csv', requireAuth, async (req: AuthRequ
   }
 
   const filters = parseHistoryFilters(req);
-  const baseWhere = buildHistoryWhere(clubId, filters);
+  const searchMemberIds = filters.search
+    ? await resolveHistoricalSearchMemberIds(clubId, filters.search)
+    : [];
+  const baseWhere = buildHistoryWhere(clubId, filters, searchMemberIds);
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="club-${clubId}-history.csv"`);
@@ -1027,10 +1271,17 @@ router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: 
       return;
     }
 
+    const memberSnapshot = await fetchMemberSnapshot(userId);
+    if (!memberSnapshot) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
     // Create visit log
     const visit = await prisma.visitLog.create({
       data: {
         userId,
+        ...memberSnapshot,
         clubId,
         purpose: 'QR Card Sign-In',
         timeIn: new Date(),

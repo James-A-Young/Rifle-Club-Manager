@@ -8,12 +8,23 @@ type VisitorTypeFilter = 'all' | 'guest' | 'member';
 interface HistoryRow {
   id: string;
   publicVisitRef: string | null;
+  visitorType?: 'member' | 'guest';
+  memberUserId?: string | null;
+  visitorName?: string | null;
+  visitorEmail?: string | null;
   purpose: string;
   timeIn: string;
   timeOut: string | null;
   guestName: string | null;
   guestEmail: string | null;
   guestClubRepresented: string | null;
+  memberUserIdSnapshot?: string | null;
+  memberNameSnapshot?: string | null;
+  memberEmailSnapshot?: string | null;
+  firearmSerialSnapshot?: string | null;
+  firearmMakeSnapshot?: string | null;
+  firearmModelSnapshot?: string | null;
+  firearmCaliberSnapshot?: string | null;
   user: {
     id: string;
     name: string;
@@ -401,11 +412,15 @@ export default function ClubHistory() {
               <tbody>
                 {rows.map(row => (
                   <tr key={row.id}>
-                    <td>{row.user ? 'Member' : 'Guest'}</td>
-                    <td>{row.user?.name ?? row.guestName ?? 'Guest Visitor'}</td>
-                    <td>{row.user?.email ?? row.guestEmail ?? 'N/A'}</td>
+                    <td>{(row.visitorType ?? (row.memberUserIdSnapshot ? 'member' : 'guest')) === 'member' ? 'Member' : 'Guest'}</td>
+                    <td>{row.visitorName ?? row.user?.name ?? row.memberNameSnapshot ?? row.guestName ?? 'Guest Visitor'}</td>
+                    <td>{row.visitorEmail ?? row.user?.email ?? row.memberEmailSnapshot ?? row.guestEmail ?? 'N/A'}</td>
                     <td>{row.purpose}</td>
-                    <td>{row.firearmUsed ? `${row.firearmUsed.serialNumber} (${row.firearmUsed.make} ${row.firearmUsed.model})` : 'N/A'}</td>
+                    <td>{row.firearmUsed
+                      ? `${row.firearmUsed.serialNumber} (${row.firearmUsed.make} ${row.firearmUsed.model})`
+                      : (row.firearmSerialSnapshot && row.firearmMakeSnapshot && row.firearmModelSnapshot
+                        ? `${row.firearmSerialSnapshot} (${row.firearmMakeSnapshot} ${row.firearmModelSnapshot})`
+                        : 'N/A')}</td>
                     <td>{new Date(row.timeIn).toLocaleString()}</td>
                     <td>{row.timeOut ? new Date(row.timeOut).toLocaleString() : 'Active'}</td>
                   </tr>

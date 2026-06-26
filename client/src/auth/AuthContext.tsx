@@ -5,6 +5,8 @@ interface User {
   id: string;
   name: string;
   email: string;
+  emailVerifiedAt?: string | null;
+  emailVerificationRequiredBy?: string | null;
   section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
 }
 

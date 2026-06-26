@@ -126,8 +126,9 @@ describe('security: firearm deletion IDOR', () => {
       .set(authHeader(admin));
 
     expect(res.status).toBe(204);
-    const gone = await prisma.firearm.findUnique({ where: { id: firearm.id } });
-    expect(gone).toBeNull();
+    const softDeleted = await prisma.firearm.findUnique({ where: { id: firearm.id } });
+    expect(softDeleted).not.toBeNull();
+    expect(softDeleted?.deletedAt).toBeTruthy();
   });
 });
 

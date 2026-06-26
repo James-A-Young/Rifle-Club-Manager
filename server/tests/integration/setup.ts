@@ -39,6 +39,7 @@ const tables = [
   'VisitLog',
   'SignInLink',
   'UserProfileHistory',
+  'EmailVerificationToken',
   'PasswordResetToken',
   'TwoFactorDisableToken',
   'ClubInvite',

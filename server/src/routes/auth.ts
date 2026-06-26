@@ -7,7 +7,13 @@ import { MembershipRole, MembershipStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
-import { AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
+import {
+  AUTH_COOKIE_NAME,
+  AUTH_COOKIE_OPTIONS,
+  requireAuth,
+  AuthRequest,
+  invalidateAuthVerificationCacheForUser,
+} from '../middleware/auth';
 import {
   auditAuthLoginFailed,
   auditAuthLoginSuccess,
@@ -26,6 +32,8 @@ const router = Router();
 const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
 const TWO_FACTOR_LOGIN_TOKEN_TTL = '10m';
 const TWO_FACTOR_DISABLE_TOKEN_TTL_MINUTES = 15;
+const EMAIL_VERIFICATION_TOKEN_TTL_DAYS = 7;
+const EMAIL_VERIFICATION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 type ResetTokenFailureReason = 'not_found' | 'expired' | 'used';
 
 class ResetTokenStateError extends Error {
@@ -86,6 +94,10 @@ const resetPasswordSchema = z.object({
   password: z.string().min(8),
 });
 
+const confirmEmailVerificationSchema = z.object({
+  token: z.string().min(1),
+});
+
 const bootstrapSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
@@ -140,6 +152,61 @@ function verifyTwoFactorLoginToken(token: string): TwoFactorLoginJwtPayload | nu
   } catch {
     return null;
   }
+}
+
+function getEmailVerificationRequiredBy(createdAt: Date, emailVerifiedAt: Date | null): Date | null {
+  if (emailVerifiedAt || !emailService.isConfigured()) {
+    return null;
+  }
+  return new Date(createdAt.getTime() + EMAIL_VERIFICATION_GRACE_PERIOD_MS);
+}
+
+async function issueAndSendEmailVerification(params: {
+  userId: string;
+  email: string;
+  name?: string | null;
+  ip: string;
+}): Promise<{ tokenIssued: boolean; emailSent: boolean }> {
+  if (!emailService.isConfigured()) {
+    return { tokenIssued: false, emailSent: false };
+  }
+
+  const verificationToken = `email_verify_${crypto.randomBytes(32).toString('hex')}`;
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFICATION_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  await prisma.$transaction(async tx => {
+    await tx.emailVerificationToken.updateMany({
+      where: {
+        userId: params.userId,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+        usedByIp: params.ip,
+        usedByUserAgent: 'superseded',
+      },
+    });
+
+    await tx.emailVerificationToken.create({
+      data: {
+        userId: params.userId,
+        token: verificationToken,
+        expiresAt,
+      },
+    });
+  });
+
+  const emailSent = await emailService.sendEmailVerificationEmail({
+    to: params.email,
+    name: params.name,
+    verificationToken,
+    expiresInDays: EMAIL_VERIFICATION_TOKEN_TTL_DAYS,
+  });
+
+  return {
+    tokenIssued: true,
+    emailSent,
+  };
 }
 
 /** Returns true when no users exist — bootstrap mode is active. */
@@ -200,6 +267,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
         data: {
           name,
           email: normalizedEmail,
+          emailVerifiedAt: emailService.isConfigured() ? null : new Date(),
           passwordHash,
           gdprConsentDate: new Date(),
           address,
@@ -207,7 +275,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
           dateOfBirth: new Date(dateOfBirth),
           phoneNumber,
         },
-        select: { id: true, name: true, email: true, createdAt: true },
+        select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },
       });
 
       const createdClub = await tx.club.create({
@@ -293,6 +361,7 @@ router.post('/register', async (req: Request, res: Response) => {
         data: {
           name,
           email: normalizedEmail,
+          emailVerifiedAt: emailService.isConfigured() ? null : new Date(),
           passwordHash,
           gdprConsentDate: new Date(),
           address,
@@ -300,7 +369,7 @@ router.post('/register', async (req: Request, res: Response) => {
           dateOfBirth: new Date(dateOfBirth),
           phoneNumber,
         },
-        select: { id: true, name: true, email: true, createdAt: true },
+        select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },
       });
 
       await tx.clubMembership.upsert({
@@ -349,6 +418,18 @@ router.post('/register', async (req: Request, res: Response) => {
     res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
     auditAuthRegisterSuccess(req.ip, user.id, user.email);
     res.status(201).json({ token, user });
+    void issueAndSendEmailVerification({
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      ip: req.ip ?? 'unknown',
+    }).then((result) => {
+      if (!result.emailSent) {
+        console.warn('Email verification token issued after registration but email delivery failed.');
+      }
+    }).catch((error: unknown) => {
+      console.error('Failed to issue email verification after registration:', error);
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'REGISTER_FAILED';
     if (message === 'INVITE_NOT_FOUND') {
@@ -370,6 +451,114 @@ router.post('/register', async (req: Request, res: Response) => {
 
     res.status(500).json({ error: 'Registration failed' });
   }
+});
+
+router.post('/email-verification/resend', requireAuth, async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user!.id },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      emailVerifiedAt: true,
+    },
+  });
+
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  if (user.emailVerifiedAt) {
+    res.json({ success: true, verified: true, emailSent: false, message: 'Email already verified.' });
+    return;
+  }
+
+  if (!emailService.isConfigured()) {
+    res.status(409).json({ error: 'Email verification is not configured.' });
+    return;
+  }
+
+  const delivery = await issueAndSendEmailVerification({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    ip: req.ip ?? 'unknown',
+  }).catch((error: unknown) => {
+    console.error('Failed to resend verification email:', error);
+    return { tokenIssued: false, emailSent: false };
+  });
+
+  res.json({
+    success: delivery.tokenIssued,
+    verified: false,
+    tokenIssued: delivery.tokenIssued,
+    emailSent: delivery.emailSent,
+    message: delivery.emailSent
+      ? 'Verification email sent.'
+      : delivery.tokenIssued
+        ? 'Verification token issued, but email could not be sent. Please try again shortly.'
+        : 'Verification token could not be issued. Please try again shortly.',
+  });
+});
+
+router.post('/email-verification/confirm', async (req: Request, res: Response) => {
+  const parsed = confirmEmailVerificationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const userAgent = sanitizeUserAgent(req.get('user-agent'));
+  const tokenRow = await prisma.emailVerificationToken.findUnique({
+    where: { token: parsed.data.token },
+    select: {
+      id: true,
+      userId: true,
+      expiresAt: true,
+      usedAt: true,
+    },
+  });
+
+  if (!tokenRow || tokenRow.usedAt || tokenRow.expiresAt < new Date()) {
+    res.status(400).json({ error: 'Invalid or expired verification token' });
+    return;
+  }
+
+  const consumedAt = new Date();
+  await prisma.$transaction(async tx => {
+    const consumed = await tx.emailVerificationToken.updateMany({
+      where: {
+        id: tokenRow.id,
+        usedAt: null,
+        expiresAt: { gte: consumedAt },
+      },
+      data: {
+        usedAt: consumedAt,
+        usedByIp: req.ip,
+        usedByUserAgent: userAgent,
+      },
+    });
+
+    if (consumed.count !== 1) {
+      throw new Error('TOKEN_CONSUMPTION_FAILED');
+    }
+
+    await tx.user.update({
+      where: { id: tokenRow.userId },
+      data: { emailVerifiedAt: consumedAt },
+    });
+  }).catch(() => {
+    res.status(400).json({ error: 'Invalid or expired verification token' });
+  });
+
+  if (res.headersSent) {
+    return;
+  }
+
+  invalidateAuthVerificationCacheForUser(tokenRow.userId);
+
+  res.json({ success: true, message: 'Email verified successfully.' });
 });
 
 router.post('/login', async (req: Request, res: Response) => {
@@ -417,7 +606,14 @@ router.post('/login', async (req: Request, res: Response) => {
   auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, section21Status },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      section21Status,
+      emailVerifiedAt: user.emailVerifiedAt,
+      emailVerificationRequiredBy: getEmailVerificationRequiredBy(user.createdAt, user.emailVerifiedAt),
+    },
   });
 });
 
@@ -440,6 +636,8 @@ router.post('/login/2fa', async (req: Request, res: Response) => {
       id: true,
       email: true,
       name: true,
+      createdAt: true,
+      emailVerifiedAt: true,
       twoFactorEnabled: true,
       twoFactorSecret: true,
     },
@@ -468,7 +666,14 @@ router.post('/login/2fa', async (req: Request, res: Response) => {
   auditAuthLoginSuccess(req.ip, user.id, user.email);
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, section21Status },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      section21Status,
+      emailVerifiedAt: user.emailVerifiedAt,
+      emailVerificationRequiredBy: getEmailVerificationRequiredBy(user.createdAt, user.emailVerifiedAt),
+    },
   });
 });
 

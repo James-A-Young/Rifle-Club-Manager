@@ -98,6 +98,14 @@ export default function ClubMemberProfile() {
                   <td>{member.user.email}</td>
                 </tr>
                 <tr>
+                  <th>Email Verification</th>
+                  <td>
+                    {member.user.emailVerifiedAt
+                      ? `Verified on ${new Date(member.user.emailVerifiedAt).toLocaleString()}`
+                      : 'Pending verification'}
+                  </td>
+                </tr>
+                <tr>
                   <th>Status</th>
                   <td>{member.status}</td>
                 </tr>

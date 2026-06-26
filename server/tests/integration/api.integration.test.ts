@@ -496,6 +496,114 @@ describe('auth routes', () => {
     expect(invalidRes.status).toBe(400);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('SECURITY_AUTH_PASSWORD_RESET_TOKEN_INVALID'));
   });
+
+  it('resends email verification for an authenticated unverified user when email is configured', async () => {
+    const originalApiKey = process.env.RESEND_API_KEY;
+    const originalFrom = process.env.RESEND_FROM_EMAIL;
+    process.env.RESEND_API_KEY = 'test-resend-key';
+    process.env.RESEND_FROM_EMAIL = 'noreply@example.com';
+    try {
+      const user = await createUser({ email: `${unique('verify-resend')}@test.com` });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: null },
+      });
+      const emailSpy = vi.spyOn(emailService, 'sendEmailVerificationEmail').mockResolvedValue(true);
+
+      const res = await request(app)
+        .post('/api/auth/email-verification/resend')
+        .set(authHeader(user))
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.tokenIssued).toBe(true);
+      expect(res.body.emailSent).toBe(true);
+      expect(emailSpy).toHaveBeenCalledTimes(1);
+
+      const token = await prisma.emailVerificationToken.findFirst({
+        where: { userId: user.id, usedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(token?.token).toBeTruthy();
+    } finally {
+      if (originalApiKey) process.env.RESEND_API_KEY = originalApiKey; else delete process.env.RESEND_API_KEY;
+      if (originalFrom) process.env.RESEND_FROM_EMAIL = originalFrom; else delete process.env.RESEND_FROM_EMAIL;
+    }
+  });
+
+  it('returns token-issued-but-email-failed when resend delivery fails', async () => {
+    const originalApiKey = process.env.RESEND_API_KEY;
+    const originalFrom = process.env.RESEND_FROM_EMAIL;
+    process.env.RESEND_API_KEY = 'test-resend-key';
+    process.env.RESEND_FROM_EMAIL = 'noreply@example.com';
+    try {
+      const user = await createUser({ email: `${unique('verify-resend-fail')}@test.com` });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerifiedAt: null },
+      });
+      const emailSpy = vi.spyOn(emailService, 'sendEmailVerificationEmail').mockResolvedValue(false);
+
+      const res = await request(app)
+        .post('/api/auth/email-verification/resend')
+        .set(authHeader(user))
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.tokenIssued).toBe(true);
+      expect(res.body.emailSent).toBe(false);
+      expect(res.body.message).toContain('token issued');
+      expect(emailSpy).toHaveBeenCalledTimes(1);
+
+      const token = await prisma.emailVerificationToken.findFirst({
+        where: { userId: user.id, usedAt: null },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(token?.token).toBeTruthy();
+    } finally {
+      if (originalApiKey) process.env.RESEND_API_KEY = originalApiKey; else delete process.env.RESEND_API_KEY;
+      if (originalFrom) process.env.RESEND_FROM_EMAIL = originalFrom; else delete process.env.RESEND_FROM_EMAIL;
+    }
+  });
+
+  it('confirms email verification token and marks user as verified', async () => {
+    const user = await createUser({ email: `${unique('verify-confirm')}@test.com` });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: null },
+    });
+    const token = `email_verify_${Math.random().toString(36).slice(2)}`;
+    await prisma.emailVerificationToken.create({
+      data: {
+        userId: user.id,
+        token,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/auth/email-verification/confirm')
+      .set('User-Agent', 'VitestAgent/EmailVerify')
+      .send({ token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { emailVerifiedAt: true },
+    });
+    expect(updatedUser?.emailVerifiedAt).toBeTruthy();
+
+    const tokenState = await prisma.emailVerificationToken.findUnique({
+      where: { token },
+      select: { usedAt: true, usedByUserAgent: true },
+    });
+    expect(tokenState?.usedAt).toBeTruthy();
+    expect(tokenState?.usedByUserAgent).toBe('VitestAgent/EmailVerify');
+  });
 });
 
 describe('users routes', () => {
@@ -774,6 +882,7 @@ describe('clubs routes', () => {
     expect(res.status).toBe(200);
     const found = res.body.find((m: { userId: string }) => m.userId === member.id);
     expect(found.user.firearmCertificateNumber).toBe('FAC-MEMBER');
+    expect(found.user.emailVerifiedAt).toBeNull();
   });
 
   it('exports member demographics CSV excluding inactive memberships', async () => {
@@ -1347,6 +1456,85 @@ describe('visits routes', () => {
       .send({ qrData, clubId: club.id });
 
     expect(res2.status).toBe(409);
+  });
+
+  it('finds member history by old and new names after rename', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    const visitRes = await request(app)
+      .post('/api/visits')
+      .set(authHeader(admin))
+      .send({ clubId: club.id, purpose: 'Rename continuity test' });
+
+    expect(visitRes.status).toBe(201);
+
+    const renameRes = await request(app)
+      .patch('/api/users/me')
+      .set(authHeader(admin))
+      .send({ name: 'Updated Test User' });
+
+    expect(renameRes.status).toBe(200);
+
+    // Simulate post-delete relation nulling while preserving snapshots.
+    await prisma.visitLog.update({
+      where: { id: visitRes.body.id as string },
+      data: { userId: null },
+    });
+
+    const byOldName = await request(app)
+      .get(`/api/visits/club/${club.id}/history?search=Test%20User`)
+      .set(authHeader(admin));
+
+    expect(byOldName.status).toBe(200);
+    expect(byOldName.body.rows.length).toBeGreaterThan(0);
+    expect(byOldName.body.rows[0].memberUserId).toBe(admin.id);
+
+    const byNewName = await request(app)
+      .get(`/api/visits/club/${club.id}/history?search=Updated%20Test%20User`)
+      .set(authHeader(admin));
+
+    expect(byNewName.status).toBe(200);
+    expect(byNewName.body.rows.length).toBeGreaterThan(0);
+    expect(byNewName.body.rows[0].memberUserId).toBe(admin.id);
+  });
+
+  it('soft-deletes firearm without breaking visit history', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    const firearmRes = await request(app)
+      .post(`/api/clubs/${club.id}/firearms`)
+      .set(authHeader(admin))
+      .send({ make: 'Anschutz', model: '1907', caliber: '.22 LR', serialNumber: 'HISTORY-SERIAL-1' });
+
+    expect(firearmRes.status).toBe(201);
+
+    const visitRes = await request(app)
+      .post('/api/visits')
+      .set(authHeader(admin))
+      .send({ clubId: club.id, purpose: 'Soft delete firearm test', firearmUsedId: firearmRes.body.id });
+
+    expect(visitRes.status).toBe(201);
+
+    const deleteRes = await request(app)
+      .delete(`/api/clubs/${club.id}/firearms/${firearmRes.body.id}`)
+      .set(authHeader(admin));
+
+    expect(deleteRes.status).toBe(204);
+
+    const listRes = await request(app)
+      .get(`/api/clubs/${club.id}/firearms`)
+      .set(authHeader(admin));
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.some((f: { id: string }) => f.id === firearmRes.body.id)).toBe(false);
+
+    const historyRes = await request(app)
+      .get(`/api/visits/club/${club.id}/history?search=HISTORY-SERIAL-1`)
+      .set(authHeader(admin));
+
+    expect(historyRes.status).toBe(200);
+    expect(historyRes.body.rows.length).toBeGreaterThan(0);
+    expect(historyRes.body.rows[0].firearmUsed?.serialNumber ?? historyRes.body.rows[0].firearmSerialSnapshot).toBe('HISTORY-SERIAL-1');
   });
 });
 

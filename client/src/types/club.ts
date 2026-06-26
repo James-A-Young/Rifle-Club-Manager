@@ -112,6 +112,7 @@ export interface MemberUser {
   id: string;
   name: string;
   email: string;
+  emailVerifiedAt?: string | null;
   address?: string;
   placeOfBirth?: string;
   dateOfBirth?: string;
