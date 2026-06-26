@@ -6,7 +6,7 @@ import { MembershipStatus, MembershipRole, OwnerType, Prisma } from '@prisma/cli
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { formatZodError } from '../utils/zodError';
-import { jwtSecret } from '../config/jwt';
+import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditFirearmLinkDenied, auditKioskSignIn } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
 import { streamSignInHistoryCsv } from '../services/exports/signInHistoryExport';
@@ -38,6 +38,24 @@ type FirearmSnapshot = {
   firearmMakeSnapshot: string;
   firearmModelSnapshot: string;
   firearmCaliberSnapshot: string;
+};
+
+type SignInAccessTokenPayload = {
+  signInLinkId: string;
+  clubId: string;
+  tokenType: string;
+};
+
+type MemberCardSignInTokenPayload = {
+  signInLinkId: string;
+  clubId: string;
+  userId: string;
+  tokenType: string;
+};
+
+type MembershipCardIdentity = {
+  clubId: string;
+  userId: string;
 };
 
 async function fetchMemberSnapshot(userId: string): Promise<MemberSnapshot | null> {
@@ -91,6 +109,63 @@ async function fetchFirearmSnapshot(firearmId: string | undefined): Promise<Fire
   }
 
   return toFirearmSnapshot(firearm);
+}
+
+function isKioskLink(expiresAt: Date): boolean {
+  return expiresAt.getTime() - Date.now() > 365 * 24 * 60 * 60 * 1000;
+}
+
+function verifySignInAccessToken(signInAccessToken: string): SignInAccessTokenPayload | null {
+  try {
+    const payload = jwt.verify(signInAccessToken, jwtSecret) as SignInAccessTokenPayload;
+    if (
+      payload.tokenType !== 'sign-in-access'
+      || typeof payload.signInLinkId !== 'string'
+      || typeof payload.clubId !== 'string'
+    ) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function verifyMemberCardSignInToken(memberCardSignInToken: string): MemberCardSignInTokenPayload | null {
+  try {
+    const payload = jwt.verify(memberCardSignInToken, jwtSecret) as MemberCardSignInTokenPayload;
+    if (
+      payload.tokenType !== 'member-card-sign-in'
+      || typeof payload.signInLinkId !== 'string'
+      || typeof payload.clubId !== 'string'
+      || typeof payload.userId !== 'string'
+    ) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function parseMembershipCardQrData(qrData: string): MembershipCardIdentity | null {
+  const legacyMatch = qrData.match(/^club:([^:]+):member:(.+)$/);
+  if (legacyMatch) {
+    return {
+      clubId: legacyMatch[1],
+      userId: legacyMatch[2],
+    };
+  }
+
+  const walletMatch = qrData.match(/^membership:([^:]+):(.+)$/);
+  if (walletMatch) {
+    return {
+      clubId: walletMatch[1],
+      userId: walletMatch[2],
+    };
+  }
+
+  return null;
 }
 
 async function resolveHistoricalSearchMemberIds(clubId: string, search: string): Promise<string[]> {
@@ -417,21 +492,13 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
   let clubIdFromAccess: string | undefined;
 
   if (parsed.data.signInAccessToken) {
-    try {
-      const payload = jwt.verify(parsed.data.signInAccessToken, jwtSecret) as {
-        signInLinkId: string;
-        clubId: string;
-        tokenType: string;
-      };
-
-      if (payload.tokenType === 'sign-in-access') {
-        signInLinkId = payload.signInLinkId;
-        clubIdFromAccess = payload.clubId;
-      }
-    } catch {
+    const payload = verifySignInAccessToken(parsed.data.signInAccessToken);
+    if (!payload) {
       res.status(401).json({ error: 'Invalid or expired sign-in access token' });
       return;
     }
+    signInLinkId = payload.signInLinkId;
+    clubIdFromAccess = payload.clubId;
   }
 
   const signInLink = signInLinkId
@@ -1214,6 +1281,315 @@ const qrScanSchema = z.object({
   clubId: z.string().min(1, 'Club ID is required'),
 });
 
+const qrPreviewSchema = z.object({
+  qrData: z.string().min(1, 'QR data is required'),
+  signInAccessToken: z.string().min(1, 'signInAccessToken is required'),
+});
+
+const qrConfirmSchema = z.object({
+  signInAccessToken: z.string().min(1, 'signInAccessToken is required'),
+  memberCardSignInToken: z.string().min(1, 'memberCardSignInToken is required'),
+  purpose: z.string().min(1),
+  firearmUsedId: z.string().optional(),
+  firearmSerialNumber: z.string().trim().min(1).optional(),
+});
+
+router.post('/kiosk/qr-preview', async (req: AuthRequest, res: Response) => {
+  const parsed = qrPreviewSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const accessPayload = verifySignInAccessToken(parsed.data.signInAccessToken);
+  if (!accessPayload) {
+    res.status(401).json({ error: 'Invalid or expired sign-in access token' });
+    return;
+  }
+
+  const signInLink = await prisma.signInLink.findUnique({
+    where: { id: accessPayload.signInLinkId },
+  });
+
+  if (!signInLink) {
+    res.status(404).json({ error: 'Link not found' });
+    return;
+  }
+
+  if (signInLink.expiresAt < new Date()) {
+    res.status(410).json({ error: 'Link expired' });
+    return;
+  }
+
+  if (!isKioskLink(signInLink.expiresAt)) {
+    res.status(400).json({ error: 'Only kiosk links support membership card scanning' });
+    return;
+  }
+
+  const cardIdentity = parseMembershipCardQrData(parsed.data.qrData);
+  if (!cardIdentity || cardIdentity.clubId !== accessPayload.clubId) {
+    res.status(400).json({ error: 'Invalid QR code format or club mismatch' });
+    return;
+  }
+
+  const clubSettings = await prisma.clubSettings.findUnique({
+    where: { clubId: accessPayload.clubId },
+  });
+
+  if (!clubSettings?.memberCardSignInEnabled) {
+    res.status(403).json({ error: 'Member card sign-in is not enabled for this club' });
+    return;
+  }
+
+  const membership = await prisma.clubMembership.findFirst({
+    where: {
+      userId: cardIdentity.userId,
+      clubId: accessPayload.clubId,
+      status: MembershipStatus.APPROVED,
+    },
+  });
+
+  if (!membership) {
+    res.status(404).json({ error: 'Member not found or not approved' });
+    return;
+  }
+
+  const existingVisit = await prisma.visitLog.findFirst({
+    where: {
+      userId: cardIdentity.userId,
+      clubId: accessPayload.clubId,
+      timeOut: null,
+    },
+  });
+
+  if (existingVisit) {
+    res.status(409).json({ error: 'Member is already signed in' });
+    return;
+  }
+
+  const member = await prisma.user.findUnique({
+    where: { id: cardIdentity.userId },
+    select: { id: true, name: true, email: true },
+  });
+
+  if (!member) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  const userFirearms = await prisma.firearm.findMany({
+    where: {
+      userId: cardIdentity.userId,
+      ownerType: OwnerType.USER,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      make: true,
+      model: true,
+      caliber: true,
+      isFavorite: true,
+    },
+    orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  const memberCardSignInToken = jwt.sign(
+    {
+      signInLinkId: accessPayload.signInLinkId,
+      clubId: accessPayload.clubId,
+      userId: cardIdentity.userId,
+      tokenType: 'member-card-sign-in',
+    },
+    jwtSecret,
+    { expiresIn: `${Math.max(2, Math.floor(JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES / 2))}m` }
+  );
+
+  res.status(200).json({
+    member: {
+      id: member.id,
+      name: member.name,
+      email: member.email,
+    },
+    userFirearms,
+    memberCardSignInToken,
+  });
+});
+
+router.post('/kiosk/qr-signin-confirm', async (req: AuthRequest, res: Response) => {
+  const parsed = qrConfirmSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: formatZodError(parsed.error) });
+    return;
+  }
+
+  const accessPayload = verifySignInAccessToken(parsed.data.signInAccessToken);
+  if (!accessPayload) {
+    res.status(401).json({ error: 'Invalid or expired sign-in access token' });
+    return;
+  }
+
+  const cardPayload = verifyMemberCardSignInToken(parsed.data.memberCardSignInToken);
+  if (!cardPayload) {
+    res.status(401).json({ error: 'Invalid or expired member-card sign-in token' });
+    return;
+  }
+
+  if (
+    cardPayload.signInLinkId !== accessPayload.signInLinkId
+    || cardPayload.clubId !== accessPayload.clubId
+  ) {
+    res.status(401).json({ error: 'Member-card token does not match this kiosk session' });
+    return;
+  }
+
+  const signInLink = await prisma.signInLink.findUnique({
+    where: { id: accessPayload.signInLinkId },
+  });
+
+  if (!signInLink) {
+    res.status(404).json({ error: 'Link not found' });
+    return;
+  }
+
+  if (signInLink.expiresAt < new Date()) {
+    res.status(410).json({ error: 'Link expired' });
+    return;
+  }
+
+  if (!isKioskLink(signInLink.expiresAt)) {
+    res.status(400).json({ error: 'Only kiosk links support membership card scanning' });
+    return;
+  }
+
+  const clubSettings = await prisma.clubSettings.findUnique({
+    where: { clubId: accessPayload.clubId },
+  });
+
+  if (!clubSettings?.memberCardSignInEnabled) {
+    res.status(403).json({ error: 'Member card sign-in is not enabled for this club' });
+    return;
+  }
+
+  const membership = await prisma.clubMembership.findFirst({
+    where: {
+      userId: cardPayload.userId,
+      clubId: accessPayload.clubId,
+      status: MembershipStatus.APPROVED,
+    },
+  });
+
+  if (!membership) {
+    res.status(404).json({ error: 'Member not found or not approved' });
+    return;
+  }
+
+  const existingVisit = await prisma.visitLog.findFirst({
+    where: {
+      userId: cardPayload.userId,
+      clubId: accessPayload.clubId,
+      timeOut: null,
+    },
+  });
+
+  if (existingVisit) {
+    res.status(409).json({ error: 'Member is already signed in' });
+    return;
+  }
+
+  let firearmUsedId = parsed.data.firearmUsedId;
+
+  if (firearmUsedId) {
+    const ownedFirearm = await prisma.firearm.findFirst({
+      where: {
+        id: firearmUsedId,
+        deletedAt: null,
+        OR: [
+          { clubId: accessPayload.clubId },
+          { userId: cardPayload.userId, ownerType: OwnerType.USER },
+        ],
+      },
+    });
+
+    if (!ownedFirearm) {
+      auditFirearmLinkDenied(req.ip, cardPayload.userId, accessPayload.clubId, firearmUsedId);
+      res.status(400).json({ error: 'Firearm not found or does not belong to this club or user' });
+      return;
+    }
+  }
+
+  if (!firearmUsedId && parsed.data.firearmSerialNumber) {
+    const existingFirearm = await prisma.firearm.findFirst({
+      where: {
+        serialNumber: parsed.data.firearmSerialNumber,
+        deletedAt: null,
+        OR: [
+          { clubId: accessPayload.clubId, ownerType: OwnerType.CLUB },
+          { userId: cardPayload.userId, ownerType: OwnerType.USER },
+        ],
+      },
+    });
+
+    if (existingFirearm) {
+      firearmUsedId = existingFirearm.id;
+    } else {
+      const firearm = await prisma.firearm.create({
+        data: {
+          make: 'Unknown',
+          model: 'Unknown',
+          caliber: 'Unknown',
+          serialNumber: parsed.data.firearmSerialNumber,
+          ownerType: OwnerType.USER,
+          userId: cardPayload.userId,
+        },
+      });
+      firearmUsedId = firearm.id;
+    }
+  }
+
+  const memberSnapshot = await fetchMemberSnapshot(cardPayload.userId);
+  if (!memberSnapshot) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  const visitData: {
+    clubId: string;
+    purpose: string;
+    firearmUsedId?: string;
+    userId: string;
+    memberUserIdSnapshot: string;
+    memberNameSnapshot: string;
+    memberEmailSnapshot: string;
+    firearmSerialSnapshot?: string;
+    firearmMakeSnapshot?: string;
+    firearmModelSnapshot?: string;
+    firearmCaliberSnapshot?: string;
+  } = {
+    clubId: accessPayload.clubId,
+    purpose: parsed.data.purpose,
+    firearmUsedId,
+    userId: cardPayload.userId,
+    ...memberSnapshot,
+  };
+
+  const firearmSnapshot = await fetchFirearmSnapshot(firearmUsedId);
+  if (firearmSnapshot) {
+    Object.assign(visitData, firearmSnapshot);
+  }
+
+  const visit = await prisma.visitLog.create({
+    data: visitData,
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      firearmUsed: true,
+      club: { select: { id: true, name: true } },
+    },
+  });
+
+  auditKioskSignIn(req.ip, accessPayload.clubId, 'member', cardPayload.userId);
+  res.status(201).json(visit);
+});
+
 router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: Response) => {
   const parsed = qrScanSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1234,14 +1610,13 @@ router.post('/kiosk/qr-scan', attachOptionalAuth, async (req: AuthRequest, res: 
       return;
     }
 
-    // Parse QR code data format: "club:clubId:member:userId"
-    const qrMatch = qrData.match(/^club:([^:]+):member:(.+)$/);
-    if (!qrMatch || qrMatch[1] !== clubId) {
+    const cardIdentity = parseMembershipCardQrData(qrData);
+    if (!cardIdentity || cardIdentity.clubId !== clubId) {
       res.status(400).json({ error: 'Invalid QR code format or club mismatch' });
       return;
     }
 
-    const [, , userId] = qrMatch;
+    const { userId } = cardIdentity;
 
     // Verify membership exists and is approved
     const membership = await prisma.clubMembership.findFirst({
