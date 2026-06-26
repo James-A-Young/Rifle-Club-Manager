@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { GoogleAuth, JWTInput } from 'google-auth-library';
+import type { JWTInput } from 'google-auth-library';
 import { google, walletobjects_v1 } from 'googleapis';
 import * as jwt from 'jsonwebtoken';
 
@@ -80,7 +80,7 @@ export interface IssueMembershipPassResult {
 const WALLET_CALLBACK_PATH = '/api/webhooks/google-wallet';
 
 export class GoogleWalletService {
-  private auth?: GoogleAuth;
+  private auth?: InstanceType<typeof google.auth.GoogleAuth>;
   private walletClient?: walletobjects_v1.Walletobjects;
   private issuerId: string;
   private walletEnabled: boolean;
@@ -103,7 +103,7 @@ export class GoogleWalletService {
       return;
     }
 
-    this.auth = new GoogleAuth({
+    this.auth = new google.auth.GoogleAuth({
       scopes: [WALLET_SCOPE],
       ...(keyFile
         ? { keyFile }
