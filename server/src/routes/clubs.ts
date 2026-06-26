@@ -1757,7 +1757,7 @@ router.get('/:id/firearms', async (req: AuthRequest, res: Response) => {
     return;
   }
   const firearms = await prisma.firearm.findMany({
-    where: { clubId, ownerType: OwnerType.CLUB },
+    where: { clubId, ownerType: OwnerType.CLUB, deletedAt: null },
     orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
@@ -1797,14 +1797,17 @@ router.delete('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response
   // Without this check an admin of one club could delete a firearm owned by
   // another club by supplying a foreign firearmId in the URL.
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB, deletedAt: null },
   });
   if (!firearm) {
     auditFirearmDeleteDenied(req.ip, req.user!.id, clubId, firearmId);
     res.status(404).json({ error: 'Firearm not found' });
     return;
   }
-  await prisma.firearm.delete({ where: { id: firearmId } });
+  await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { deletedAt: new Date() },
+  });
   res.status(204).send();
 });
 
@@ -1824,7 +1827,7 @@ router.patch('/:id/firearms/:firearmId', async (req: AuthRequest, res: Response)
   }
 
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB, deletedAt: null },
   });
   if (!firearm) {
     res.status(404).json({ error: 'Firearm not found' });
@@ -1855,7 +1858,7 @@ router.patch('/:id/firearms/:firearmId/favorite', async (req: AuthRequest, res: 
   }
 
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB },
+    where: { id: firearmId, clubId, ownerType: OwnerType.CLUB, deletedAt: null },
   });
   if (!firearm) {
     res.status(404).json({ error: 'Firearm not found' });

@@ -182,7 +182,7 @@ router.get('/:token', attachOptionalAuth, async (req: AuthRequest, res: Response
       club: {
         include: {
           firearms: {
-            where: { ownerType: OwnerType.CLUB },
+            where: { ownerType: OwnerType.CLUB, deletedAt: null },
             select: {
               id: true,
               make: true,
@@ -224,6 +224,7 @@ router.get('/:token', attachOptionalAuth, async (req: AuthRequest, res: Response
         where: {
           userId: req.user.id,
           ownerType: OwnerType.USER,
+          deletedAt: null,
         },
         select: {
           id: true,

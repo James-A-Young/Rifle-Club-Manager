@@ -303,6 +303,7 @@ model Firearm {
   caliber      String
   serialNumber String
   isFavorite   Boolean   @default(false)
+  deletedAt    DateTime?
   ownerType    OwnerType
   userId       String?
   clubId       String?
@@ -313,18 +314,26 @@ model Firearm {
   visitLogs VisitLog[]
 
   @@index([serialNumber])
+  @@index([deletedAt])
 }
 
 model VisitLog {
   id              String    @id @default(cuid())
   publicVisitRef  String?   @unique @default(cuid())
   userId          String?
+  memberUserIdSnapshot String?
+  memberNameSnapshot String?
+  memberEmailSnapshot String?
   clubId          String
   purpose         String
   guestName       String?
   guestEmail      String?
   guestClubRepresented String?
   firearmUsedId   String?
+  firearmSerialSnapshot String?
+  firearmMakeSnapshot String?
+  firearmModelSnapshot String?
+  firearmCaliberSnapshot String?
   timeIn          DateTime  @default(now())
   timeOut         DateTime?
   createdAt       DateTime  @default(now())
@@ -336,6 +345,10 @@ model VisitLog {
   @@index([clubId, timeIn])
   @@index([clubId, userId, timeIn])
   @@index([clubId, firearmUsedId, timeIn])
+  @@index([clubId, memberUserIdSnapshot, timeIn])
+  @@index([clubId, memberNameSnapshot])
+  @@index([clubId, memberEmailSnapshot])
+  @@index([clubId, firearmSerialSnapshot])
 }
 
 model SignInLink {

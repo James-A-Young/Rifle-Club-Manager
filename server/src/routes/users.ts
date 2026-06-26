@@ -325,7 +325,7 @@ router.post('/me/2fa/setup/verify', requireAuth, async (req: AuthRequest, res: R
 
 router.get('/me/firearms', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearms = await prisma.firearm.findMany({
-    where: { userId: req.user!.id, ownerType: OwnerType.USER },
+    where: { userId: req.user!.id, ownerType: OwnerType.USER, deletedAt: null },
     orderBy: [{ isFavorite: 'desc' }, { createdAt: 'desc' }],
   });
   res.json(firearms);
@@ -361,13 +361,16 @@ router.post('/me/firearms', requireAuth, async (req: AuthRequest, res: Response)
 router.delete('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Response) => {
   const firearmId = req.params.id as string;
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, userId: req.user!.id },
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER, deletedAt: null },
   });
   if (!firearm) {
     res.status(404).json({ error: 'Firearm not found' });
     return;
   }
-  await prisma.firearm.delete({ where: { id: firearmId } });
+  await prisma.firearm.update({
+    where: { id: firearmId },
+    data: { deletedAt: new Date() },
+  });
   res.status(204).send();
 });
 
@@ -380,7 +383,7 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
   }
 
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER },
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER, deletedAt: null },
   });
   if (!firearm) {
     res.status(404).json({ error: 'Firearm not found' });
@@ -404,7 +407,7 @@ router.patch('/me/firearms/:id/favorite', requireAuth, async (req: AuthRequest, 
   }
 
   const firearm = await prisma.firearm.findFirst({
-    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER },
+    where: { id: firearmId, userId: req.user!.id, ownerType: OwnerType.USER, deletedAt: null },
   });
   if (!firearm) {
     res.status(404).json({ error: 'Firearm not found' });

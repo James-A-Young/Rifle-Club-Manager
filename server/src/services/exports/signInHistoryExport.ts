@@ -27,12 +27,19 @@ export const SIGN_IN_HISTORY_HEADERS = [
 type SignInHistoryRow = {
   id: string;
   userId: string | null;
+  memberUserIdSnapshot: string | null;
+  memberNameSnapshot: string | null;
+  memberEmailSnapshot: string | null;
   purpose: string;
   timeIn: Date;
   timeOut: Date | null;
   guestName: string | null;
   guestEmail: string | null;
   guestClubRepresented: string | null;
+  firearmSerialSnapshot: string | null;
+  firearmMakeSnapshot: string | null;
+  firearmModelSnapshot: string | null;
+  firearmCaliberSnapshot: string | null;
   user: {
     name: string;
     email: string;
@@ -72,9 +79,13 @@ function applyHistoryCursor(
 }
 
 function rowToCsv(row: SignInHistoryRow): string {
-  const visitorType = row.userId ? 'member' : 'guest';
-  const visitorName = row.userId ? row.user?.name : row.guestName;
-  const visitorEmail = row.userId ? row.user?.email : row.guestEmail;
+  const visitorType = row.memberUserIdSnapshot ? 'member' : 'guest';
+  const visitorName = row.memberUserIdSnapshot ? (row.user?.name ?? row.memberNameSnapshot) : row.guestName;
+  const visitorEmail = row.memberUserIdSnapshot ? (row.user?.email ?? row.memberEmailSnapshot) : row.guestEmail;
+  const firearmSerial = row.firearmUsed?.serialNumber ?? row.firearmSerialSnapshot;
+  const firearmMake = row.firearmUsed?.make ?? row.firearmMakeSnapshot;
+  const firearmModel = row.firearmUsed?.model ?? row.firearmModelSnapshot;
+  const firearmCaliber = row.firearmUsed?.caliber ?? row.firearmCaliberSnapshot;
 
   return [
     csvCell(row.id),
@@ -83,10 +94,10 @@ function rowToCsv(row: SignInHistoryRow): string {
     csvCell(visitorEmail ?? ''),
     csvCell(row.guestClubRepresented ?? ''),
     csvCell(row.purpose),
-    csvCell(row.firearmUsed?.serialNumber ?? ''),
-    csvCell(row.firearmUsed?.make ?? ''),
-    csvCell(row.firearmUsed?.model ?? ''),
-    csvCell(row.firearmUsed?.caliber ?? ''),
+    csvCell(firearmSerial ?? ''),
+    csvCell(firearmMake ?? ''),
+    csvCell(firearmModel ?? ''),
+    csvCell(firearmCaliber ?? ''),
     csvCell(row.timeIn.toISOString()),
     csvCell(row.timeOut ? row.timeOut.toISOString() : ''),
   ].join(',');
@@ -111,12 +122,19 @@ export async function streamSignInHistoryCsv(
       select: {
         id: true,
         userId: true,
+        memberUserIdSnapshot: true,
+        memberNameSnapshot: true,
+        memberEmailSnapshot: true,
         purpose: true,
         timeIn: true,
         timeOut: true,
         guestName: true,
         guestEmail: true,
         guestClubRepresented: true,
+        firearmSerialSnapshot: true,
+        firearmMakeSnapshot: true,
+        firearmModelSnapshot: true,
+        firearmCaliberSnapshot: true,
         user: {
           select: {
             name: true,
@@ -175,12 +193,19 @@ export async function buildSignInHistoryCsvForMonth(
       select: {
         id: true,
         userId: true,
+        memberUserIdSnapshot: true,
+        memberNameSnapshot: true,
+        memberEmailSnapshot: true,
         purpose: true,
         timeIn: true,
         timeOut: true,
         guestName: true,
         guestEmail: true,
         guestClubRepresented: true,
+        firearmSerialSnapshot: true,
+        firearmMakeSnapshot: true,
+        firearmModelSnapshot: true,
+        firearmCaliberSnapshot: true,
         user: { select: { name: true, email: true } },
         firearmUsed: { select: { serialNumber: true, make: true, model: true, caliber: true } },
       },
