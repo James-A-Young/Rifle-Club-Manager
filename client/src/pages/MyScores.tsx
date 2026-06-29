@@ -20,7 +20,10 @@ function toEndOfDayIso(dateValue: string): string {
 
 export default function MyScores() {
   const { id } = useParams<{ id: string }>();
+  const isAllClubsMode = id === 'all';
   const [club, setClub] = useState<Club | null>(null);
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [selectedClubId, setSelectedClubId] = useState('');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
@@ -57,22 +60,47 @@ export default function MyScores() {
     return params.toString();
   }, [competitionQuery, discipline, dueFrom, dueTo, maxScore, minScore, page, shotFrom, shotTo]);
 
-  useEffect(() => {
-    if (!id) return;
-    api.get<Club>(`/api/clubs/${id}`)
-      .then(setClub)
-      .catch(e => setError(e instanceof Error ? e.message : 'Error loading club'));
-  }, [id]);
+  const effectiveClubId = isAllClubsMode ? selectedClubId : (id ?? '');
+  const activeClubName = isAllClubsMode
+    ? (clubs.find(c => c.id === selectedClubId)?.name ?? 'Select a Club')
+    : (club?.name ?? 'Club');
 
   useEffect(() => {
     if (!id) return;
+    if (isAllClubsMode) {
+      setClub(null);
+      api.get<Club[]>('/api/clubs')
+        .then(setClubs)
+        .catch(e => setError(e instanceof Error ? e.message : 'Error loading clubs'));
+      return;
+    }
+    setClubs([]);
+    setSelectedClubId('');
+    api.get<Club>(`/api/clubs/${id}`)
+      .then(setClub)
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading club'));
+  }, [id, isAllClubsMode]);
+
+  useEffect(() => {
+    if (!id) return;
+    if (!effectiveClubId) {
+      setLoading(false);
+      setHistory({
+        page: 1,
+        pageSize: PAGE_SIZE,
+        total: 0,
+        totalPages: 0,
+        rows: [],
+      });
+      return;
+    }
     setLoading(true);
     setError('');
-    api.get<MemberScoreHistoryResponse>(`/api/clubs/${id}/scoring/mine/history?${queryString}`)
+    api.get<MemberScoreHistoryResponse>(`/api/clubs/${effectiveClubId}/scoring/mine/history?${queryString}`)
       .then(setHistory)
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading scores'))
       .finally(() => setLoading(false));
-  }, [id, queryString]);
+  }, [id, effectiveClubId, queryString]);
 
   function onFilterChange<T>(setter: (value: T) => void, value: T) {
     setter(value);
@@ -80,7 +108,7 @@ export default function MyScores() {
   }
 
   async function exportCsv() {
-    if (!id) return;
+    if (!effectiveClubId) return;
     setExporting(true);
     setError('');
     const params = new URLSearchParams(queryString);
@@ -88,7 +116,7 @@ export default function MyScores() {
     params.delete('pageSize');
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/clubs/${id}/scoring/mine/history/export.csv?${params.toString()}`, {
+      const res = await fetch(`/api/clubs/${effectiveClubId}/scoring/mine/history/export.csv?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: 'include',
       });
@@ -113,10 +141,10 @@ export default function MyScores() {
   return (
     <>
       <div className="page-header">
-        <h1>{club?.name ?? 'Club'} - My Scores</h1>
+        <h1>{activeClubName} - My Scores</h1>
         <div className="actions">
           <Link className="btn btn-secondary btn-sm" to="/">Back to Dashboard</Link>
-          <button className="btn btn-primary btn-sm" onClick={exportCsv} disabled={exporting || loading}>
+          <button className="btn btn-primary btn-sm" onClick={exportCsv} disabled={exporting || loading || !effectiveClubId}>
             {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
         </div>
@@ -126,6 +154,25 @@ export default function MyScores() {
 
       <section>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1rem' }}>
+          {isAllClubsMode && (
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 240 }}>
+              <label htmlFor="clubId">Club</label>
+              <select
+                id="clubId"
+                value={selectedClubId}
+                onChange={e => {
+                  setSelectedClubId(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">Select a club</option>
+                {clubs.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="form-group" style={{ marginBottom: 0, minWidth: 210 }}>
             <label htmlFor="competitionQuery">Competition</label>
             <input
@@ -193,6 +240,8 @@ export default function MyScores() {
 
         {loading ? (
           <p style={{ color: 'var(--gray-600)' }}>Loading...</p>
+        ) : isAllClubsMode && !selectedClubId ? (
+          <p style={{ color: 'var(--gray-600)' }}>Select a club to view score history.</p>
         ) : (
           <>
             <table>

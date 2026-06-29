@@ -240,6 +240,9 @@ export default function Dashboard() {
         <section>
           <div className="page-header">
             <h2>Last 10 Cards</h2>
+            <p><Link to={`/clubs/all/my-scores`} className="btn btn-secondary btn-sm">
+                      Search & Export
+                    </Link></p>
           </div>
           <table>
             <thead>
@@ -249,7 +252,6 @@ export default function Dashboard() {
                 <th>Date Shot</th>
                 <th>Date Due</th>
                 <th>Score</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -260,11 +262,6 @@ export default function Dashboard() {
                   <td>{new Date(row.dateShot).toLocaleDateString()}</td>
                   <td>{new Date(row.dateDue).toLocaleDateString()}</td>
                   <td>{row.score}</td>
-                  <td>
-                    <Link to={`/clubs/${row.clubId}/my-scores`} className="btn btn-secondary btn-sm">
-                      Search & Export
-                    </Link>
-                  </td>
                 </tr>
               ))}
             </tbody>
