@@ -113,6 +113,24 @@ async function registerViaInvite(clubId: string, createdByUserId: string, opts: 
   return { email, token };
 }
 
+async function createKioskAccessToken(clubId: string): Promise<{ accessToken: string }> {
+  const kioskLink = await prisma.signInLink.create({
+    data: {
+      clubId,
+      cryptoToken: unique('kiosk-signin-token'),
+      expiresAt: new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const tokenRes = await request(app).get(`/api/sign-in-links/${kioskLink.cryptoToken}`);
+  expect(tokenRes.status).toBe(200);
+  expect(typeof tokenRes.body.accessToken).toBe('string');
+
+  return {
+    accessToken: tokenRes.body.accessToken as string,
+  };
+}
+
 describe('auth routes', () => {
   afterEach(() => {
     if (ORIGINAL_TURNSTILE_SECRET_KEY) {
@@ -1393,7 +1411,7 @@ describe('visits routes', () => {
       .set(authHeader(admin))
       .send({ memberCardSignInEnabled: true });
 
-    const qrData = `club:${club.id}:member:${admin.id}`;
+    const qrData = `membership:${club.id}:${admin.id}`;
 
     const res = await request(app)
       .post('/api/visits/kiosk/qr-scan')
@@ -1403,6 +1421,82 @@ describe('visits routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.visitId).toBeTruthy();
     expect(res.body.userId).toBe(admin.id);
+  });
+
+  it('supports legacy membership card QR format for sign-in', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ memberCardSignInEnabled: true });
+
+    const qrData = `club:${club.id}:member:${admin.id}`;
+
+    const res = await request(app)
+      .post('/api/visits/kiosk/qr-scan')
+      .send({ qrData, clubId: club.id });
+
+    expect(res.status).toBe(201);
+    expect(res.body.userId).toBe(admin.id);
+  });
+
+  it('previews card scan and confirms member-linked kiosk sign-in', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ memberCardSignInEnabled: true });
+
+    const personalFirearm = await prisma.firearm.create({
+      data: {
+        make: 'CZ',
+        model: '457',
+        caliber: '.22 LR',
+        serialNumber: unique('MEMBER-CARD-FIREARM'),
+        ownerType: OwnerType.USER,
+        userId: admin.id,
+      },
+    });
+
+    const { accessToken } = await createKioskAccessToken(club.id);
+
+    const previewRes = await request(app)
+      .post('/api/visits/kiosk/qr-preview')
+      .send({
+        qrData: `membership:${club.id}:${admin.id}`,
+        signInAccessToken: accessToken,
+      });
+
+    expect(previewRes.status).toBe(200);
+    expect(previewRes.body.member.id).toBe(admin.id);
+    expect(previewRes.body.memberCardSignInToken).toBeTruthy();
+    expect(Array.isArray(previewRes.body.userFirearms)).toBe(true);
+    expect(previewRes.body.userFirearms.map((f: { id: string }) => f.id)).toContain(personalFirearm.id);
+
+    const confirmRes = await request(app)
+      .post('/api/visits/kiosk/qr-signin-confirm')
+      .send({
+        signInAccessToken: accessToken,
+        memberCardSignInToken: previewRes.body.memberCardSignInToken,
+        purpose: 'Practice',
+        firearmUsedId: personalFirearm.id,
+      });
+
+    expect(confirmRes.status).toBe(201);
+    expect(confirmRes.body.userId).toBe(admin.id);
+    expect(confirmRes.body.memberUserIdSnapshot).toBe(admin.id);
+
+    const duplicateRes = await request(app)
+      .post('/api/visits/kiosk/qr-signin-confirm')
+      .send({
+        signInAccessToken: accessToken,
+        memberCardSignInToken: previewRes.body.memberCardSignInToken,
+        purpose: 'Practice',
+      });
+
+    expect(duplicateRes.status).toBe(409);
   });
 
   it('rejects QR scan when member card sign-in disabled', async () => {

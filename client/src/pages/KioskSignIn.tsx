@@ -5,6 +5,7 @@ import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import VisitSignInForm, { VisitFormPayload } from '../components/VisitSignInForm';
 import ActiveVisitorsTable, { ActiveVisitorRow } from '../components/ActiveVisitorsTable';
+import MembershipCardScannerModal, { MemberCardPreviewResponse } from '../components/MembershipCardScannerModal';
 import { SimpleFirearm } from '../types/club';
 
 interface IssuedLink {
@@ -61,7 +62,21 @@ export default function KioskSignIn() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [signoutLoading, setSignoutLoading] = useState<string | null>(null);
   const [signoutAllLoading, setSignoutAllLoading] = useState(false);
+  const [cardScanOpen, setCardScanOpen] = useState(false);
+  const [cardSignInError, setCardSignInError] = useState('');
+  const [cardPreview, setCardPreview] = useState<MemberCardPreviewResponse | null>(null);
+  const [cardModalOpen, setCardModalOpen] = useState(false);
+  const [manualSignInSubmitting, setManualSignInSubmitting] = useState(false);
+  const [cardSignInSubmitting, setCardSignInSubmitting] = useState(false);
   const isAuthenticatedKioskUser = Boolean(kioskData?.isAuthenticated);
+  const isSignInInteractionInProgress =
+    cardScanOpen || cardModalOpen || manualSignInSubmitting || cardSignInSubmitting;
+
+  function resetCardFlowState() {
+    setCardPreview(null);
+    setCardModalOpen(false);
+    setCardSignInError('');
+  }
 
   // Load kiosk data on mount
   useEffect(() => {
@@ -109,13 +124,20 @@ export default function KioskSignIn() {
     };
 
     issue();
+
+    if (isSignInInteractionInProgress) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const interval = window.setInterval(issue, ISSUE_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [token, kioskData]);
+  }, [token, kioskData, isSignInInteractionInProgress]);
 
   // Load active visits and check admin status
   useEffect(() => {
@@ -150,12 +172,17 @@ export default function KioskSignIn() {
 
     loadVisits();
     checkAdmin();
+
+    if (isSignInInteractionInProgress) {
+      return;
+    }
+
     const interval = window.setInterval(loadVisits, REFRESH_VISITS_INTERVAL_MS);
 
     return () => {
       window.clearInterval(interval);
     };
-  }, [token, kioskData, user?.id]);
+  }, [token, kioskData, user?.id, isSignInInteractionInProgress]);
 
   const qrUrl = useMemo(() => {
     if (!issuedLink) return '';
@@ -165,6 +192,7 @@ export default function KioskSignIn() {
   async function handleManualSubmit(payload: VisitFormPayload) {
     if (!kioskData) return;
     setError('');
+    setManualSignInSubmitting(true);
     try {
       await api.post('/api/visits/public', {
         signInAccessToken: kioskData.accessToken,
@@ -184,6 +212,57 @@ export default function KioskSignIn() {
       setError(err instanceof Error ? err.message : 'Error signing in');
       // Re-throw so VisitSignInForm keeps the form populated (doesn't reset on error)
       throw err;
+    } finally {
+      setManualSignInSubmitting(false);
+    }
+  }
+
+  async function handleMemberCardSubmit(payload: VisitFormPayload) {
+    if (!kioskData || !cardPreview) {
+      return;
+    }
+
+    setCardSignInError('');
+    setCardSignInSubmitting(true);
+
+    try {
+      await api.post('/api/visits/kiosk/qr-signin-confirm', {
+        signInAccessToken: kioskData.accessToken,
+        memberCardSignInToken: cardPreview.memberCardSignInToken,
+        ...payload,
+      });
+
+      setManualSuccess(true);
+      setCardModalOpen(false);
+      resetCardFlowState();
+
+      setTimeout(async () => {
+        try {
+          const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
+          setActiveVisits(visits);
+          setManualSuccess(false);
+        } catch (e) {
+          setVisitsError(e instanceof Error ? e.message : 'Error refreshing visits');
+        }
+      }, 500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error signing in with membership card';
+      if (/already signed in/i.test(message)) {
+        setCardModalOpen(false);
+        resetCardFlowState();
+        try {
+          const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
+          setActiveVisits(visits);
+        } catch {
+          // Ignore refresh errors for silent duplicate handling
+        }
+        return;
+      }
+
+      setCardSignInError(message);
+      throw err;
+    } finally {
+      setCardSignInSubmitting(false);
     }
   }
 
@@ -259,6 +338,15 @@ export default function KioskSignIn() {
             {qrUrl ? <QRCodeSVG value={qrUrl} size={300} /> : <p>Preparing QR…</p>}
           </div>
           <p className="link-text" style={{ marginTop: '1rem' }}>QR rotates automatically every 45 seconds.</p>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ marginTop: '1rem', height: '8rem' }}
+            onClick={() => setCardScanOpen(true)}
+          >
+            Press to scan Membership Card
+          </button>
         </div>
 
         {/* Manual Sign-In Section */}
@@ -295,6 +383,54 @@ export default function KioskSignIn() {
           onSignOutAll={handleSignOutAll}
         />
       </div>
+
+      <MembershipCardScannerModal
+        open={cardScanOpen}
+        signInAccessToken={kioskData?.accessToken}
+        onClose={() => setCardScanOpen(false)}
+        onPreview={(preview) => {
+          setCardPreview(preview);
+          setCardModalOpen(true);
+          setCardScanOpen(false);
+        }}
+        onDuplicateSignIn={() => {
+          setCardScanOpen(false);
+          resetCardFlowState();
+        }}
+      />
+
+      {cardModalOpen && cardPreview && (
+        <div className="policy-modal-backdrop" onClick={() => { setCardModalOpen(false); resetCardFlowState(); }}>
+          <div
+            className="policy-modal"
+            style={{ width: 'min(680px, 100%)' }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Membership Card Sign-In"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="policy-modal-header">
+              <h2>Member Sign-In</h2>
+              <button className="btn btn-secondary" type="button" onClick={() => { setCardModalOpen(false); resetCardFlowState(); }}>
+                Close
+              </button>
+            </div>
+            <div className="policy-modal-content">
+              <p style={{ marginTop: 0 }}>
+                Signing in as {cardPreview.member.name}.
+              </p>
+              {cardSignInError && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{cardSignInError}</div>}
+              <VisitSignInForm
+                clubFirearms={clubFirearms}
+                myFirearms={cardPreview.userFirearms}
+                isAuthenticated
+                submitLabel="Complete Sign-In"
+                onSubmit={handleMemberCardSubmit}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_SIGN_IN_ACCESS_EXPIRES_MINUTES } from '../config/jwt';
 import { auditSignInLinkInvalid } from '../middleware/auditLog';
 import { ensureAdminForClub } from '../utils/clubAccess';
+import { isKioskLink } from '../utils/signInLinks';
 import { OwnerType } from '@prisma/client';
 
 const router = Router();
@@ -27,10 +28,6 @@ const createKioskLinkSchema = z.object({
 const issueQrSchema = z.object({
   expiresInMinutes: z.number().int().min(1).max(60).default(5),
 });
-
-function isKioskLink(expiresAt: Date): boolean {
-  return expiresAt.getTime() - Date.now() > 365 * 24 * 60 * 60 * 1000;
-}
 
 router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
   const parsed = createLinkSchema.safeParse(req.body);
