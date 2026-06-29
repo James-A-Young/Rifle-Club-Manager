@@ -342,13 +342,13 @@ describe('security: HttpOnly auth cookie', () => {
         dateOfBirth: '1990-01-01',
         phoneNumber: '07123456789',
         emergencyContactName: 'Jane Doe',
-        emergencyContactPhone: '07123456780',
-        emergencyContactRelationship: 'Friend',
+        emergencyContactPhoneNumber: '07123456780',
+        emergencyContactRelation: 'Friend',
         gender: 'OTHER',
         disabilityStatus: 'NOT_DISABLED',
         inviteToken,
       });
-    console.log('Registration response:', res.body);
+    
     expect(res.status).toBe(201);
 
     const setCookieHeader = res.headers['set-cookie'] as string | string[];
