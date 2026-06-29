@@ -344,8 +344,8 @@ describe('security: HttpOnly auth cookie', () => {
         emergencyContactName: 'Jane Doe',
         emergencyContactPhone: '07123456780',
         emergencyContactRelationship: 'Friend',
-        gender: 'Other',
-        disabilityStatus: 'None',
+        gender: 'OTHER',
+        disabilityStatus: 'NOT_DISABLED',
         inviteToken,
       });
 
