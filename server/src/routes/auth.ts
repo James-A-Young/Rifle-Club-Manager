@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { MembershipRole, MembershipStatus } from '@prisma/client';
+import { MembershipRole, MembershipStatus, Gender, DisabilityStatus } from '@prisma/client';
 import { prisma } from '../prisma';
 import { formatZodError } from '../utils/zodError';
 import { jwtSecret, JWT_ACCESS_EXPIRES } from '../config/jwt';
@@ -53,6 +53,8 @@ const registerSchema = z.object({
   address: z.string().min(5),
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  gender: z.nativeEnum(Gender),
+  disabilityStatus: z.nativeEnum(DisabilityStatus),
   phoneNumber: z.string().min(1),
   inviteToken: z.string().min(1),
   turnstileToken: z.string().min(1).optional(),
@@ -106,6 +108,8 @@ const bootstrapSchema = z.object({
   address: z.string().min(5),
   placeOfBirth: z.string().min(2),
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  gender: z.nativeEnum(Gender),
+  disabilityStatus: z.nativeEnum(DisabilityStatus),
   phoneNumber: z.string().min(1),
   clubName: z.string().min(2),
 });
@@ -243,7 +247,7 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
   }
 
   const {
-    name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, clubName,
+    name, email, password, address, placeOfBirth, dateOfBirth, gender, disabilityStatus, phoneNumber, clubName,
   } = parsed.data;
 
   const passwordValidation = await validatePasswordSecurity(password);
@@ -273,6 +277,8 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
           address,
           placeOfBirth,
           dateOfBirth: new Date(dateOfBirth),
+          gender,
+          disabilityStatus,
           phoneNumber,
         },
         select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },
@@ -317,7 +323,19 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(400).json({ error: formatZodError(parsed.error) });
     return;
   }
-  const { name, email, password, address, placeOfBirth, dateOfBirth, phoneNumber, inviteToken, turnstileToken } = parsed.data;
+  const {
+    name,
+    email,
+    password,
+    address,
+    placeOfBirth,
+    dateOfBirth,
+    gender,
+    disabilityStatus,
+    phoneNumber,
+    inviteToken,
+    turnstileToken,
+  } = parsed.data;
 
   const passwordValidation = await validatePasswordSecurity(password);
   if (!passwordValidation.isValid) {
@@ -367,6 +385,8 @@ router.post('/register', async (req: Request, res: Response) => {
           address,
           placeOfBirth,
           dateOfBirth: new Date(dateOfBirth),
+          gender,
+          disabilityStatus,
           phoneNumber,
         },
         select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },

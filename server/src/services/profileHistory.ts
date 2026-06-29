@@ -6,6 +6,8 @@ export type TrackedProfile = {
   address: string;
   placeOfBirth: string;
   dateOfBirth: Date;
+  gender: string;
+  disabilityStatus: string;
   firearmCertificateNumber: string | null;
   firearmCertificateExpiry: Date | null;
   shotgunCertificateNumber: string | null;
@@ -30,6 +32,8 @@ const TRACKED_FIELDS: Array<keyof TrackedProfile> = [
   'address',
   'placeOfBirth',
   'dateOfBirth',
+  'gender',
+  'disabilityStatus',
   'firearmCertificateNumber',
   'firearmCertificateExpiry',
   'shotgunCertificateNumber',

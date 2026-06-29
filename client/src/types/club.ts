@@ -116,6 +116,8 @@ export interface MemberUser {
   address?: string;
   placeOfBirth?: string;
   dateOfBirth?: string;
+  gender?: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'OTHER' | 'PREFER_NOT_TO_SAY';
+  disabilityStatus?: 'NOT_DISABLED' | 'DISABLED' | 'PREFER_NOT_TO_SAY';
   phoneNumber?: string;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
@@ -360,6 +362,8 @@ export interface ProfileHistoryFieldChange {
     | 'address'
     | 'placeOfBirth'
     | 'dateOfBirth'
+    | 'gender'
+    | 'disabilityStatus'
     | 'firearmCertificateNumber'
     | 'firearmCertificateExpiry'
     | 'shotgunCertificateNumber'

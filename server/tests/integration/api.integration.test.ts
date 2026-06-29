@@ -153,6 +153,8 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -179,6 +181,8 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
       });
 
@@ -200,6 +204,8 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -229,6 +235,8 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'invalid-token',
@@ -259,6 +267,8 @@ describe('auth routes', () => {
         address: '123 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'valid-token',
@@ -2529,6 +2539,8 @@ describe('bootstrap routes', () => {
         address: '1 Bootstrap Lane',
         placeOfBirth: 'London',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         clubName: 'Bootstrap Club',
       });
@@ -2553,6 +2565,8 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: 'nonexistent-token',
       });
@@ -2574,6 +2588,8 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -2606,6 +2622,8 @@ describe('invite-only registration', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: expiredToken,
       });
@@ -2715,6 +2733,8 @@ describe('probationary member', () => {
         address: '1 Test Road',
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
         phoneNumber: '07123456789',
         inviteToken: token,
       });

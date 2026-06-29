@@ -2,7 +2,13 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
-import { OwnerType, MembershipStatus, MembershipCardAverageMetric } from '@prisma/client';
+import {
+  OwnerType,
+  MembershipStatus,
+  MembershipCardAverageMetric,
+  Gender,
+  DisabilityStatus,
+} from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
@@ -31,6 +37,8 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      gender: true,
+      disabilityStatus: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -65,6 +73,8 @@ const updateSchema = z.object({
   address: z.string().min(5).optional(),
   placeOfBirth: z.string().min(2).optional(),
   dateOfBirth: z.string().optional(),
+  gender: z.nativeEnum(Gender).optional(),
+  disabilityStatus: z.nativeEnum(DisabilityStatus).optional(),
   phoneNumber: z.string().min(1).optional(),
   firearmCertificateNumber: z.string().optional().nullable(),
   firearmCertificateExpiry: z.string().optional().nullable(),
@@ -154,6 +164,8 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
 
   const {
     dateOfBirth,
+    gender,
+    disabilityStatus,
     firearmCertificateNumber,
     shotgunCertificateNumber,
   } = parsed.data;
@@ -165,6 +177,8 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      gender: true,
+      disabilityStatus: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -184,6 +198,8 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       ...(('address' in parsed.data) ? { address: parsed.data.address } : {}),
       ...(('placeOfBirth' in parsed.data) ? { placeOfBirth: parsed.data.placeOfBirth } : {}),
       ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
+      ...(('gender' in parsed.data) ? { gender } : {}),
+      ...(('disabilityStatus' in parsed.data) ? { disabilityStatus } : {}),
       ...(('phoneNumber' in parsed.data) ? { phoneNumber: parsed.data.phoneNumber } : {}),
       ...(('firearmCertificateNumber' in parsed.data)
         ? { firearmCertificateNumber: normalizeOptionalText(firearmCertificateNumber) }
@@ -205,6 +221,8 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: true,
       placeOfBirth: true,
       dateOfBirth: true,
+      gender: true,
+      disabilityStatus: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -223,6 +241,8 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       address: user.address,
       placeOfBirth: user.placeOfBirth,
       dateOfBirth: user.dateOfBirth,
+      gender: user.gender,
+      disabilityStatus: user.disabilityStatus,
       firearmCertificateNumber: user.firearmCertificateNumber,
       firearmCertificateExpiry: user.firearmCertificateExpiry,
       shotgunCertificateNumber: user.shotgunCertificateNumber,

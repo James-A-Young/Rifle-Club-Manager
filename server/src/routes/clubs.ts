@@ -1166,6 +1166,8 @@ router.get('/:id/members', async (req: AuthRequest, res: Response) => {
           address: true,
           placeOfBirth: true,
           dateOfBirth: true,
+          gender: true,
+          disabilityStatus: true,
           firearmCertificateNumber: true,
           firearmCertificateExpiry: true,
           shotgunCertificateNumber: true,

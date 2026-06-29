@@ -14,6 +14,8 @@ interface UserProfile {
   address: string;
   placeOfBirth: string;
   dateOfBirth: string;
+  gender: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'OTHER' | 'PREFER_NOT_TO_SAY';
+  disabilityStatus: 'NOT_DISABLED' | 'DISABLED' | 'PREFER_NOT_TO_SAY';
   phoneNumber: string;
   twoFactorEnabled?: boolean;
   firearmCertificateNumber?: string | null;
@@ -22,6 +24,36 @@ interface UserProfile {
   shotgunCertificateExpiry?: string | null;
   section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
   section21DeclarationSignedAt?: string | null;
+}
+
+function formatGender(value: UserProfile['gender'] | undefined): string {
+  switch (value) {
+    case 'MALE':
+      return 'Male';
+    case 'FEMALE':
+      return 'Female';
+    case 'NON_BINARY':
+      return 'Non-binary';
+    case 'OTHER':
+      return 'Other';
+    case 'PREFER_NOT_TO_SAY':
+      return 'Prefer not to say';
+    default:
+      return 'Prefer not to say';
+  }
+}
+
+function formatDisabilityStatus(value: UserProfile['disabilityStatus'] | undefined): string {
+  switch (value) {
+    case 'NOT_DISABLED':
+      return 'Not disabled';
+    case 'DISABLED':
+      return 'Disabled';
+    case 'PREFER_NOT_TO_SAY':
+      return 'Prefer not to say';
+    default:
+      return 'Prefer not to say';
+  }
 }
 
 export default function Profile() {
@@ -45,6 +77,8 @@ export default function Profile() {
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    gender: '',
+    disabilityStatus: '',
     phoneNumber: '',
     firearmCertificateNumber: '',
     firearmCertificateExpiry: '',
@@ -62,6 +96,8 @@ export default function Profile() {
         address: p.address,
         placeOfBirth: p.placeOfBirth,
         dateOfBirth: p.dateOfBirth.split('T')[0],
+        gender: p.gender,
+        disabilityStatus: p.disabilityStatus,
         phoneNumber: p.phoneNumber,
         firearmCertificateNumber: p.firearmCertificateNumber ?? '',
         firearmCertificateExpiry: p.firearmCertificateExpiry ? p.firearmCertificateExpiry.split('T')[0] : '',
@@ -203,6 +239,26 @@ export default function Profile() {
               <input type="date" value={form.dateOfBirth} onChange={e => setForm(f => ({ ...f, dateOfBirth: e.target.value }))} required />
             </div>
             <div className="form-group">
+              <label>Gender</label>
+              <select value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} required>
+                <option value="" disabled>Select your gender</option>
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+                <option value="NON_BINARY">Non-binary</option>
+                <option value="OTHER">Other</option>
+                <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Disability Status</label>
+              <select value={form.disabilityStatus} onChange={e => setForm(f => ({ ...f, disabilityStatus: e.target.value }))} required>
+                <option value="" disabled>Select disability status</option>
+                <option value="NOT_DISABLED">Not disabled</option>
+                <option value="DISABLED">Disabled</option>
+                <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+              </select>
+            </div>
+            <div className="form-group">
               <label>Phone Number</label>
               <input value={form.phoneNumber} onChange={e => setForm(f => ({ ...f, phoneNumber: e.target.value }))} required />
             </div>
@@ -252,6 +308,10 @@ export default function Profile() {
             <dd>{profile.placeOfBirth}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Date of Birth</dt>
             <dd>{new Date(profile.dateOfBirth).toLocaleDateString()}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Gender</dt>
+            <dd>{formatGender(profile.gender)}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disability Status</dt>
+            <dd>{formatDisabilityStatus(profile.disabilityStatus)}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Phone Number</dt>
             <dd>{profile.phoneNumber}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate #</dt>

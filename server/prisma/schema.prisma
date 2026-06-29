@@ -78,6 +78,20 @@ enum MembershipCardAverageMetric {
   DISCIPLINE_ALL_TIME
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum DisabilityStatus {
+  NOT_DISABLED
+  DISABLED
+  PREFER_NOT_TO_SAY
+}
+
 model User {
   id              String   @id @default(cuid())
   name            String
@@ -88,6 +102,8 @@ model User {
   address         String
   placeOfBirth    String
   dateOfBirth     DateTime
+  gender          Gender   @default(PREFER_NOT_TO_SAY)
+  disabilityStatus DisabilityStatus @default(PREFER_NOT_TO_SAY)
   firearmCertificateNumber String?
   firearmCertificateExpiry DateTime?
   shotgunCertificateNumber String?

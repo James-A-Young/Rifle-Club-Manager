@@ -79,6 +79,8 @@ export default function Register() {
     address: '',
     placeOfBirth: '',
     dateOfBirth: '',
+    gender: '',
+    disabilityStatus: '',
     phoneNumber: '',
     gdprConsent: false,
   });
@@ -277,6 +279,26 @@ export default function Register() {
           <div className="form-group">
             <label>Date of Birth</label>
             <input type="date" value={form.dateOfBirth} onChange={e => update('dateOfBirth', e.target.value)} required />
+          </div>
+          <div className="form-group">
+            <label>Gender</label>
+            <select value={form.gender} onChange={e => update('gender', e.target.value)} required>
+              <option value="" disabled>Select your gender</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="NON_BINARY">Non-binary</option>
+              <option value="OTHER">Other</option>
+              <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Disability Status</label>
+            <select value={form.disabilityStatus} onChange={e => update('disabilityStatus', e.target.value)} required>
+              <option value="" disabled>Select disability status</option>
+              <option value="NOT_DISABLED">Not disabled</option>
+              <option value="DISABLED">Disabled</option>
+              <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
+            </select>
           </div>
           <div className="form-group">
             <label>Phone Number</label>

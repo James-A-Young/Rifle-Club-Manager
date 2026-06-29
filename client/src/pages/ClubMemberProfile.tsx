@@ -9,11 +9,43 @@ const profileFieldLabel: Record<ProfileHistoryFieldChange['field'], string> = {
   address: 'Address',
   placeOfBirth: 'Place of Birth',
   dateOfBirth: 'Date of Birth',
+  gender: 'Gender',
+  disabilityStatus: 'Disability Status',
   firearmCertificateNumber: 'Firearm Certificate #',
   firearmCertificateExpiry: 'Firearm Certificate Expiry',
   shotgunCertificateNumber: 'Shotgun Certificate #',
   shotgunCertificateExpiry: 'Shotgun Certificate Expiry',
 };
+
+function formatGender(value?: string): string {
+  switch (value) {
+    case 'MALE':
+      return 'Male';
+    case 'FEMALE':
+      return 'Female';
+    case 'NON_BINARY':
+      return 'Non-binary';
+    case 'OTHER':
+      return 'Other';
+    case 'PREFER_NOT_TO_SAY':
+      return 'Prefer not to say';
+    default:
+      return 'N/A';
+  }
+}
+
+function formatDisabilityStatus(value?: string): string {
+  switch (value) {
+    case 'NOT_DISABLED':
+      return 'Not disabled';
+    case 'DISABLED':
+      return 'Disabled';
+    case 'PREFER_NOT_TO_SAY':
+      return 'Prefer not to say';
+    default:
+      return 'N/A';
+  }
+}
 
 function formatHistoryValue(value: string | null): string {
   if (!value) return 'N/A';
@@ -124,6 +156,14 @@ export default function ClubMemberProfile() {
                 <tr>
                   <th>Date of Birth</th>
                   <td>{member.user.dateOfBirth ? new Date(member.user.dateOfBirth).toLocaleDateString() : 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Gender</th>
+                  <td>{formatGender(member.user.gender)}</td>
+                </tr>
+                <tr>
+                  <th>Disability Status</th>
+                  <td>{formatDisabilityStatus(member.user.disabilityStatus)}</td>
                 </tr>
                 <tr>
                   <th>Firearm Certificate #</th>
