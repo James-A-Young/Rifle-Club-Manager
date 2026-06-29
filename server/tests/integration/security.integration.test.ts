@@ -341,6 +341,11 @@ describe('security: HttpOnly auth cookie', () => {
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
         phoneNumber: '07123456789',
+        emergencyContactName: 'Jane Doe',
+        emergencyContactPhone: '07123456780',
+        emergencyContactRelationship: 'Friend',
+        gender: 'Other',
+        disabilityStatus: 'None',
         inviteToken,
       });
 
