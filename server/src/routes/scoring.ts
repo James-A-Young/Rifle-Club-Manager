@@ -1417,6 +1417,13 @@ router.get('/clubs/:clubId/scoring/mine/history/export.csv', async (req: AuthReq
 
   const where = buildMemberHistoryWhere(clubId, userId, filters);
 
+  const MAX_EXPORT_ROWS = 5000;
+  const total = await prisma.score.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.status(400).json({ error: `Too many scores to export (${total}). Please narrow your filters.` });
+    return;
+  }
+
   const rows = await prisma.score.findMany({
     where,
     include: {
