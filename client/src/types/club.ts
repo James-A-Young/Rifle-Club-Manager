@@ -497,6 +497,26 @@ export interface RecentScore {
   scoredAt: string;
 }
 
+export interface MemberScoreHistoryRow {
+  scoreId: string;
+  competitionId: string;
+  competitionName: string;
+  discipline: string;
+  dateShot: string;
+  dateDue: string;
+  roundNumber: number;
+  cardNumber: number;
+  score: number;
+}
+
+export interface MemberScoreHistoryResponse {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  rows: MemberScoreHistoryRow[];
+}
+
 export interface PracticeCardRecord {
   id: string;
   userId: string;
