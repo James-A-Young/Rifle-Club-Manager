@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
-import { DueCard, RecentScore, ScoringAverages } from '../types/club';
+import { DueCard, MemberScoreHistoryResponse, MemberScoreHistoryRow, ScoringAverages } from '../types/club';
 import addToGWallet from '../assets/add_to_google_wallet.svg';
 import Section21RenewalPrompt from '../components/Section21RenewalPrompt';
 
@@ -39,7 +39,7 @@ export default function Dashboard() {
   // Scoring — keyed by clubId so stale cards are replaced on each load
   const [dueCardsByClub, setDueCardsByClub] = useState<Record<string, DueCard[]>>({});
   const [avgsByClub, setAvgsByClub] = useState<Record<string, ScoringAverages & { clubName: string }>>({});
-  const [recentScoresByClub, setRecentScoresByClub] = useState<Record<string, RecentScore[]>>({});
+  const [lastTenCardsByClub, setLastTenCardsByClub] = useState<Record<string, MemberScoreHistoryRow[]>>({});
 
   useEffect(() => {
     Promise.all([
@@ -67,8 +67,8 @@ export default function Dashboard() {
             })))
             .catch(() => { /* silently ignore */ });
 
-          api.get<RecentScore[]>(`/api/clubs/${club.id}/scoring/mine/recent`)
-            .then(scores => setRecentScoresByClub(prev => ({ ...prev, [club.id]: scores })))
+          api.get<MemberScoreHistoryResponse>(`/api/clubs/${club.id}/scoring/mine/history?page=1&pageSize=10`)
+            .then(history => setLastTenCardsByClub(prev => ({ ...prev, [club.id]: history.rows })))
             .catch(() => { /* silently ignore */ });
 
           api.get<MembershipPassStatusResponse>(`/api/users/me/membership-passes/${club.id}/status`)
@@ -145,12 +145,13 @@ export default function Dashboard() {
     .flat()
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
-  const recentScores = clubs
-    .flatMap(club => (recentScoresByClub[club.id] ?? []).map(score => ({
-      ...score,
+  const lastTenCards = clubs
+    .flatMap(club => (lastTenCardsByClub[club.id] ?? []).map(card => ({
+      ...card,
       clubName: club.name,
+      clubId: club.id,
     })))
-    .sort((a, b) => new Date(b.scoredAt).getTime() - new Date(a.scoredAt).getTime())
+    .sort((a, b) => new Date(b.dateShot).getTime() - new Date(a.dateShot).getTime())
     .slice(0, 10);
 
   if (loading) return <div>Loading…</div>;
@@ -201,7 +202,7 @@ export default function Dashboard() {
 
       {sortedDueCards.length > 0 && (
         <section>
-          <h2>Upcoming Score Cards</h2>
+          <h2>Upcoming Card Deadlines</h2>
           <table>
             <thead>
               <tr>
@@ -235,23 +236,35 @@ export default function Dashboard() {
         </section>
       )}
 
-      {recentScores.length > 0 && (
+      {lastTenCards.length > 0 && (
         <section>
-          <h2>Recent Scores</h2>
+          <div className="page-header">
+            <h2>Last 10 Cards</h2>
+          </div>
           <table>
             <thead>
               <tr>
                 <th>Club</th>
                 <th>Competition</th>
+                <th>Date Shot</th>
+                <th>Date Due</th>
                 <th>Score</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {recentScores.map(row => (
+              {lastTenCards.map(row => (
                 <tr key={row.scoreId}>
                   <td>{row.clubName}</td>
                   <td>{row.competitionName}</td>
+                  <td>{new Date(row.dateShot).toLocaleDateString()}</td>
+                  <td>{new Date(row.dateDue).toLocaleDateString()}</td>
                   <td>{row.score}</td>
+                  <td>
+                    <Link to={`/clubs/${row.clubId}/my-scores`} className="btn btn-secondary btn-sm">
+                      Search & Export
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

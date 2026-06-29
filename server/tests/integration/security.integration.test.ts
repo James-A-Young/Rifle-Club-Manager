@@ -341,9 +341,14 @@ describe('security: HttpOnly auth cookie', () => {
         placeOfBirth: 'Leeds',
         dateOfBirth: '1990-01-01',
         phoneNumber: '07123456789',
+        emergencyContactName: 'Jane Doe',
+        emergencyContactPhoneNumber: '07123456780',
+        emergencyContactRelation: 'Friend',
+        gender: 'OTHER',
+        disabilityStatus: 'NOT_DISABLED',
         inviteToken,
       });
-
+    
     expect(res.status).toBe(201);
 
     const setCookieHeader = res.headers['set-cookie'] as string | string[];

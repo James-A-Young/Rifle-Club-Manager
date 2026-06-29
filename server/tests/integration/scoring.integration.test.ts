@@ -972,6 +972,215 @@ describe('member averages', () => {
   });
 });
 
+describe('member score history', () => {
+  it('returns paginated own scores sorted by date shot desc', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'History Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'History Comp',
+        discipline: 'Air Rifle',
+        roundCount: 1,
+        cardsPerRound: 3,
+        rounds: [{ dueDate: '2026-08-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const stubs = await prisma.score.findMany({
+      where: { competitionId: comp.id, userId: member.id },
+      orderBy: { cardNumber: 'asc' },
+    });
+
+    for (let i = 0; i < stubs.length; i++) {
+      await request(app)
+        .patch(`/api/clubs/${club.id}/scoring/scores/${stubs[i].id}`)
+        .set(authHeader(admin))
+        .send({ score: 90 + i });
+    }
+
+    const historyRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/history?page=1&pageSize=2`)
+      .set(authHeader(member));
+
+    expect(historyRes.status).toBe(200);
+    expect(historyRes.body.total).toBe(3);
+    expect(historyRes.body.totalPages).toBe(2);
+    expect(historyRes.body.rows).toHaveLength(2);
+    expect(historyRes.body.rows[0].score).toBe(92);
+    expect(historyRes.body.rows[0].competitionName).toBe('History Comp');
+    expect(historyRes.body.rows[0].discipline).toBe('Air Rifle');
+    expect(historyRes.body.rows[0].dateDue).toBeTruthy();
+  });
+
+  it('applies competition, discipline, date, and score filters', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'History Filter Season' });
+
+    const { body: firstComp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Winter League',
+        discipline: 'Air Rifle',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2026-01-01' }],
+      });
+
+    const { body: secondComp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Summer League',
+        discipline: 'Benchrest',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2026-02-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${firstComp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${secondComp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const firstStub = await prisma.score.findFirst({
+      where: { competitionId: firstComp.id, userId: member.id },
+    });
+    const secondStub = await prisma.score.findFirst({
+      where: { competitionId: secondComp.id, userId: member.id },
+    });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${firstStub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 88 });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${secondStub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 72 });
+
+    const firstScore = await prisma.score.findUniqueOrThrow({ where: { id: firstStub!.id } });
+    const shotFrom = new Date(firstScore.updatedAt.getTime() - 60_000).toISOString();
+    const shotTo = new Date(firstScore.updatedAt.getTime() + 60_000).toISOString();
+
+    const filteredRes = await request(app)
+      .get(
+        `/api/clubs/${club.id}/scoring/mine/history?`
+        + `q=Winter&discipline=Air%20Rifle&minScore=85&maxScore=90&`
+        + `dueFrom=2025-12-31T00:00:00.000Z&dueTo=2026-01-15T00:00:00.000Z&`
+        + `shotFrom=${encodeURIComponent(shotFrom)}&shotTo=${encodeURIComponent(shotTo)}`,
+      )
+      .set(authHeader(member));
+
+    expect(filteredRes.status).toBe(200);
+    expect(filteredRes.body.total).toBe(1);
+    expect(filteredRes.body.rows).toHaveLength(1);
+    expect(filteredRes.body.rows[0].competitionName).toBe('Winter League');
+
+    const invalidRangeRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/history?minScore=90&maxScore=10`)
+      .set(authHeader(member));
+
+    expect(invalidRangeRes.status).toBe(400);
+  });
+
+  it('exports filtered CSV for the member only', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+    const otherMember = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'History CSV Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'CSV Comp',
+        discipline: 'Air Rifle',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2026-03-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id, otherMember.id] });
+
+    const memberStub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
+    const otherStub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: otherMember.id } });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${memberStub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 77 });
+
+    await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${otherStub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 55 });
+
+    const csvRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/history/export.csv?q=CSV&minScore=70`)
+      .set(authHeader(member));
+
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.headers['content-type']).toContain('text/csv');
+    expect(csvRes.headers['content-disposition']).toContain('my-score-history.csv');
+    expect(csvRes.text).toContain('"Competition","Discipline","Date Shot","Date Due","Round","Card","Score"');
+    expect(csvRes.text).toContain('"CSV Comp"');
+    expect(csvRes.text).toContain('"77"');
+    expect(csvRes.text).not.toContain('"55"');
+  });
+
+  it('requires approved club membership', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const outsider = await createUser({ email: `${unique('outsider')}@test.com` });
+
+    const historyRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/history`)
+      .set(authHeader(outsider));
+
+    expect(historyRes.status).toBe(403);
+
+    const exportRes = await request(app)
+      .get(`/api/clubs/${club.id}/scoring/mine/history/export.csv`)
+      .set(authHeader(outsider));
+
+    expect(exportRes.status).toBe(403);
+  });
+});
+
 describe('practice cards', () => {
   it('admin can log and list recent practice cards', async () => {
     const { admin, club } = await createClubWithAdmin();

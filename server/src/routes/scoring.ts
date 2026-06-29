@@ -89,6 +89,19 @@ const listPracticeScoresQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 
+const listMemberHistoryQuerySchema = z.object({
+  q: z.string().trim().optional(),
+  discipline: z.string().trim().optional(),
+  shotFrom: z.string().datetime().optional(),
+  shotTo: z.string().datetime().optional(),
+  dueFrom: z.string().datetime().optional(),
+  dueTo: z.string().datetime().optional(),
+  minScore: z.coerce.number().int().min(0).max(10000).optional(),
+  maxScore: z.coerce.number().int().min(0).max(10000).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
 type ScoreSample = {
   score: number;
   scoredAt: Date;
@@ -158,6 +171,44 @@ function calculateScoreStats(samples: ScoreSample[]): ScoreStats {
     allTimeAverage: Math.round(allTimeAvg * 100) / 100,
     last10Average: Math.round(last10Avg * 100) / 100,
     bestScore: Math.max(...values),
+  };
+}
+
+function buildMemberHistoryWhere(
+  clubId: string,
+  userId: string,
+  filters: z.infer<typeof listMemberHistoryQuerySchema>,
+): Prisma.ScoreWhereInput {
+  const scoreFilter: Prisma.IntNullableFilter = { not: null };
+  if (typeof filters.minScore === 'number') {
+    scoreFilter.gte = filters.minScore;
+  }
+  if (typeof filters.maxScore === 'number') {
+    scoreFilter.lte = filters.maxScore;
+  }
+
+  const dueDateFilter: Prisma.DateTimeFilter = {};
+  if (filters.dueFrom) dueDateFilter.gte = new Date(filters.dueFrom);
+  if (filters.dueTo) dueDateFilter.lte = new Date(filters.dueTo);
+
+  const updatedAtFilter: Prisma.DateTimeFilter = {};
+  if (filters.shotFrom) updatedAtFilter.gte = new Date(filters.shotFrom);
+  if (filters.shotTo) updatedAtFilter.lte = new Date(filters.shotTo);
+
+  const competitionWhere: Prisma.CompetitionWhereInput = { clubId };
+  if (filters.q) {
+    competitionWhere.name = { contains: filters.q, mode: 'insensitive' };
+  }
+  if (filters.discipline) {
+    competitionWhere.discipline = { equals: normalizeDisciplineLabel(filters.discipline), mode: 'insensitive' };
+  }
+
+  return {
+    userId,
+    score: scoreFilter,
+    competition: competitionWhere,
+    ...(Object.keys(updatedAtFilter).length > 0 ? { updatedAt: updatedAtFilter } : {}),
+    ...(Object.keys(dueDateFilter).length > 0 ? { round: { dueDate: dueDateFilter } } : {}),
   };
 }
 
@@ -1279,6 +1330,128 @@ router.get('/clubs/:clubId/scoring/mine/averages', async (req: AuthRequest, res:
     practiceLast10Average: practiceStats.last10Average,
     byDiscipline,
   });
+});
+
+router.get('/clubs/:clubId/scoring/mine/history', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const userId = req.user!.id;
+
+  const isMember = await ensureMemberOfClub(userId, clubId);
+  if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const parsed = listMemberHistoryQuerySchema.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  const filters = parsed.data;
+  if (
+    typeof filters.minScore === 'number'
+    && typeof filters.maxScore === 'number'
+    && filters.minScore > filters.maxScore
+  ) {
+    res.status(400).json({ error: 'minScore cannot be greater than maxScore' });
+    return;
+  }
+
+  const page = filters.page ?? 1;
+  const pageSize = filters.pageSize ?? 25;
+  const where = buildMemberHistoryWhere(clubId, userId, filters);
+
+  const [total, rows] = await Promise.all([
+    prisma.score.count({ where }),
+    prisma.score.findMany({
+      where,
+      include: {
+        competition: {
+          select: { id: true, name: true, discipline: true },
+        },
+        round: {
+          select: { roundNumber: true, dueDate: true },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+
+  res.json({
+    page,
+    pageSize,
+    total,
+    totalPages,
+    rows: rows.map(s => ({
+      scoreId: s.id,
+      competitionId: s.competitionId,
+      competitionName: s.competition.name,
+      discipline: s.competition.discipline,
+      dateShot: s.updatedAt,
+      dateDue: s.round.dueDate,
+      roundNumber: s.round.roundNumber,
+      cardNumber: s.cardNumber,
+      score: s.score,
+    })),
+  });
+});
+
+router.get('/clubs/:clubId/scoring/mine/history/export.csv', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const userId = req.user!.id;
+
+  const isMember = await ensureMemberOfClub(userId, clubId);
+  if (!isMember) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const parsed = listMemberHistoryQuerySchema.safeParse(req.query);
+  if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  const filters = parsed.data;
+  if (
+    typeof filters.minScore === 'number'
+    && typeof filters.maxScore === 'number'
+    && filters.minScore > filters.maxScore
+  ) {
+    res.status(400).json({ error: 'minScore cannot be greater than maxScore' });
+    return;
+  }
+
+  const where = buildMemberHistoryWhere(clubId, userId, filters);
+
+  const MAX_EXPORT_ROWS = 5000;
+  const total = await prisma.score.count({ where });
+  if (total > MAX_EXPORT_ROWS) {
+    res.status(400).json({ error: `Too many scores to export (${total}). Please narrow your filters.` });
+    return;
+  }
+
+  const rows = await prisma.score.findMany({
+    where,
+    include: {
+      competition: {
+        select: { name: true, discipline: true },
+      },
+      round: {
+        select: { roundNumber: true, dueDate: true },
+      },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+  });
+
+  const headers = ['Competition', 'Discipline', 'Date Shot', 'Date Due', 'Round', 'Card', 'Score'];
+  const csvRows = rows.map(row => [
+    escapeCsvCell(row.competition.name),
+    escapeCsvCell(row.competition.discipline),
+    escapeCsvCell(row.updatedAt.toISOString()),
+    escapeCsvCell(row.round.dueDate.toISOString()),
+    escapeCsvCell(row.round.roundNumber),
+    escapeCsvCell(row.cardNumber),
+    escapeCsvCell(row.score ?? ''),
+  ].join(','));
+
+  const csv = [headers.map(h => escapeCsvCell(h)).join(','), ...csvRows].join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="my-score-history.csv"');
+  res.send(csv);
 });
 
 router.get('/clubs/:clubId/scoring/mine/recent', async (req: AuthRequest, res: Response) => {

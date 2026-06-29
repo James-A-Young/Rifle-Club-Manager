@@ -23,6 +23,7 @@ import InviteAccept from './pages/InviteAccept';
 import SignIn from './pages/SignIn';
 import KioskSignIn from './pages/KioskSignIn';
 import Profile from './pages/Profile';
+import MyScores from './pages/MyScores';
 import ClubPublicProfile from './pages/ClubPublicProfile';
 import ClubPublicBlogPostPage from './pages/ClubPublicBlogPost';
 import Section21DeclarationSignUp from './pages/Section21DeclarationSignUp';
@@ -183,6 +184,7 @@ function AppRoutes() {
           <Route path="/clubs/:id/ammunition-history" element={<ProtectedRoute><AmmunitionHistory /></ProtectedRoute>} />
           <Route path="/clubs/:id/cashbox" element={<ProtectedRoute><Cashbox /></ProtectedRoute>} />
           <Route path="/clubs/:id/scores-report" element={<ProtectedRoute><ScoresReport /></ProtectedRoute>} />
+          <Route path="/clubs/:id/my-scores" element={<ProtectedRoute><MyScores /></ProtectedRoute>} />
           <Route path="/clubs/:id/members/:userId" element={<ProtectedRoute><ClubMemberProfile /></ProtectedRoute>} />
           <Route path="/invites/:token/accept" element={<ProtectedRoute><InviteAccept /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
