@@ -348,7 +348,7 @@ describe('security: HttpOnly auth cookie', () => {
         disabilityStatus: 'NOT_DISABLED',
         inviteToken,
       });
-
+    console.log('Registration response:', res.body);
     expect(res.status).toBe(201);
 
     const setCookieHeader = res.headers['set-cookie'] as string | string[];
