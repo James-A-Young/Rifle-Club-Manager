@@ -39,6 +39,13 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       dateOfBirth: true,
       gender: true,
       disabilityStatus: true,
+      guardianDeclarationAccepted: true,
+      guardianFullName: true,
+      guardianPhoneNumber: true,
+      guardianDeclarationAt: true,
+      emergencyContactName: true,
+      emergencyContactRelation: true,
+      emergencyContactPhoneNumber: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -75,6 +82,12 @@ const updateSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.nativeEnum(Gender).optional(),
   disabilityStatus: z.nativeEnum(DisabilityStatus).optional(),
+  guardianDeclarationAccepted: z.boolean().optional(),
+  guardianFullName: z.string().optional().nullable(),
+  guardianPhoneNumber: z.string().optional().nullable(),
+  emergencyContactName: z.string().optional().nullable(),
+  emergencyContactRelation: z.string().optional().nullable(),
+  emergencyContactPhoneNumber: z.string().optional().nullable(),
   phoneNumber: z.string().min(1).optional(),
   firearmCertificateNumber: z.string().optional().nullable(),
   firearmCertificateExpiry: z.string().optional().nullable(),
@@ -99,6 +112,16 @@ function parseOptionalDate(value: string | null | undefined, field: string): Dat
     throw new Error(`Invalid ${field}`);
   }
   return parsed;
+}
+
+function isUnder18(dateOfBirth: Date): boolean {
+  const now = new Date();
+  let age = now.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - dateOfBirth.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < dateOfBirth.getUTCDate())) {
+    age -= 1;
+  }
+  return age < 18;
 }
 
 type ScoreSample = {
@@ -166,6 +189,12 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
     dateOfBirth,
     gender,
     disabilityStatus,
+    guardianDeclarationAccepted,
+    guardianFullName,
+    guardianPhoneNumber,
+    emergencyContactName,
+    emergencyContactRelation,
+    emergencyContactPhoneNumber,
     firearmCertificateNumber,
     shotgunCertificateNumber,
   } = parsed.data;
@@ -179,6 +208,13 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       dateOfBirth: true,
       gender: true,
       disabilityStatus: true,
+      guardianDeclarationAccepted: true,
+      guardianFullName: true,
+      guardianPhoneNumber: true,
+      guardianDeclarationAt: true,
+      emergencyContactName: true,
+      emergencyContactRelation: true,
+      emergencyContactPhoneNumber: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -191,6 +227,40 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
     return;
   }
 
+  const nextDateOfBirth = dateOfBirth ? new Date(dateOfBirth) : existingUser.dateOfBirth;
+  if (Number.isNaN(nextDateOfBirth.getTime())) {
+    res.status(400).json({ error: 'Invalid date of birth' });
+    return;
+  }
+
+  const nextGuardianDeclarationAccepted =
+    ('guardianDeclarationAccepted' in parsed.data)
+      ? guardianDeclarationAccepted === true
+      : existingUser.guardianDeclarationAccepted;
+  const nextGuardianFullName =
+    ('guardianFullName' in parsed.data)
+      ? normalizeOptionalText(guardianFullName)
+      : existingUser.guardianFullName;
+  const nextGuardianPhoneNumber =
+    ('guardianPhoneNumber' in parsed.data)
+      ? normalizeOptionalText(guardianPhoneNumber)
+      : existingUser.guardianPhoneNumber;
+
+  if (isUnder18(nextDateOfBirth)) {
+    if (!nextGuardianDeclarationAccepted) {
+      res.status(400).json({ error: 'Parent or guardian declaration is required for members under 18' });
+      return;
+    }
+    if (!nextGuardianFullName) {
+      res.status(400).json({ error: 'Parent or guardian full name is required for members under 18' });
+      return;
+    }
+    if (!nextGuardianPhoneNumber) {
+      res.status(400).json({ error: 'Parent or guardian phone number is required for members under 18' });
+      return;
+    }
+  }
+
   const user = await prisma.user.update({
     where: { id: req.user!.id },
     data: {
@@ -200,6 +270,27 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       ...(dateOfBirth ? { dateOfBirth: new Date(dateOfBirth) } : {}),
       ...(('gender' in parsed.data) ? { gender } : {}),
       ...(('disabilityStatus' in parsed.data) ? { disabilityStatus } : {}),
+      ...(('guardianDeclarationAccepted' in parsed.data)
+        ? {
+          guardianDeclarationAccepted: guardianDeclarationAccepted === true,
+          guardianDeclarationAt: guardianDeclarationAccepted === true ? new Date() : null,
+        }
+        : {}),
+      ...(('guardianFullName' in parsed.data)
+        ? { guardianFullName: normalizeOptionalText(guardianFullName) }
+        : {}),
+      ...(('guardianPhoneNumber' in parsed.data)
+        ? { guardianPhoneNumber: normalizeOptionalText(guardianPhoneNumber) }
+        : {}),
+      ...(('emergencyContactName' in parsed.data)
+        ? { emergencyContactName: normalizeOptionalText(emergencyContactName) }
+        : {}),
+      ...(('emergencyContactRelation' in parsed.data)
+        ? { emergencyContactRelation: normalizeOptionalText(emergencyContactRelation) }
+        : {}),
+      ...(('emergencyContactPhoneNumber' in parsed.data)
+        ? { emergencyContactPhoneNumber: normalizeOptionalText(emergencyContactPhoneNumber) }
+        : {}),
       ...(('phoneNumber' in parsed.data) ? { phoneNumber: parsed.data.phoneNumber } : {}),
       ...(('firearmCertificateNumber' in parsed.data)
         ? { firearmCertificateNumber: normalizeOptionalText(firearmCertificateNumber) }
@@ -223,6 +314,13 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       dateOfBirth: true,
       gender: true,
       disabilityStatus: true,
+      guardianDeclarationAccepted: true,
+      guardianFullName: true,
+      guardianPhoneNumber: true,
+      guardianDeclarationAt: true,
+      emergencyContactName: true,
+      emergencyContactRelation: true,
+      emergencyContactPhoneNumber: true,
       phoneNumber: true,
       firearmCertificateNumber: true,
       firearmCertificateExpiry: true,
@@ -243,6 +341,12 @@ router.patch('/me', requireAuth, async (req: AuthRequest, res: Response) => {
       dateOfBirth: user.dateOfBirth,
       gender: user.gender,
       disabilityStatus: user.disabilityStatus,
+      guardianDeclarationAccepted: user.guardianDeclarationAccepted,
+      guardianFullName: user.guardianFullName,
+      guardianPhoneNumber: user.guardianPhoneNumber,
+      emergencyContactName: user.emergencyContactName,
+      emergencyContactRelation: user.emergencyContactRelation,
+      emergencyContactPhoneNumber: user.emergencyContactPhoneNumber,
       firearmCertificateNumber: user.firearmCertificateNumber,
       firearmCertificateExpiry: user.firearmCertificateExpiry,
       shotgunCertificateNumber: user.shotgunCertificateNumber,

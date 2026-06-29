@@ -8,6 +8,12 @@ export type TrackedProfile = {
   dateOfBirth: Date;
   gender: string;
   disabilityStatus: string;
+  guardianDeclarationAccepted: boolean;
+  guardianFullName: string | null;
+  guardianPhoneNumber: string | null;
+  emergencyContactName: string | null;
+  emergencyContactRelation: string | null;
+  emergencyContactPhoneNumber: string | null;
   firearmCertificateNumber: string | null;
   firearmCertificateExpiry: Date | null;
   shotgunCertificateNumber: string | null;
@@ -34,22 +40,31 @@ const TRACKED_FIELDS: Array<keyof TrackedProfile> = [
   'dateOfBirth',
   'gender',
   'disabilityStatus',
+  'guardianDeclarationAccepted',
+  'guardianFullName',
+  'guardianPhoneNumber',
+  'emergencyContactName',
+  'emergencyContactRelation',
+  'emergencyContactPhoneNumber',
   'firearmCertificateNumber',
   'firearmCertificateExpiry',
   'shotgunCertificateNumber',
   'shotgunCertificateExpiry',
 ];
 
-function normalizeValue(value: string | Date | null): string | null {
+function normalizeValue(value: string | Date | boolean | null): string | null {
   if (value instanceof Date) {
     return value.toISOString();
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
   }
   return value;
 }
 
 function isEqual(
-  left: string | Date | null,
-  right: string | Date | null,
+  left: string | Date | boolean | null,
+  right: string | Date | boolean | null,
 ): boolean {
   if (left instanceof Date && right instanceof Date) {
     return left.getTime() === right.getTime();

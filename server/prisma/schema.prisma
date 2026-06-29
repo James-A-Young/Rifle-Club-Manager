@@ -104,6 +104,13 @@ model User {
   dateOfBirth     DateTime
   gender          Gender   @default(PREFER_NOT_TO_SAY)
   disabilityStatus DisabilityStatus @default(PREFER_NOT_TO_SAY)
+  guardianDeclarationAccepted Boolean @default(false)
+  guardianFullName String?
+  guardianPhoneNumber String?
+  guardianDeclarationAt DateTime?
+  emergencyContactName String?
+  emergencyContactRelation String?
+  emergencyContactPhoneNumber String?
   firearmCertificateNumber String?
   firearmCertificateExpiry DateTime?
   shotgunCertificateNumber String?

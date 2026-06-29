@@ -118,6 +118,13 @@ export interface MemberUser {
   dateOfBirth?: string;
   gender?: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'OTHER' | 'PREFER_NOT_TO_SAY';
   disabilityStatus?: 'NOT_DISABLED' | 'DISABLED' | 'PREFER_NOT_TO_SAY';
+  guardianDeclarationAccepted?: boolean;
+  guardianFullName?: string | null;
+  guardianPhoneNumber?: string | null;
+  guardianDeclarationAt?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactRelation?: string | null;
+  emergencyContactPhoneNumber?: string | null;
   phoneNumber?: string;
   firearmCertificateNumber?: string | null;
   firearmCertificateExpiry?: string | null;
@@ -364,6 +371,12 @@ export interface ProfileHistoryFieldChange {
     | 'dateOfBirth'
     | 'gender'
     | 'disabilityStatus'
+    | 'guardianDeclarationAccepted'
+    | 'guardianFullName'
+    | 'guardianPhoneNumber'
+    | 'emergencyContactName'
+    | 'emergencyContactRelation'
+    | 'emergencyContactPhoneNumber'
     | 'firearmCertificateNumber'
     | 'firearmCertificateExpiry'
     | 'shotgunCertificateNumber'

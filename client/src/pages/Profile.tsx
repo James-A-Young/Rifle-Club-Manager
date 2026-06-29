@@ -16,6 +16,13 @@ interface UserProfile {
   dateOfBirth: string;
   gender: 'MALE' | 'FEMALE' | 'NON_BINARY' | 'OTHER' | 'PREFER_NOT_TO_SAY';
   disabilityStatus: 'NOT_DISABLED' | 'DISABLED' | 'PREFER_NOT_TO_SAY';
+  guardianDeclarationAccepted: boolean;
+  guardianFullName?: string | null;
+  guardianPhoneNumber?: string | null;
+  guardianDeclarationAt?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactRelation?: string | null;
+  emergencyContactPhoneNumber?: string | null;
   phoneNumber: string;
   twoFactorEnabled?: boolean;
   firearmCertificateNumber?: string | null;
@@ -24,6 +31,23 @@ interface UserProfile {
   shotgunCertificateExpiry?: string | null;
   section21Status?: 'SIGNED' | 'EXPIRED' | 'PENDING_RENEWAL' | 'NOT_DECLARED';
   section21DeclarationSignedAt?: string | null;
+}
+
+function isUnder18(dateOfBirth: string): boolean {
+  if (!dateOfBirth) {
+    return false;
+  }
+  const parsed = new Date(dateOfBirth);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  const now = new Date();
+  let age = now.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - parsed.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < parsed.getUTCDate())) {
+    age -= 1;
+  }
+  return age < 18;
 }
 
 function formatGender(value: UserProfile['gender'] | undefined): string {
@@ -79,6 +103,12 @@ export default function Profile() {
     dateOfBirth: '',
     gender: '',
     disabilityStatus: '',
+    guardianDeclarationAccepted: false,
+    guardianFullName: '',
+    guardianPhoneNumber: '',
+    emergencyContactName: '',
+    emergencyContactRelation: '',
+    emergencyContactPhoneNumber: '',
     phoneNumber: '',
     firearmCertificateNumber: '',
     firearmCertificateExpiry: '',
@@ -98,6 +128,12 @@ export default function Profile() {
         dateOfBirth: p.dateOfBirth.split('T')[0],
         gender: p.gender,
         disabilityStatus: p.disabilityStatus,
+        guardianDeclarationAccepted: p.guardianDeclarationAccepted,
+        guardianFullName: p.guardianFullName ?? '',
+        guardianPhoneNumber: p.guardianPhoneNumber ?? '',
+        emergencyContactName: p.emergencyContactName ?? '',
+        emergencyContactRelation: p.emergencyContactRelation ?? '',
+        emergencyContactPhoneNumber: p.emergencyContactPhoneNumber ?? '',
         phoneNumber: p.phoneNumber,
         firearmCertificateNumber: p.firearmCertificateNumber ?? '',
         firearmCertificateExpiry: p.firearmCertificateExpiry ? p.firearmCertificateExpiry.split('T')[0] : '',
@@ -113,6 +149,36 @@ export default function Profile() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    const requiresGuardianDeclaration = isUnder18(form.dateOfBirth);
+
+    if (requiresGuardianDeclaration) {
+      if (!form.guardianDeclarationAccepted) {
+        setError('For members under 18, a parent or guardian must declare permission to shoot and use the system.');
+        return;
+      }
+      if (!form.guardianFullName.trim()) {
+        setError('For members under 18, parent or guardian full name is required.');
+        return;
+      }
+      if (!form.guardianPhoneNumber.trim()) {
+        setError('For members under 18, parent or guardian phone number is required.');
+        return;
+      }
+    }
+
+    if (!form.emergencyContactName.trim()) {
+      setError('Emergency contact name is required.');
+      return;
+    }
+    if (!form.emergencyContactRelation.trim()) {
+      setError('Emergency contact relation is required.');
+      return;
+    }
+    if (!form.emergencyContactPhoneNumber.trim()) {
+      setError('Emergency contact phone number is required.');
+      return;
+    }
+
     try {
       const updated = await api.patch<UserProfile>('/api/users/me', form);
       setProfile(updated);
@@ -258,9 +324,70 @@ export default function Profile() {
                 <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
               </select>
             </div>
+            {isUnder18(form.dateOfBirth) && (
+              <>
+                <div className="form-group">
+                  <label>Parent or Guardian Full Name</label>
+                  <input
+                    value={form.guardianFullName}
+                    onChange={e => setForm(f => ({ ...f, guardianFullName: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Parent or Guardian Phone Number</label>
+                  <input
+                    type="tel"
+                    value={form.guardianPhoneNumber}
+                    onChange={e => setForm(f => ({ ...f, guardianPhoneNumber: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <div className="checkbox-group">
+                    <input
+                      type="checkbox"
+                      id="profile-guardian-permission"
+                      checked={form.guardianDeclarationAccepted}
+                      onChange={e => setForm(f => ({ ...f, guardianDeclarationAccepted: e.target.checked }))}
+                      required
+                    />
+                    <label htmlFor="profile-guardian-permission">
+                      Parent or legal guardian declaration: permission is granted for this member to shoot and use the system.
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
             <div className="form-group">
               <label>Phone Number</label>
               <input value={form.phoneNumber} onChange={e => setForm(f => ({ ...f, phoneNumber: e.target.value }))} required />
+            </div>
+            <h3 style={{ fontSize: '1rem', margin: '1rem 0 0.75rem' }}>Emergency Contact</h3>
+            <div className="form-group">
+              <label>Emergency Contact Name</label>
+              <input
+                value={form.emergencyContactName}
+                onChange={e => setForm(f => ({ ...f, emergencyContactName: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Relation</label>
+              <input
+                value={form.emergencyContactRelation}
+                onChange={e => setForm(f => ({ ...f, emergencyContactRelation: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Emergency Contact Phone Number</label>
+              <input
+                type="tel"
+                value={form.emergencyContactPhoneNumber}
+                onChange={e => setForm(f => ({ ...f, emergencyContactPhoneNumber: e.target.value }))}
+                required
+              />
             </div>
             <div className="form-group">
               <label>Firearm Certificate Number</label>
@@ -312,8 +439,24 @@ export default function Profile() {
             <dd>{formatGender(profile.gender)}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Disability Status</dt>
             <dd>{formatDisabilityStatus(profile.disabilityStatus)}</dd>
+            {isUnder18(profile.dateOfBirth) && (
+              <>
+                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Guardian Declaration</dt>
+                <dd>{profile.guardianDeclarationAccepted ? 'Accepted' : 'Not provided'}</dd>
+                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Parent or Guardian Name</dt>
+                <dd>{profile.guardianFullName ?? 'N/A'}</dd>
+                <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Parent or Guardian Phone</dt>
+                <dd>{profile.guardianPhoneNumber ?? 'N/A'}</dd>
+              </>
+            )}
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Phone Number</dt>
             <dd>{profile.phoneNumber}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Emergency Contact Name</dt>
+            <dd>{profile.emergencyContactName ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Emergency Contact Relation</dt>
+            <dd>{profile.emergencyContactRelation ?? 'N/A'}</dd>
+            <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Emergency Contact Phone</dt>
+            <dd>{profile.emergencyContactPhoneNumber ?? 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate #</dt>
             <dd>{profile.firearmCertificateNumber ?? 'N/A'}</dd>
             <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Firearm Certificate Expiry</dt>

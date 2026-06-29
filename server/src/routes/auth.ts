@@ -45,6 +45,32 @@ class ResetTokenStateError extends Error {
   }
 }
 
+function parseDateOfBirth(value: string): Date | null {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
+function isUnder18(dateOfBirth: Date): boolean {
+  const now = new Date();
+  let age = now.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - dateOfBirth.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < dateOfBirth.getUTCDate())) {
+    age -= 1;
+  }
+  return age < 18;
+}
+
+function normalizeOptionalText(value: string | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
@@ -55,10 +81,50 @@ const registerSchema = z.object({
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   gender: z.nativeEnum(Gender),
   disabilityStatus: z.nativeEnum(DisabilityStatus),
+  guardianDeclarationAccepted: z.boolean().optional(),
+  guardianFullName: z.string().min(2).optional(),
+  guardianPhoneNumber: z.string().min(5).optional(),
+  emergencyContactName: z.string().trim().min(2),
+  emergencyContactRelation: z.string().trim().min(2),
+  emergencyContactPhoneNumber: z.string().trim().min(5),
   phoneNumber: z.string().min(1),
   inviteToken: z.string().min(1),
   turnstileToken: z.string().min(1).optional(),
 }).superRefine((data, ctx) => {
+  const parsedDateOfBirth = parseDateOfBirth(data.dateOfBirth);
+  if (!parsedDateOfBirth) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dateOfBirth'],
+      message: 'Invalid date of birth',
+    });
+    return;
+  }
+
+  if (isUnder18(parsedDateOfBirth)) {
+    if (data.guardianDeclarationAccepted !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianDeclarationAccepted'],
+        message: 'Parent or guardian declaration is required for members under 18',
+      });
+    }
+    if (!normalizeOptionalText(data.guardianFullName)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianFullName'],
+        message: 'Parent or guardian full name is required for members under 18',
+      });
+    }
+    if (!normalizeOptionalText(data.guardianPhoneNumber)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianPhoneNumber'],
+        message: 'Parent or guardian phone number is required for members under 18',
+      });
+    }
+  }
+
   if (isTurnstileEnabled() && !data.turnstileToken) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -110,8 +176,48 @@ const bootstrapSchema = z.object({
   dateOfBirth: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
   gender: z.nativeEnum(Gender),
   disabilityStatus: z.nativeEnum(DisabilityStatus),
+  guardianDeclarationAccepted: z.boolean().optional(),
+  guardianFullName: z.string().min(2).optional(),
+  guardianPhoneNumber: z.string().min(5).optional(),
+  emergencyContactName: z.string().trim().min(2),
+  emergencyContactRelation: z.string().trim().min(2),
+  emergencyContactPhoneNumber: z.string().trim().min(5),
   phoneNumber: z.string().min(1),
   clubName: z.string().min(2),
+}).superRefine((data, ctx) => {
+  const parsedDateOfBirth = parseDateOfBirth(data.dateOfBirth);
+  if (!parsedDateOfBirth) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dateOfBirth'],
+      message: 'Invalid date of birth',
+    });
+    return;
+  }
+
+  if (isUnder18(parsedDateOfBirth)) {
+    if (data.guardianDeclarationAccepted !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianDeclarationAccepted'],
+        message: 'Parent or guardian declaration is required for members under 18',
+      });
+    }
+    if (!normalizeOptionalText(data.guardianFullName)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianFullName'],
+        message: 'Parent or guardian full name is required for members under 18',
+      });
+    }
+    if (!normalizeOptionalText(data.guardianPhoneNumber)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['guardianPhoneNumber'],
+        message: 'Parent or guardian phone number is required for members under 18',
+      });
+    }
+  }
 });
 
 type AccessJwtPayload = {
@@ -247,8 +353,24 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
   }
 
   const {
-    name, email, password, address, placeOfBirth, dateOfBirth, gender, disabilityStatus, phoneNumber, clubName,
+    name,
+    email,
+    password,
+    address,
+    placeOfBirth,
+    dateOfBirth,
+    gender,
+    disabilityStatus,
+    guardianDeclarationAccepted,
+    guardianFullName,
+    guardianPhoneNumber,
+    emergencyContactName,
+    emergencyContactRelation,
+    emergencyContactPhoneNumber,
+    phoneNumber,
+    clubName,
   } = parsed.data;
+  const isMinor = isUnder18(new Date(dateOfBirth));
 
   const passwordValidation = await validatePasswordSecurity(password);
   if (!passwordValidation.isValid) {
@@ -279,6 +401,13 @@ router.post('/bootstrap', async (req: Request, res: Response) => {
           dateOfBirth: new Date(dateOfBirth),
           gender,
           disabilityStatus,
+          guardianDeclarationAccepted: isMinor ? guardianDeclarationAccepted === true : false,
+          guardianFullName: isMinor ? normalizeOptionalText(guardianFullName) : null,
+          guardianPhoneNumber: isMinor ? normalizeOptionalText(guardianPhoneNumber) : null,
+          guardianDeclarationAt: isMinor && guardianDeclarationAccepted === true ? new Date() : null,
+          emergencyContactName,
+          emergencyContactRelation,
+          emergencyContactPhoneNumber,
           phoneNumber,
         },
         select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },
@@ -332,10 +461,17 @@ router.post('/register', async (req: Request, res: Response) => {
     dateOfBirth,
     gender,
     disabilityStatus,
+    guardianDeclarationAccepted,
+    guardianFullName,
+    guardianPhoneNumber,
+    emergencyContactName,
+    emergencyContactRelation,
+    emergencyContactPhoneNumber,
     phoneNumber,
     inviteToken,
     turnstileToken,
   } = parsed.data;
+  const isMinor = isUnder18(new Date(dateOfBirth));
 
   const passwordValidation = await validatePasswordSecurity(password);
   if (!passwordValidation.isValid) {
@@ -387,6 +523,13 @@ router.post('/register', async (req: Request, res: Response) => {
           dateOfBirth: new Date(dateOfBirth),
           gender,
           disabilityStatus,
+          guardianDeclarationAccepted: isMinor ? guardianDeclarationAccepted === true : false,
+          guardianFullName: isMinor ? normalizeOptionalText(guardianFullName) : null,
+          guardianPhoneNumber: isMinor ? normalizeOptionalText(guardianPhoneNumber) : null,
+          guardianDeclarationAt: isMinor && guardianDeclarationAccepted === true ? new Date() : null,
+          emergencyContactName,
+          emergencyContactRelation,
+          emergencyContactPhoneNumber,
           phoneNumber,
         },
         select: { id: true, name: true, email: true, emailVerifiedAt: true, createdAt: true },

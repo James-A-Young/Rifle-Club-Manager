@@ -155,6 +155,9 @@ describe('auth routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -167,6 +170,69 @@ describe('auth routes', () => {
     const secret = process.env.JWT_SECRET!;
     const payload = jwtLib.verify(res.body.token, secret) as Record<string, unknown>;
     expect(payload.role).toBeUndefined();
+  });
+
+  it('rejects under-18 registration without guardian declaration details', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
+    const sixteenYearsAgo = new Date();
+    sixteenYearsAgo.setUTCFullYear(sixteenYearsAgo.getUTCFullYear() - 16);
+    const under18Dob = sixteenYearsAgo.toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Minor User',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: under18Dob,
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
+        phoneNumber: '07123456789',
+        inviteToken: token,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('guardian');
+  });
+
+  it('accepts under-18 registration with guardian declaration details', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const { email, token } = await registerViaInvite(club.id, admin.id);
+    const fifteenYearsAgo = new Date();
+    fifteenYearsAgo.setUTCFullYear(fifteenYearsAgo.getUTCFullYear() - 15);
+    const under18Dob = fifteenYearsAgo.toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        name: 'Minor User With Guardian',
+        email,
+        password: 'Password123!',
+        gdprConsent: true,
+        address: '123 Test Road',
+        placeOfBirth: 'Leeds',
+        dateOfBirth: under18Dob,
+        gender: 'PREFER_NOT_TO_SAY',
+        disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
+        guardianDeclarationAccepted: true,
+        guardianFullName: 'Parent Example',
+        guardianPhoneNumber: '07000000000',
+        phoneNumber: '07123456789',
+        inviteToken: token,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.user.email).toBe(email);
   });
 
   it('rejects registration without invite token', async () => {
@@ -183,6 +249,9 @@ describe('auth routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
       });
 
@@ -206,6 +275,9 @@ describe('auth routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -237,6 +309,9 @@ describe('auth routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'invalid-token',
@@ -269,6 +344,9 @@ describe('auth routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
         turnstileToken: 'valid-token',
@@ -2541,6 +2619,9 @@ describe('bootstrap routes', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         clubName: 'Bootstrap Club',
       });
@@ -2567,6 +2648,9 @@ describe('invite-only registration', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: 'nonexistent-token',
       });
@@ -2590,6 +2674,9 @@ describe('invite-only registration', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
       });
@@ -2624,6 +2711,9 @@ describe('invite-only registration', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: expiredToken,
       });
@@ -2735,6 +2825,9 @@ describe('probationary member', () => {
         dateOfBirth: '1990-01-01',
         gender: 'PREFER_NOT_TO_SAY',
         disabilityStatus: 'PREFER_NOT_TO_SAY',
+        emergencyContactName: 'Emergency Contact',
+        emergencyContactRelation: 'Parent',
+        emergencyContactPhoneNumber: '07000000001',
         phoneNumber: '07123456789',
         inviteToken: token,
       });

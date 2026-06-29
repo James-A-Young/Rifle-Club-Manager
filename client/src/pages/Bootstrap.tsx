@@ -12,6 +12,23 @@ interface BootstrapResponse {
   club: { id: string; name: string };
 }
 
+function isUnder18(dateOfBirth: string): boolean {
+  if (!dateOfBirth) {
+    return false;
+  }
+  const parsed = new Date(dateOfBirth);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  const now = new Date();
+  let age = now.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - parsed.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < parsed.getUTCDate())) {
+    age -= 1;
+  }
+  return age < 18;
+}
+
 export default function Bootstrap() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
@@ -27,6 +44,12 @@ export default function Bootstrap() {
     dateOfBirth: '',
     gender: '',
     disabilityStatus: '',
+    guardianDeclarationAccepted: false,
+    guardianFullName: '',
+    guardianPhoneNumber: '',
+    emergencyContactName: '',
+    emergencyContactRelation: '',
+    emergencyContactPhoneNumber: '',
     phoneNumber: '',
     gdprConsent: false,
     clubName: '',
@@ -73,6 +96,23 @@ export default function Bootstrap() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const requiresGuardianDeclaration = isUnder18(form.dateOfBirth);
+
+    if (requiresGuardianDeclaration) {
+      if (!form.guardianDeclarationAccepted) {
+        setError('For members under 18, a parent or guardian must declare permission to shoot and use the system.');
+        return;
+      }
+      if (!form.guardianFullName.trim()) {
+        setError('For members under 18, parent or guardian full name is required.');
+        return;
+      }
+      if (!form.guardianPhoneNumber.trim()) {
+        setError('For members under 18, parent or guardian phone number is required.');
+        return;
+      }
+    }
+
     if (!form.gdprConsent) {
       setError('You must consent to data processing to continue.');
       gdprInputRef.current?.focus();
@@ -81,8 +121,31 @@ export default function Bootstrap() {
     setLoading(true);
     setError('');
     setPasswordError('');
+    const payload = {
+      name: form.name,
+      email: form.email,
+      password: form.password,
+      address: form.address,
+      placeOfBirth: form.placeOfBirth,
+      dateOfBirth: form.dateOfBirth,
+      gender: form.gender,
+      disabilityStatus: form.disabilityStatus,
+      phoneNumber: form.phoneNumber,
+      gdprConsent: form.gdprConsent,
+      clubName: form.clubName,
+      ...(requiresGuardianDeclaration
+        ? {
+          guardianDeclarationAccepted: form.guardianDeclarationAccepted,
+          guardianFullName: form.guardianFullName.trim(),
+          guardianPhoneNumber: form.guardianPhoneNumber.trim(),
+        }
+        : {}),
+      emergencyContactName: form.emergencyContactName.trim(),
+      emergencyContactRelation: form.emergencyContactRelation.trim(),
+      emergencyContactPhoneNumber: form.emergencyContactPhoneNumber.trim(),
+    };
     try {
-      const data = await api.post<BootstrapResponse>('/api/auth/bootstrap', form);
+      const data = await api.post<BootstrapResponse>('/api/auth/bootstrap', payload);
       setToken(data.token);
       // Reload auth state and navigate to Section 21 declaration signup
       await login(form.email, form.password);
@@ -172,9 +235,70 @@ export default function Bootstrap() {
               <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
             </select>
           </div>
+          {isUnder18(form.dateOfBirth) && (
+            <>
+              <div className="form-group">
+                <label>Parent or Guardian Full Name</label>
+                <input
+                  value={form.guardianFullName}
+                  onChange={e => update('guardianFullName', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Parent or Guardian Phone Number</label>
+                <input
+                  type="tel"
+                  value={form.guardianPhoneNumber}
+                  onChange={e => update('guardianPhoneNumber', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <div className="checkbox-group">
+                  <input
+                    type="checkbox"
+                    id="bootstrap-guardian-permission"
+                    checked={form.guardianDeclarationAccepted}
+                    onChange={e => update('guardianDeclarationAccepted', e.target.checked)}
+                    required
+                  />
+                  <label htmlFor="bootstrap-guardian-permission">
+                    I am the parent or legal guardian and I give permission for this member to shoot and use the system.
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
           <div className="form-group">
             <label>Phone Number</label>
             <input type="tel" value={form.phoneNumber} onChange={e => update('phoneNumber', e.target.value)} required />
+          </div>
+          <h2 style={{ fontSize: '1rem', margin: '1rem 0 0.75rem' }}>Emergency Contact</h2>
+          <div className="form-group">
+            <label>Emergency Contact Name</label>
+            <input
+              value={form.emergencyContactName}
+              onChange={e => update('emergencyContactName', e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Relation</label>
+            <input
+              value={form.emergencyContactRelation}
+              onChange={e => update('emergencyContactRelation', e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>Emergency Contact Phone Number</label>
+            <input
+              type="tel"
+              value={form.emergencyContactPhoneNumber}
+              onChange={e => update('emergencyContactPhoneNumber', e.target.value)}
+              required
+            />
           </div>
           <h2 style={{ fontSize: '1rem', margin: '1rem 0 0.75rem' }}>Your Club</h2>
           <div className="form-group">

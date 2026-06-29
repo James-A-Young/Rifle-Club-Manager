@@ -11,6 +11,12 @@ const profileFieldLabel: Record<ProfileHistoryFieldChange['field'], string> = {
   dateOfBirth: 'Date of Birth',
   gender: 'Gender',
   disabilityStatus: 'Disability Status',
+  guardianDeclarationAccepted: 'Guardian Declaration Accepted',
+  guardianFullName: 'Guardian Full Name',
+  guardianPhoneNumber: 'Guardian Phone Number',
+  emergencyContactName: 'Emergency Contact Name',
+  emergencyContactRelation: 'Emergency Contact Relation',
+  emergencyContactPhoneNumber: 'Emergency Contact Phone Number',
   firearmCertificateNumber: 'Firearm Certificate #',
   firearmCertificateExpiry: 'Firearm Certificate Expiry',
   shotgunCertificateNumber: 'Shotgun Certificate #',
@@ -45,6 +51,23 @@ function formatDisabilityStatus(value?: string): string {
     default:
       return 'N/A';
   }
+}
+
+function isUnder18(dateOfBirth?: string): boolean {
+  if (!dateOfBirth) {
+    return false;
+  }
+  const parsed = new Date(dateOfBirth);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+  const now = new Date();
+  let age = now.getUTCFullYear() - parsed.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - parsed.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < parsed.getUTCDate())) {
+    age -= 1;
+  }
+  return age < 18;
 }
 
 function formatHistoryValue(value: string | null): string {
@@ -164,6 +187,34 @@ export default function ClubMemberProfile() {
                 <tr>
                   <th>Disability Status</th>
                   <td>{formatDisabilityStatus(member.user.disabilityStatus)}</td>
+                </tr>
+                {isUnder18(member.user.dateOfBirth) && (
+                  <>
+                    <tr>
+                      <th>Guardian Declaration</th>
+                      <td>{member.user.guardianDeclarationAccepted ? 'Accepted' : 'Not provided'}</td>
+                    </tr>
+                    <tr>
+                      <th>Guardian Full Name</th>
+                      <td>{member.user.guardianFullName ?? 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Guardian Phone Number</th>
+                      <td>{member.user.guardianPhoneNumber ?? 'N/A'}</td>
+                    </tr>
+                  </>
+                )}
+                <tr>
+                  <th>Emergency Contact Name</th>
+                  <td>{member.user.emergencyContactName ?? 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Emergency Contact Relation</th>
+                  <td>{member.user.emergencyContactRelation ?? 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Emergency Contact Phone Number</th>
+                  <td>{member.user.emergencyContactPhoneNumber ?? 'N/A'}</td>
                 </tr>
                 <tr>
                   <th>Firearm Certificate #</th>
