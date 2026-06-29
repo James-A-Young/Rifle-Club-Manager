@@ -127,8 +127,9 @@ export default function MyScores() {
       <section>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '1rem' }}>
           <div className="form-group" style={{ marginBottom: 0, minWidth: 210 }}>
-            <label>Competition</label>
+            <label htmlFor="competitionQuery">Competition</label>
             <input
+              id="competitionQuery"
               value={competitionQuery}
               onChange={e => onFilterChange(setCompetitionQuery, e.target.value)}
               placeholder="Search by competition"
@@ -136,8 +137,9 @@ export default function MyScores() {
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
-            <label>Discipline</label>
+            <label htmlFor="discipline">Discipline</label>
             <input
+              id="discipline"
               value={discipline}
               onChange={e => onFilterChange(setDiscipline, e.target.value)}
               placeholder="e.g. Air Rifle"
@@ -145,29 +147,30 @@ export default function MyScores() {
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label>Date Shot From</label>
-            <input type="date" value={shotFrom} onChange={e => onFilterChange(setShotFrom, e.target.value)} />
+            <label htmlFor="shotFrom">Date Shot From</label>
+            <input type="date" id="shotFrom" value={shotFrom} onChange={e => onFilterChange(setShotFrom, e.target.value)} />
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label>Date Shot To</label>
-            <input type="date" value={shotTo} onChange={e => onFilterChange(setShotTo, e.target.value)} />
+            <label htmlFor="shotTo">Date Shot To</label>
+            <input type="date" id="shotTo" value={shotTo} onChange={e => onFilterChange(setShotTo, e.target.value)} />
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label>Date Due From</label>
-            <input type="date" value={dueFrom} onChange={e => onFilterChange(setDueFrom, e.target.value)} />
+            <label htmlFor="dueFrom">Date Due From</label>
+            <input type="date" id="dueFrom" value={dueFrom} onChange={e => onFilterChange(setDueFrom, e.target.value)} />
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label>Date Due To</label>
-            <input type="date" value={dueTo} onChange={e => onFilterChange(setDueTo, e.target.value)} />
+            <label htmlFor="dueTo">Date Due To</label>
+            <input type="date" id="dueTo" value={dueTo} onChange={e => onFilterChange(setDueTo, e.target.value)} />
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 110 }}>
-            <label>Min Score</label>
+            <label htmlFor="minScore">Min Score</label>
             <input
               type="number"
+              id="minScore"
               min={0}
               max={10000}
               value={minScore}
@@ -176,9 +179,10 @@ export default function MyScores() {
           </div>
 
           <div className="form-group" style={{ marginBottom: 0, minWidth: 110 }}>
-            <label>Max Score</label>
+            <label htmlFor="maxScore">Max Score</label>
             <input
               type="number"
+              id="maxScore"
               min={0}
               max={10000}
               value={maxScore}
