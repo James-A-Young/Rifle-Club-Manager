@@ -49,7 +49,7 @@ export function formatFirearmWithSerial(serial: string | null | undefined, firea
   return name ?? 'N/A';
 }
 
-export function formatSummaryFirearm(serial: string | null | undefined, firearm: HistoryFirearmIdentity): string {
+export function formatSummaryFirearm(serial: string | null | undefined, firearm?: HistoryFirearmIdentity | null): string {
   const name = formatHistoryFirearmName(firearm);
   if (name && serial) {
     return `${name} [${serial}]`;
