@@ -96,7 +96,8 @@ export default function MembershipCardScannerModal({
             }
           },
           {
-            preferredCamera: 'environment',
+            preferredCamera: 'user', // front camera on mobile devices
+            highlightScanRegion: true,
             returnDetailedScanResult: true,
           }
         );
