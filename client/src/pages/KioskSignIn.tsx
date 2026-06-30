@@ -496,13 +496,13 @@ export default function KioskSignIn() {
             Scan the QR code to open the sign-in form.
           </p>
           <div className="qr-container">
-            {qrUrl ? <QRCodeSVG value={qrUrl} size={300} /> : <p>Preparing QR…</p>}
+            {qrUrl ? <QRCodeSVG value={qrUrl} size={250} /> : <p>Preparing QR…</p>}
           </div>
           <p className="link-text" style={{ marginTop: '1rem' }}>QR rotates automatically every 45 seconds.</p>
 
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-primary"
             style={{ marginTop: '1rem', height: '8rem' }}
             onClick={() => setCardScanOpen(true)}
           >
