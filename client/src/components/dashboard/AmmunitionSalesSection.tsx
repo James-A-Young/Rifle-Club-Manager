@@ -24,6 +24,10 @@ interface Props {
   stockInputTypeId: string;
   stockInputSafeId: string;
   stockInputQuantity: number;
+  correctionTypeId: string;
+  correctionSafeId: string;
+  correctionQuantity: number;
+  correctionNote: string;
   transferTypeId: string;
   transferFromSafeId: string;
   transferToSafeId: string;
@@ -48,6 +52,11 @@ interface Props {
   onStockInputSafeIdChange: (value: string) => void;
   onStockInputQuantityChange: (value: number) => void;
   onSubmitStockInput: () => void;
+  onCorrectionTypeIdChange: (value: string) => void;
+  onCorrectionSafeIdChange: (value: string) => void;
+  onCorrectionQuantityChange: (value: number) => void;
+  onCorrectionNoteChange: (value: string) => void;
+  onSubmitCorrection: () => void;
   onTransferTypeIdChange: (value: string) => void;
   onTransferFromSafeIdChange: (value: string) => void;
   onTransferToSafeIdChange: (value: string) => void;
@@ -359,6 +368,48 @@ export default function AmmunitionSalesSection(props: Props) {
             />
           </div>
           <button className="btn btn-primary" type="button" onClick={props.onSubmitTransfer}>Transfer</button>
+        </div>
+
+        <h3 style={{ marginTop: '1.5rem' }}>Correction (Deduct for Mis-Key)</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: '0.75rem', alignItems: 'end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Type</label>
+            <select value={props.correctionTypeId} onChange={e => props.onCorrectionTypeIdChange(e.target.value)}>
+              <option value="">Select type</option>
+              {props.types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Safe</label>
+            <select value={props.correctionSafeId} onChange={e => props.onCorrectionSafeIdChange(e.target.value)}>
+              <option value="">Select safe</option>
+              {props.safes.map(safe => <option key={safe.id} value={safe.id}>{safe.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Quantity</label>
+            <input
+              type="number"
+              min={1}
+              value={props.correctionQuantity}
+              onChange={e => {
+                const parsed = parseInt(e.target.value, 10);
+                if (Number.isFinite(parsed)) {
+                  props.onCorrectionQuantityChange(parsed);
+                }
+              }}
+            />
+          </div>
+          <button className="btn btn-warning" type="button" onClick={props.onSubmitCorrection}>Apply Correction</button>
+        </div>
+        <div className="form-group" style={{ marginTop: '0.75rem' }}>
+          <label>Correction note (required)</label>
+          <textarea
+            rows={2}
+            value={props.correctionNote}
+            onChange={e => props.onCorrectionNoteChange(e.target.value)}
+            placeholder="Explain what was mis-keyed and why this deduction is required"
+          />
         </div>
       </section>
     </>

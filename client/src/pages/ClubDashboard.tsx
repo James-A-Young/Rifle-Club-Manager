@@ -210,6 +210,10 @@ export default function ClubDashboard() {
   const [stockInputTypeId, setStockInputTypeId] = useState('');
   const [stockInputSafeId, setStockInputSafeId] = useState('');
   const [stockInputQuantity, setStockInputQuantity] = useState(1);
+  const [correctionTypeId, setCorrectionTypeId] = useState('');
+  const [correctionSafeId, setCorrectionSafeId] = useState('');
+  const [correctionQuantity, setCorrectionQuantity] = useState(1);
+  const [correctionNote, setCorrectionNote] = useState('');
   const [transferTypeId, setTransferTypeId] = useState('');
   const [transferFromSafeId, setTransferFromSafeId] = useState('');
   const [transferToSafeId, setTransferToSafeId] = useState('');
@@ -1020,6 +1024,27 @@ export default function ClubDashboard() {
     }
   }
 
+  async function submitStockCorrection() {
+    if (!id || !correctionTypeId || !correctionSafeId || correctionQuantity <= 0 || !correctionNote.trim()) {
+      setError('Please complete all correction fields, including a note');
+      return;
+    }
+    try {
+      await api.post(`/api/ammunition/club/${id}/stock/input`, {
+        ammunitionTypeId: correctionTypeId,
+        ammunitionSafeId: correctionSafeId,
+        quantity: correctionQuantity,
+        type: 'CORRECTION',
+        note: correctionNote.trim(),
+      });
+      setCorrectionQuantity(1);
+      setCorrectionNote('');
+      await loadAmmunitionStock();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error applying stock correction');
+    }
+  }
+
   async function renameSafe(safeId: string, newName: string) {
     if (!id) return;
     try {
@@ -1520,6 +1545,10 @@ export default function ClubDashboard() {
               stockInputTypeId={stockInputTypeId}
               stockInputSafeId={stockInputSafeId}
               stockInputQuantity={stockInputQuantity}
+              correctionTypeId={correctionTypeId}
+              correctionSafeId={correctionSafeId}
+              correctionQuantity={correctionQuantity}
+              correctionNote={correctionNote}
               transferTypeId={transferTypeId}
               transferFromSafeId={transferFromSafeId}
               transferToSafeId={transferToSafeId}
@@ -1544,6 +1573,11 @@ export default function ClubDashboard() {
               onStockInputSafeIdChange={setStockInputSafeId}
               onStockInputQuantityChange={setStockInputQuantity}
               onSubmitStockInput={submitStockInput}
+              onCorrectionTypeIdChange={setCorrectionTypeId}
+              onCorrectionSafeIdChange={setCorrectionSafeId}
+              onCorrectionQuantityChange={setCorrectionQuantity}
+              onCorrectionNoteChange={setCorrectionNote}
+              onSubmitCorrection={submitStockCorrection}
               onTransferTypeIdChange={setTransferTypeId}
               onTransferFromSafeIdChange={setTransferFromSafeId}
               onTransferToSafeIdChange={setTransferToSafeId}

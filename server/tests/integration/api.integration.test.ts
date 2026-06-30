@@ -2297,6 +2297,94 @@ describe('ammunition routes', () => {
     expect(transferRes.body.error).toContain('Insufficient stock');
   });
 
+  it('applies a correction deduction with a required note', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 30 });
+
+    const correctionRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 5,
+        type: 'CORRECTION',
+        note: 'Deducting for mistyped stock input',
+      });
+
+    expect(correctionRes.status).toBe(201);
+
+    const stock = await prisma.ammunitionStock.findUnique({
+      where: { ammunitionTypeId_ammunitionSafeId: { ammunitionTypeId: typeId, ammunitionSafeId: safeId } },
+    });
+    expect(stock?.quantity).toBe(25);
+
+    const movement = await prisma.ammunitionStockInput.findFirst({
+      where: {
+        clubId: club.id,
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: -5,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    expect(movement).toBeTruthy();
+    expect(movement?.note).toBe('Deducting for mistyped stock input');
+  });
+
+  it('requires a note when applying a correction', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 10 });
+
+    const correctionRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 2,
+        type: 'CORRECTION',
+      });
+
+    expect(correctionRes.status).toBe(400);
+    expect(correctionRes.body.error).toContain('note');
+  });
+
+  it('rejects correction when stock is insufficient in selected safe', async () => {
+    const { club, admin } = await createClubWithAdmin();
+    const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
+
+    await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({ ammunitionTypeId: typeId, ammunitionSafeId: safeId, quantity: 3 });
+
+    const correctionRes = await request(app)
+      .post(`/api/ammunition/club/${club.id}/stock/input`)
+      .set(authHeader(admin))
+      .send({
+        ammunitionTypeId: typeId,
+        ammunitionSafeId: safeId,
+        quantity: 5,
+        type: 'CORRECTION',
+        note: 'Deducting mistyped rounds',
+      });
+
+    expect(correctionRes.status).toBe(400);
+    expect(correctionRes.body.error).toContain('Insufficient stock');
+  });
+
   it('filters stock inputs by typeId and safeId', async () => {
     const { club, admin } = await createClubWithAdmin();
     const { typeId, safeId } = await createAmmoTypeAndSafe(club.id, admin);
