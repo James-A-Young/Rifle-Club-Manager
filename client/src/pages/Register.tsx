@@ -116,7 +116,12 @@ export default function Register() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
+  const formErrorRef = useRef<HTMLDivElement | null>(null);
+  const shouldFocusFormErrorRef = useRef(true);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const guardianFullNameInputRef = useRef<HTMLInputElement | null>(null);
+  const guardianPhoneInputRef = useRef<HTMLInputElement | null>(null);
+  const guardianDeclarationInputRef = useRef<HTMLInputElement | null>(null);
   const gdprInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -205,33 +210,74 @@ export default function Register() {
       );
   }
 
+  function focusAndScrollToElement(element: HTMLElement | null) {
+    if (!element) {
+      return;
+    }
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.requestAnimationFrame(() => {
+      element.focus({ preventScroll: true });
+    });
+  }
+
+  function setFieldLevelError(message: string, element: HTMLElement | null) {
+    shouldFocusFormErrorRef.current = false;
+    setError(message);
+    focusAndScrollToElement(element);
+  }
+
+  useEffect(() => {
+    if (!passwordError) {
+      return;
+    }
+    focusAndScrollToElement(passwordInputRef.current);
+  }, [passwordError]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+    if (!shouldFocusFormErrorRef.current) {
+      shouldFocusFormErrorRef.current = true;
+      return;
+    }
+    focusAndScrollToElement(formErrorRef.current);
+  }, [error]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const requiresGuardianDeclaration = isUnder18(form.dateOfBirth);
 
     if (requiresGuardianDeclaration) {
       if (!form.guardianDeclarationAccepted) {
-        setError('For members under 18, a parent or guardian must declare permission to shoot and use the system.');
+        setFieldLevelError(
+          'For members under 18, a parent or guardian must declare permission to shoot and use the system.',
+          guardianDeclarationInputRef.current,
+        );
         return;
       }
       if (!form.guardianFullName.trim()) {
-        setError('For members under 18, parent or guardian full name is required.');
+        setFieldLevelError(
+          'For members under 18, parent or guardian full name is required.',
+          guardianFullNameInputRef.current,
+        );
         return;
       }
       if (!form.guardianPhoneNumber.trim()) {
-        setError('For members under 18, parent or guardian phone number is required.');
+        setFieldLevelError(
+          'For members under 18, parent or guardian phone number is required.',
+          guardianPhoneInputRef.current,
+        );
         return;
       }
     }
 
     if (!form.gdprConsent) {
-      setError('You must consent to data processing to register.');
-      gdprInputRef.current?.focus();
+      setFieldLevelError('You must consent to data processing to register.', gdprInputRef.current);
       return;
     }
     if (turnstileSiteKey && !turnstileToken) {
-      setError('Please complete the captcha challenge.');
-      turnstileContainerRef.current?.focus();
+      setFieldLevelError('Please complete the captcha challenge.', turnstileContainerRef.current);
       return;
     }
     setLoading(true);
@@ -272,8 +318,8 @@ export default function Register() {
       const message = err instanceof Error ? err.message : String(err) || 'Registration failed';
       if (isPasswordValidationMessage(message)) {
         setPasswordError(message);
-        passwordInputRef.current?.focus();
       } else {
+        shouldFocusFormErrorRef.current = true;
         setError(message);
       }
       if (turnstileSiteKey && window.turnstile && turnstileWidgetIdRef.current) {
@@ -302,7 +348,11 @@ export default function Register() {
           </div>
         )}
         <form onSubmit={handleSubmit}>
-          {error && <div className="alert alert-error">{error}</div>}
+          {error && (
+            <div ref={formErrorRef} className="alert alert-error" tabIndex={-1} role="alert">
+              {error}
+            </div>
+          )}
           <div className="form-group">
             <label>Full Name</label>
             <input value={form.name} onChange={e => update('name', e.target.value)} required />
@@ -367,6 +417,7 @@ export default function Register() {
               <div className="form-group">
                 <label>Parent or Guardian Full Name</label>
                 <input
+                  ref={guardianFullNameInputRef}
                   value={form.guardianFullName}
                   onChange={e => update('guardianFullName', e.target.value)}
                   required
@@ -375,6 +426,7 @@ export default function Register() {
               <div className="form-group">
                 <label>Parent or Guardian Phone Number</label>
                 <input
+                  ref={guardianPhoneInputRef}
                   type="tel"
                   value={form.guardianPhoneNumber}
                   onChange={e => update('guardianPhoneNumber', e.target.value)}
@@ -384,6 +436,7 @@ export default function Register() {
               <div className="form-group">
                 <div className="checkbox-group">
                   <input
+                    ref={guardianDeclarationInputRef}
                     type="checkbox"
                     id="guardian-permission"
                     checked={form.guardianDeclarationAccepted}
