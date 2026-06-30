@@ -1,13 +1,7 @@
 import FirearmForm from '../FirearmForm';
 import { Firearm } from '../../types/club';
+import { FirearmFormData, formatFirearmName } from '../../shared/firearms';
 import { useState } from 'react';
-
-interface FirearmData {
-  make: string;
-  model: string;
-  caliber: string;
-  serialNumber: string;
-}
 
 interface Props {
   title?: string;
@@ -16,8 +10,8 @@ interface Props {
   firearms: Firearm[];
   showForm: boolean;
   onToggleForm: () => void;
-  onAdd: (data: FirearmData) => Promise<void>;
-  onEdit: (firearmId: string, data: FirearmData) => Promise<void>;
+  onAdd: (data: FirearmFormData) => Promise<void>;
+  onEdit: (firearmId: string, data: FirearmFormData) => Promise<void>;
   onRemove: (firearmId: string) => Promise<void>;
   onToggleFavorite: (firearmId: string, isFavorite: boolean) => Promise<void>;
 }
@@ -35,7 +29,13 @@ export default function ArmorySection({
   onToggleFavorite,
 }: Props) {
   const [editingFirearmId, setEditingFirearmId] = useState<string | null>(null);
-  const [editingForm, setEditingForm] = useState<FirearmData>({ make: '', model: '', caliber: '', serialNumber: '' });
+  const [editingForm, setEditingForm] = useState<FirearmFormData>({
+    friendlyName: '',
+    make: '',
+    model: '',
+    caliber: '',
+    serialNumber: '',
+  });
   const [savingEdit, setSavingEdit] = useState(false);
   const [removingFirearmId, setRemovingFirearmId] = useState<string | null>(null);
   const [updatingFavoriteFirearmId, setUpdatingFavoriteFirearmId] = useState<string | null>(null);
@@ -45,6 +45,7 @@ export default function ArmorySection({
     setTableError('');
     setEditingFirearmId(firearm.id);
     setEditingForm({
+      friendlyName: firearm.friendlyName ?? '',
       make: firearm.make,
       model: firearm.model,
       caliber: firearm.caliber,
@@ -114,6 +115,7 @@ export default function ArmorySection({
         <thead>
           <tr>
             <th>Favorite</th>
+            <th>Name</th>
             <th>Make</th>
             <th>Model</th>
             <th>Caliber</th>
@@ -127,6 +129,13 @@ export default function ArmorySection({
               {editingFirearmId === f.id ? (
                 <>
                   <td>{Boolean(f.isFavorite) ? 'Yes' : 'No'}</td>
+                  <td>
+                    <input
+                      value={editingForm.friendlyName ?? ''}
+                      onChange={e => setEditingForm(prev => ({ ...prev, friendlyName: e.target.value }))}
+                      placeholder="Optional"
+                    />
+                  </td>
                   <td>
                     <input
                       value={editingForm.make}
@@ -169,6 +178,7 @@ export default function ArmorySection({
               ) : (
                 <>
                   <td>{Boolean(f.isFavorite) ? 'Yes' : 'No'}</td>
+                  <td>{formatFirearmName(f)}</td>
                   <td>{f.make}</td>
                   <td>{f.model}</td>
                   <td>{f.caliber}</td>
@@ -202,7 +212,7 @@ export default function ArmorySection({
           ))}
           {firearms.length === 0 && (
             <tr>
-              <td colSpan={6} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
+              <td colSpan={7} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
                 {emptyMessage}
               </td>
             </tr>

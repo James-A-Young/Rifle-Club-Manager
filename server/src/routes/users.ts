@@ -103,6 +103,10 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeFriendlyName(value: string | null | undefined): string | null {
+  return normalizeOptionalText(value);
+}
+
 function parseOptionalDate(value: string | null | undefined, field: string): Date | null {
   if (typeof value !== 'string' || value.trim().length === 0) {
     return null;
@@ -460,6 +464,7 @@ const firearmFavoriteSchema = z.object({
 });
 
 const firearmSchema = z.object({
+  friendlyName: z.string().max(120).optional().nullable(),
   make: z.string().min(1),
   model: z.string().min(1),
   caliber: z.string().min(1),
@@ -474,7 +479,11 @@ router.post('/me/firearms', requireAuth, async (req: AuthRequest, res: Response)
   }
   const firearm = await prisma.firearm.create({
     data: {
-      ...parsed.data,
+      make: parsed.data.make,
+      model: parsed.data.model,
+      caliber: parsed.data.caliber,
+      serialNumber: parsed.data.serialNumber,
+      friendlyName: normalizeFriendlyName(parsed.data.friendlyName),
       ownerType: OwnerType.USER,
       userId: req.user!.id,
     },
@@ -516,7 +525,13 @@ router.patch('/me/firearms/:id', requireAuth, async (req: AuthRequest, res: Resp
 
   const updated = await prisma.firearm.update({
     where: { id: firearmId },
-    data: parsed.data,
+    data: {
+      make: parsed.data.make,
+      model: parsed.data.model,
+      caliber: parsed.data.caliber,
+      serialNumber: parsed.data.serialNumber,
+      friendlyName: normalizeFriendlyName(parsed.data.friendlyName),
+    },
   });
 
   res.json(updated);

@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
-
-interface FirearmData {
-  make: string;
-  model: string;
-  caliber: string;
-  serialNumber: string;
-}
+import { FirearmFormData } from '../shared/firearms';
 
 interface Props {
-  onSubmit: (data: FirearmData) => Promise<void>;
+  onSubmit: (data: FirearmFormData) => Promise<void>;
   onCancel: () => void;
 }
 
 export default function FirearmForm({ onSubmit, onCancel }: Props) {
-  const [form, setForm] = useState<FirearmData>({ make: '', model: '', caliber: '', serialNumber: '' });
+  const [form, setForm] = useState<FirearmFormData>({
+    friendlyName: '',
+    make: '',
+    model: '',
+    caliber: '',
+    serialNumber: '',
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -33,6 +33,14 @@ export default function FirearmForm({ onSubmit, onCancel }: Props) {
   return (
     <form onSubmit={handleSubmit}>
       {error && <div className="alert alert-error">{error}</div>}
+      <div className="form-group">
+        <label>Friendly Name (optional)</label>
+        <input
+          value={form.friendlyName ?? ''}
+          onChange={e => setForm(f => ({ ...f, friendlyName: e.target.value }))}
+          placeholder="e.g. Match Rifle"
+        />
+      </div>
       <div className="form-group">
         <label>Make</label>
         <input value={form.make} onChange={e => setForm(f => ({ ...f, make: e.target.value }))} required />

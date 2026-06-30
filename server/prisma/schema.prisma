@@ -321,6 +321,7 @@ model UserProfileHistory {
 
 model Firearm {
   id           String    @id @default(cuid())
+  friendlyName String?
   make         String
   model        String
   caliber      String
@@ -353,6 +354,7 @@ model VisitLog {
   guestEmail      String?
   guestClubRepresented String?
   firearmUsedId   String?
+  firearmFriendlyNameSnapshot String?
   firearmSerialSnapshot String?
   firearmMakeSnapshot String?
   firearmModelSnapshot String?

@@ -182,6 +182,7 @@ router.get('/:token', attachOptionalAuth, async (req: AuthRequest, res: Response
             where: { ownerType: OwnerType.CLUB, deletedAt: null },
             select: {
               id: true,
+              friendlyName: true,
               make: true,
               model: true,
               caliber: true,
@@ -225,6 +226,7 @@ router.get('/:token', attachOptionalAuth, async (req: AuthRequest, res: Response
         },
         select: {
           id: true,
+          friendlyName: true,
           make: true,
           model: true,
           caliber: true,

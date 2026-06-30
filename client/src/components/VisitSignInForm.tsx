@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { VISIT_PURPOSES, GuestDetails, EMPTY_GUEST_DETAILS } from '../shared/signIn';
+import { formatFirearmOptionLabel } from '../shared/firearms';
 import { SimpleFirearm } from '../types/club';
 
 const SECTION21_DECLARATION_TEXT = `SECTION 1: SECTION 21 FIREARMS ACT 1968 DECLARATION
@@ -192,7 +193,7 @@ export default function VisitSignInForm({
             <optgroup label="My Favorites">
               {myFavoriteFirearms.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.make} {f.model} ({f.caliber})
+                  {formatFirearmOptionLabel(f)}
                 </option>
               ))}
             </optgroup>
@@ -201,7 +202,7 @@ export default function VisitSignInForm({
             <optgroup label="Club Favorites">
               {clubFavoriteFirearms.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.make} {f.model} ({f.caliber})
+                  {formatFirearmOptionLabel(f)}
                 </option>
               ))}
             </optgroup>
@@ -210,7 +211,7 @@ export default function VisitSignInForm({
             <optgroup label="My Armory">
               {myArmoryFirearms.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.make} {f.model} ({f.caliber})
+                  {formatFirearmOptionLabel(f)}
                 </option>
               ))}
             </optgroup>
@@ -219,7 +220,7 @@ export default function VisitSignInForm({
             <optgroup label="Club Armory">
               {clubArmoryFirearms.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.make} {f.model} ({f.caliber})
+                  {formatFirearmOptionLabel(f)}
                 </option>
               ))}
             </optgroup>

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth/AuthContext';
 import { normalizeDisciplines } from '../shared/clubUtils';
+import { FirearmFormData, toFirearmPayload } from '../shared/firearms';
 import {
   Club,
   Member,
@@ -690,16 +691,16 @@ export default function ClubDashboard() {
     }
   }
 
-  async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
+  async function addFirearm(data: FirearmFormData) {
     if (!id) return;
-    const f = await api.post<Firearm>(`/api/clubs/${id}/firearms`, data);
+    const f = await api.post<Firearm>(`/api/clubs/${id}/firearms`, toFirearmPayload(data));
     setFirearms(prev => [...prev, f]);
     setShowFirearmForm(false);
   }
 
-  async function editFirearm(firearmId: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
+  async function editFirearm(firearmId: string, data: FirearmFormData) {
     if (!id) return;
-    const updated = await api.patch<Firearm>(`/api/clubs/${id}/firearms/${firearmId}`, data);
+    const updated = await api.patch<Firearm>(`/api/clubs/${id}/firearms/${firearmId}`, toFirearmPayload(data));
     setFirearms(prev => prev.map(f => (f.id === firearmId ? updated : f)));
   }
 
