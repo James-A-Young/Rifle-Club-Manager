@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../api';
@@ -47,6 +47,7 @@ interface ClubMembership {
 
 const ISSUE_INTERVAL_MS = 45_000;
 const REFRESH_VISITS_INTERVAL_MS = 120_000;
+const REFRESH_ACCESS_TOKEN_FALLBACK_MS = 60_000;
 
 export default function KioskSignIn() {
   const { token } = useParams<{ token: string }>();
@@ -68,9 +69,55 @@ export default function KioskSignIn() {
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [manualSignInSubmitting, setManualSignInSubmitting] = useState(false);
   const [cardSignInSubmitting, setCardSignInSubmitting] = useState(false);
+  const [signInAccessToken, setSignInAccessToken] = useState('');
+  const signInAccessTokenRef = useRef('');
   const isAuthenticatedKioskUser = Boolean(kioskData?.isAuthenticated);
   const isSignInInteractionInProgress =
     cardScanOpen || cardModalOpen || manualSignInSubmitting || cardSignInSubmitting;
+
+  const accessTokenRefreshIntervalMs = useMemo(() => {
+    if (!kioskData?.accessTokenExpiresInMinutes) {
+      return REFRESH_ACCESS_TOKEN_FALLBACK_MS;
+    }
+
+    const halfLifeMs = Math.floor((kioskData.accessTokenExpiresInMinutes * 60_000) / 2);
+    return Math.max(30_000, Math.min(120_000, halfLifeMs));
+  }, [kioskData?.accessTokenExpiresInMinutes]);
+
+  function isExpiredAccessTokenError(message: string) {
+    return /invalid or expired sign-in access token/i.test(message);
+  }
+
+  async function refreshSignInAccessToken() {
+    if (!token) {
+      return null;
+    }
+
+    try {
+      const data = await api.get<KioskLinkData>(`/api/sign-in-links/${token}`);
+      if (data.mode !== 'KIOSK') {
+        return null;
+      }
+
+      setSignInAccessToken(data.accessToken);
+      setKioskData(prev => {
+        if (!prev) {
+          return data;
+        }
+        return {
+          ...prev,
+          isAuthenticated: data.isAuthenticated,
+          userFirearms: data.userFirearms,
+          accessToken: data.accessToken,
+          accessTokenExpiresInMinutes: data.accessTokenExpiresInMinutes,
+        };
+      });
+
+      return data.accessToken;
+    } catch {
+      return null;
+    }
+  }
 
   function resetCardFlowState() {
     setCardPreview(null);
@@ -94,6 +141,7 @@ export default function KioskSignIn() {
           return;
         }
         setKioskData(data);
+        setSignInAccessToken(data.accessToken);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Invalid kiosk link');
       } finally {
@@ -103,6 +151,23 @@ export default function KioskSignIn() {
 
     loadKiosk();
   }, [token]);
+
+  useEffect(() => {
+    signInAccessTokenRef.current = signInAccessToken;
+  }, [signInAccessToken]);
+
+  // Keep the kiosk sign-in access token fresh while page remains open.
+  useEffect(() => {
+    if (!token || !kioskData) return;
+
+    const interval = window.setInterval(() => {
+      void refreshSignInAccessToken();
+    }, accessTokenRefreshIntervalMs);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [token, kioskData?.id, accessTokenRefreshIntervalMs]);
 
   // Issue rotating QR codes
   useEffect(() => {
@@ -137,7 +202,7 @@ export default function KioskSignIn() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [token, kioskData, isSignInInteractionInProgress]);
+  }, [token, kioskData?.id, isSignInInteractionInProgress]);
 
   // Load active visits and check admin status
   useEffect(() => {
@@ -182,7 +247,7 @@ export default function KioskSignIn() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [token, kioskData, user?.id, isSignInInteractionInProgress]);
+  }, [token, kioskData?.clubId, user?.id, isSignInInteractionInProgress]);
 
   const qrUrl = useMemo(() => {
     if (!issuedLink) return '';
@@ -193,9 +258,18 @@ export default function KioskSignIn() {
     if (!kioskData) return;
     setError('');
     setManualSignInSubmitting(true);
+
+    let accessToken = await refreshSignInAccessToken();
+    accessToken = accessToken ?? signInAccessTokenRef.current;
+
+    if (!accessToken) {
+      setManualSignInSubmitting(false);
+      throw new Error('Unable to refresh sign-in token. Please try again.');
+    }
+
     try {
       await api.post('/api/visits/public', {
-        signInAccessToken: kioskData.accessToken,
+        signInAccessToken: accessToken,
         ...payload,
       });
       setManualSuccess(true);
@@ -209,6 +283,34 @@ export default function KioskSignIn() {
         }
       }, 500);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error signing in';
+
+      if (isExpiredAccessTokenError(message)) {
+        const refreshedToken = await refreshSignInAccessToken();
+        if (refreshedToken) {
+          try {
+            await api.post('/api/visits/public', {
+              signInAccessToken: refreshedToken,
+              ...payload,
+            });
+            setManualSuccess(true);
+            setTimeout(async () => {
+              try {
+                const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
+                setActiveVisits(visits);
+                setManualSuccess(false);
+              } catch (e) {
+                setVisitsError(e instanceof Error ? e.message : 'Error refreshing visits');
+              }
+            }, 500);
+            return;
+          } catch (retryErr) {
+            setError(retryErr instanceof Error ? retryErr.message : 'Error signing in');
+            throw retryErr;
+          }
+        }
+      }
+
       setError(err instanceof Error ? err.message : 'Error signing in');
       // Re-throw so VisitSignInForm keeps the form populated (doesn't reset on error)
       throw err;
@@ -225,9 +327,17 @@ export default function KioskSignIn() {
     setCardSignInError('');
     setCardSignInSubmitting(true);
 
+    let accessToken = await refreshSignInAccessToken();
+    accessToken = accessToken ?? signInAccessTokenRef.current;
+
+    if (!accessToken) {
+      setCardSignInSubmitting(false);
+      throw new Error('Unable to refresh sign-in token. Please rescan your card.');
+    }
+
     try {
       await api.post('/api/visits/kiosk/qr-signin-confirm', {
-        signInAccessToken: kioskData.accessToken,
+        signInAccessToken: accessToken,
         memberCardSignInToken: cardPreview.memberCardSignInToken,
         ...payload,
       });
@@ -247,6 +357,50 @@ export default function KioskSignIn() {
       }, 500);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error signing in with membership card';
+
+      if (isExpiredAccessTokenError(message)) {
+        const refreshedToken = await refreshSignInAccessToken();
+        if (refreshedToken) {
+          try {
+            await api.post('/api/visits/kiosk/qr-signin-confirm', {
+              signInAccessToken: refreshedToken,
+              memberCardSignInToken: cardPreview.memberCardSignInToken,
+              ...payload,
+            });
+
+            setManualSuccess(true);
+            setCardModalOpen(false);
+            resetCardFlowState();
+
+            setTimeout(async () => {
+              try {
+                const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
+                setActiveVisits(visits);
+                setManualSuccess(false);
+              } catch (e) {
+                setVisitsError(e instanceof Error ? e.message : 'Error refreshing visits');
+              }
+            }, 500);
+            return;
+          } catch (retryErr) {
+            const retryMessage = retryErr instanceof Error ? retryErr.message : 'Error signing in with membership card';
+            if (/already signed in/i.test(retryMessage)) {
+              setCardModalOpen(false);
+              resetCardFlowState();
+              try {
+                const visits = await api.get<ActiveVisitor[]>(`/api/visits/kiosk/${token}/active`);
+                setActiveVisits(visits);
+              } catch {
+                // Ignore refresh errors for silent duplicate handling
+              }
+              return;
+            }
+            setCardSignInError(retryMessage);
+            throw retryErr;
+          }
+        }
+      }
+
       if (/already signed in/i.test(message)) {
         setCardModalOpen(false);
         resetCardFlowState();
@@ -386,7 +540,7 @@ export default function KioskSignIn() {
 
       <MembershipCardScannerModal
         open={cardScanOpen}
-        signInAccessToken={kioskData?.accessToken}
+        signInAccessToken={signInAccessToken || kioskData?.accessToken}
         onClose={() => setCardScanOpen(false)}
         onPreview={(preview) => {
           setCardPreview(preview);
