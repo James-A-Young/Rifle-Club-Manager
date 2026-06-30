@@ -34,28 +34,29 @@ export default function FirearmForm({ onSubmit, onCancel }: Props) {
     <form onSubmit={handleSubmit}>
       {error && <div className="alert alert-error">{error}</div>}
       <div className="form-group">
-        <label>Friendly Name (optional)</label>
+        <label htmlFor='friendlyName'>Friendly Name (optional)</label>
         <input
+          id='friendlyName'
           value={form.friendlyName ?? ''}
           onChange={e => setForm(f => ({ ...f, friendlyName: e.target.value }))}
           placeholder="e.g. Match Rifle"
         />
       </div>
       <div className="form-group">
-        <label>Make</label>
-        <input value={form.make} onChange={e => setForm(f => ({ ...f, make: e.target.value }))} required />
+        <label htmlFor='make'>Make</label>
+        <input id='make' value={form.make} onChange={e => setForm(f => ({ ...f, make: e.target.value }))} required />
       </div>
       <div className="form-group">
-        <label>Model</label>
-        <input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} required />
+        <label htmlFor='model'>Model</label>
+        <input id='model' value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} required />
       </div>
       <div className="form-group">
-        <label>Caliber</label>
-        <input value={form.caliber} onChange={e => setForm(f => ({ ...f, caliber: e.target.value }))} required />
+        <label htmlFor='caliber'>Caliber</label>
+        <input id='caliber' value={form.caliber} onChange={e => setForm(f => ({ ...f, caliber: e.target.value }))} required />
       </div>
       <div className="form-group">
-        <label>Serial Number</label>
-        <input value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} required />
+        <label htmlFor='serialNumber'>Serial Number</label>
+        <input id='serialNumber' value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} required />
       </div>
       <div className="actions">
         <button type="submit" className="btn btn-primary" disabled={loading}>
