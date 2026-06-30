@@ -37,6 +37,16 @@ function toDateInputValue(value: string): string {
   return value.slice(0, 10);
 }
 
+function getOldestSeasonId(list: Season[]): string {
+  if (list.length === 0) return '';
+  return [...list]
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0]?.id ?? '';
+}
+
+function getOldestNonArchivedSeasonId(list: Season[]): string {
+  return getOldestSeasonId(list.filter(season => !season.isArchived));
+}
+
 export default function MatchSecretarySection({ clubId, members, disciplineOptions }: Props) {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
@@ -100,7 +110,8 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
       const data = await api.get<Season[]>(`/api/clubs/${clubId}/scoring/seasons`);
       setSeasons(data);
       if (data.length > 0 && !selectedSeasonId) {
-        setSelectedSeasonId(data[0].id);
+        const defaultSeasonId = getOldestNonArchivedSeasonId(data) || getOldestSeasonId(data);
+        setSelectedSeasonId(defaultSeasonId);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error loading seasons');
@@ -147,13 +158,27 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
 
   useEffect(() => {
     const visible = showArchivedSeasons ? seasons : seasons.filter(s => !s.isArchived);
+    const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
+    const defaultSeasonId = getOldestNonArchivedSeasonId(seasons) || getOldestSeasonId(seasons);
+
     if (visible.length === 0) {
       if (selectedSeasonId) setSelectedSeasonId('');
       return;
     }
+
+    if (!selectedSeasonId && defaultSeasonId) {
+      setSelectedSeasonId(defaultSeasonId);
+      return;
+    }
+
+    if (!showArchivedSeasons && selectedSeason?.isArchived) {
+      setSelectedSeasonId(defaultSeasonId);
+      return;
+    }
+
     const isSelectedVisible = visible.some(s => s.id === selectedSeasonId);
-    if (!isSelectedVisible) {
-      setSelectedSeasonId(visible[0].id);
+    if (!isSelectedVisible && defaultSeasonId) {
+      setSelectedSeasonId(defaultSeasonId);
     }
   }, [seasons, selectedSeasonId, showArchivedSeasons]);
 
