@@ -5,6 +5,7 @@ import Section21DeclarationHistory from '../components/Section21DeclarationHisto
 import Section21DeclarationViewModal from '../components/Section21DeclarationViewModal';
 import Section21DeclarationRenewal from '../components/Section21DeclarationRenewal';
 import { Firearm } from '../types/club';
+import { FirearmFormData, toFirearmPayload } from '../shared/firearms';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface UserProfile {
@@ -189,8 +190,8 @@ export default function Profile() {
     }
   }
 
-  async function addFirearm(data: { make: string; model: string; caliber: string; serialNumber: string }) {
-    const f = await api.post<Firearm>('/api/users/me/firearms', data);
+  async function addFirearm(data: FirearmFormData) {
+    const f = await api.post<Firearm>('/api/users/me/firearms', toFirearmPayload(data));
     setFirearms(prev => [...prev, f]);
     setShowFirearmForm(false);
   }
@@ -234,8 +235,8 @@ export default function Profile() {
     setFirearms(prev => prev.filter(f => f.id !== id));
   }
 
-  async function editFirearm(id: string, data: { make: string; model: string; caliber: string; serialNumber: string }) {
-    const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}`, data);
+  async function editFirearm(id: string, data: FirearmFormData) {
+    const updated = await api.patch<Firearm>(`/api/users/me/firearms/${id}`, toFirearmPayload(data));
     setFirearms(prev => prev.map(f => (f.id === id ? updated : f)));
   }
 

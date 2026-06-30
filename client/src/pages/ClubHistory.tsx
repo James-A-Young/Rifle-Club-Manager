@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { formatFirearmWithSerial, formatSummaryFirearm } from '../shared/firearms';
 
 type TimeWindowPreset = '3m' | '6m' | '12m' | 'custom';
 type VisitorTypeFilter = 'all' | 'guest' | 'member';
@@ -22,6 +23,7 @@ interface HistoryRow {
   memberNameSnapshot?: string | null;
   memberEmailSnapshot?: string | null;
   firearmSerialSnapshot?: string | null;
+  firearmFriendlyNameSnapshot?: string | null;
   firearmMakeSnapshot?: string | null;
   firearmModelSnapshot?: string | null;
   firearmCaliberSnapshot?: string | null;
@@ -32,6 +34,7 @@ interface HistoryRow {
   } | null;
   firearmUsed: {
     id: string;
+    friendlyName?: string | null;
     make: string;
     model: string;
     caliber: string;
@@ -57,6 +60,7 @@ interface SummaryResponse {
     firearm: {
       id: string;
       serialNumber: string;
+      friendlyName?: string | null;
       make: string;
       model: string;
       caliber: string;
@@ -343,7 +347,7 @@ export default function ClubHistory() {
             <h3>Last Time Firearm Was Used</h3>
             <p style={{ color: 'var(--gray-600)' }}>
               {summary?.firearmLastUsed
-                ? `${summary.firearmLastUsed.firearm?.serialNumber ?? 'Unknown'} at ${new Date(summary.firearmLastUsed.lastUsedAt).toLocaleString()}`
+                ? `${formatSummaryFirearm(summary.firearmLastUsed.firearm?.serialNumber, summary.firearmLastUsed.firearm ?? null)} at ${new Date(summary.firearmLastUsed.lastUsedAt).toLocaleString()}`
                 : 'Set firearm serial filter to inspect usage.'}
             </p>
           </div>
@@ -417,10 +421,13 @@ export default function ClubHistory() {
                     <td>{row.visitorEmail ?? row.user?.email ?? row.memberEmailSnapshot ?? row.guestEmail ?? 'N/A'}</td>
                     <td>{row.purpose}</td>
                     <td>{row.firearmUsed
-                      ? `${row.firearmUsed.serialNumber} (${row.firearmUsed.make} ${row.firearmUsed.model})`
-                      : (row.firearmSerialSnapshot && row.firearmMakeSnapshot && row.firearmModelSnapshot
-                        ? `${row.firearmSerialSnapshot} (${row.firearmMakeSnapshot} ${row.firearmModelSnapshot})`
-                        : 'N/A')}</td>
+                      ? formatFirearmWithSerial(row.firearmUsed.serialNumber, row.firearmUsed)
+                      : formatFirearmWithSerial(row.firearmSerialSnapshot, {
+                          friendlyName: row.firearmFriendlyNameSnapshot,
+                          make: row.firearmMakeSnapshot,
+                          model: row.firearmModelSnapshot,
+                          caliber: row.firearmCaliberSnapshot,
+                        })}</td>
                     <td>{new Date(row.timeIn).toLocaleString()}</td>
                     <td>{row.timeOut ? new Date(row.timeOut).toLocaleString() : 'Active'}</td>
                   </tr>

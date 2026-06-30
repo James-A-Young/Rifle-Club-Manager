@@ -2,6 +2,7 @@
 
 export interface SimpleFirearm {
   id: string;
+  friendlyName?: string | null;
   make: string;
   model: string;
   caliber: string;

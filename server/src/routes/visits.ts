@@ -35,6 +35,7 @@ type MemberSnapshot = {
 };
 
 type FirearmSnapshot = {
+  firearmFriendlyNameSnapshot: string | null;
   firearmSerialSnapshot: string;
   firearmMakeSnapshot: string;
   firearmModelSnapshot: string;
@@ -77,17 +78,43 @@ async function fetchMemberSnapshot(userId: string): Promise<MemberSnapshot | nul
 }
 
 function toFirearmSnapshot(firearm: {
+  friendlyName: string | null;
   serialNumber: string;
   make: string;
   model: string;
   caliber: string;
 }): FirearmSnapshot {
   return {
+    firearmFriendlyNameSnapshot: firearm.friendlyName,
     firearmSerialSnapshot: firearm.serialNumber,
     firearmMakeSnapshot: firearm.make,
     firearmModelSnapshot: firearm.model,
     firearmCaliberSnapshot: firearm.caliber,
   };
+}
+
+function formatFirearmName(
+  firearm: { friendlyName: string | null; make: string; model: string; caliber: string } | null | undefined,
+  snapshot: {
+    firearmFriendlyNameSnapshot: string | null;
+    firearmMakeSnapshot: string | null;
+    firearmModelSnapshot: string | null;
+    firearmCaliberSnapshot: string | null;
+  }
+): string | null {
+  if (firearm?.friendlyName) {
+    return firearm.friendlyName;
+  }
+  if (firearm) {
+    return `${firearm.make} ${firearm.model} (${firearm.caliber})`;
+  }
+  if (snapshot.firearmFriendlyNameSnapshot) {
+    return snapshot.firearmFriendlyNameSnapshot;
+  }
+  if (snapshot.firearmMakeSnapshot && snapshot.firearmModelSnapshot && snapshot.firearmCaliberSnapshot) {
+    return `${snapshot.firearmMakeSnapshot} ${snapshot.firearmModelSnapshot} (${snapshot.firearmCaliberSnapshot})`;
+  }
+  return null;
 }
 
 async function fetchFirearmSnapshot(firearmId: string | undefined): Promise<FirearmSnapshot | null> {
@@ -98,6 +125,7 @@ async function fetchFirearmSnapshot(firearmId: string | undefined): Promise<Fire
   const firearm = await prisma.firearm.findUnique({
     where: { id: firearmId },
     select: {
+      friendlyName: true,
       serialNumber: true,
       make: true,
       model: true,
@@ -360,11 +388,27 @@ function buildHistoryWhere(
         {
           firearmUsed: {
             is: {
+              friendlyName: {
+                contains: filters.search,
+                mode: 'insensitive',
+              },
+            },
+          },
+        },
+        {
+          firearmUsed: {
+            is: {
               serialNumber: {
                 contains: filters.search,
                 mode: 'insensitive',
               },
             },
+          },
+        },
+        {
+          firearmFriendlyNameSnapshot: {
+            contains: filters.search,
+            mode: 'insensitive',
           },
         },
         {
@@ -610,6 +654,7 @@ router.post('/public', attachOptionalAuth, async (req: AuthRequest, res: Respons
     memberUserIdSnapshot?: string;
     memberNameSnapshot?: string;
     memberEmailSnapshot?: string;
+    firearmFriendlyNameSnapshot?: string | null;
     guestName?: string;
     guestClubRepresented?: string;
     guestEmail?: string | null;
@@ -697,7 +742,7 @@ router.get('/kiosk/:kioskToken/active', async (req: AuthRequest, res: Response) 
     },
     include: {
       user: { select: { id: true, name: true, email: true } },
-      firearmUsed: { select: { id: true, make: true, model: true, caliber: true } },
+      firearmUsed: { select: { id: true, friendlyName: true, make: true, model: true, caliber: true } },
     },
     orderBy: { timeIn: 'desc' },
   });
@@ -711,10 +756,18 @@ router.get('/kiosk/:kioskToken/active', async (req: AuthRequest, res: Response) 
     purpose: v.purpose,
     timeIn: v.timeIn,
     firearm: v.firearmUsed
-      ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})`
-      : (v.firearmMakeSnapshot && v.firearmModelSnapshot && v.firearmCaliberSnapshot
-        ? `${v.firearmMakeSnapshot} ${v.firearmModelSnapshot} (${v.firearmCaliberSnapshot})`
-        : null),
+      ? formatFirearmName(v.firearmUsed, {
+          firearmFriendlyNameSnapshot: v.firearmFriendlyNameSnapshot,
+          firearmMakeSnapshot: v.firearmMakeSnapshot,
+          firearmModelSnapshot: v.firearmModelSnapshot,
+          firearmCaliberSnapshot: v.firearmCaliberSnapshot,
+        })
+      : formatFirearmName(null, {
+          firearmFriendlyNameSnapshot: v.firearmFriendlyNameSnapshot,
+          firearmMakeSnapshot: v.firearmMakeSnapshot,
+          firearmModelSnapshot: v.firearmModelSnapshot,
+          firearmCaliberSnapshot: v.firearmCaliberSnapshot,
+        }),
   }));
 
   res.json(safeVisits);
@@ -819,6 +872,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
         ],
       },
       select: {
+        friendlyName: true,
         serialNumber: true,
         make: true,
         model: true,
@@ -948,7 +1002,7 @@ router.get('/club/:clubId/active', requireAuth, async (req: AuthRequest, res: Re
     },
     include: {
       user: { select: { id: true, name: true, email: true } },
-      firearmUsed: { select: { id: true, make: true, model: true, caliber: true } },
+      firearmUsed: { select: { id: true, friendlyName: true, make: true, model: true, caliber: true } },
     },
     orderBy: { timeIn: 'desc' },
   });
@@ -963,10 +1017,18 @@ router.get('/club/:clubId/active', requireAuth, async (req: AuthRequest, res: Re
     purpose: v.purpose,
     timeIn: v.timeIn,
     firearm: v.firearmUsed
-      ? `${v.firearmUsed.make} ${v.firearmUsed.model} (${v.firearmUsed.caliber})`
-      : (v.firearmMakeSnapshot && v.firearmModelSnapshot && v.firearmCaliberSnapshot
-        ? `${v.firearmMakeSnapshot} ${v.firearmModelSnapshot} (${v.firearmCaliberSnapshot})`
-        : null),
+      ? formatFirearmName(v.firearmUsed, {
+          firearmFriendlyNameSnapshot: v.firearmFriendlyNameSnapshot,
+          firearmMakeSnapshot: v.firearmMakeSnapshot,
+          firearmModelSnapshot: v.firearmModelSnapshot,
+          firearmCaliberSnapshot: v.firearmCaliberSnapshot,
+        })
+      : formatFirearmName(null, {
+          firearmFriendlyNameSnapshot: v.firearmFriendlyNameSnapshot,
+          firearmMakeSnapshot: v.firearmMakeSnapshot,
+          firearmModelSnapshot: v.firearmModelSnapshot,
+          firearmCaliberSnapshot: v.firearmCaliberSnapshot,
+        }),
   }));
 
   res.json(safeVisits);
@@ -1062,6 +1124,7 @@ router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: R
       memberNameSnapshot: true,
       memberEmailSnapshot: true,
       firearmSerialSnapshot: true,
+      firearmFriendlyNameSnapshot: true,
       firearmMakeSnapshot: true,
       firearmModelSnapshot: true,
       firearmCaliberSnapshot: true,
@@ -1075,6 +1138,7 @@ router.get('/club/:clubId/history', requireAuth, async (req: AuthRequest, res: R
       firearmUsed: {
         select: {
           id: true,
+          friendlyName: true,
           make: true,
           model: true,
           caliber: true,
@@ -1169,6 +1233,7 @@ router.get('/club/:clubId/history/summary', requireAuth, async (req: AuthRequest
             select: {
               id: true,
               serialNumber: true,
+              friendlyName: true,
               make: true,
               model: true,
               caliber: true,
@@ -1382,6 +1447,7 @@ router.post('/kiosk/qr-preview', async (req: AuthRequest, res: Response) => {
     },
     select: {
       id: true,
+      friendlyName: true,
       make: true,
       model: true,
       caliber: true,
