@@ -69,9 +69,10 @@ export default function KioskSignIn() {
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [manualSignInSubmitting, setManualSignInSubmitting] = useState(false);
   const [cardSignInSubmitting, setCardSignInSubmitting] = useState(false);
+  const [manualFormResetKey, setManualFormResetKey] = useState(0);
   const [signInAccessToken, setSignInAccessToken] = useState('');
   const signInAccessTokenRef = useRef('');
-  const isAuthenticatedKioskUser = Boolean(kioskData?.isAuthenticated);
+  const isAuthenticatedKioskUser = false;
   const isSignInInteractionInProgress =
     cardScanOpen || cardModalOpen || manualSignInSubmitting || cardSignInSubmitting;
 
@@ -123,6 +124,12 @@ export default function KioskSignIn() {
     setCardPreview(null);
     setCardModalOpen(false);
     setCardSignInError('');
+  }
+
+  function resetToGenericKioskForm() {
+    setCardScanOpen(false);
+    resetCardFlowState();
+    setManualFormResetKey(prev => prev + 1);
   }
 
   // Load kiosk data on mount
@@ -465,7 +472,7 @@ export default function KioskSignIn() {
   }
 
   const clubFirearms = kioskData?.club.firearms ?? [];
-  const myFirearms = kioskData?.userFirearms ?? [];
+  const myFirearms: SimpleFirearm[] = [];
 
   const visitRows: ActiveVisitorRow[] = activeVisits.map(v => ({
     signOutId: v.publicVisitRef,
@@ -515,6 +522,7 @@ export default function KioskSignIn() {
 
           {kioskData && (
             <VisitSignInForm
+              key={`manual-${manualFormResetKey}-${isAuthenticatedKioskUser ? 'auth' : 'guest'}`}
               clubFirearms={clubFirearms}
               myFirearms={myFirearms}
               isAuthenticated={isAuthenticatedKioskUser}
@@ -541,20 +549,17 @@ export default function KioskSignIn() {
       <MembershipCardScannerModal
         open={cardScanOpen}
         signInAccessToken={signInAccessToken || kioskData?.accessToken}
-        onClose={() => setCardScanOpen(false)}
+        onClose={resetToGenericKioskForm}
         onPreview={(preview) => {
           setCardPreview(preview);
           setCardModalOpen(true);
           setCardScanOpen(false);
         }}
-        onDuplicateSignIn={() => {
-          setCardScanOpen(false);
-          resetCardFlowState();
-        }}
+        onDuplicateSignIn={resetToGenericKioskForm}
       />
 
       {cardModalOpen && cardPreview && (
-        <div className="policy-modal-backdrop" onClick={() => { setCardModalOpen(false); resetCardFlowState(); }}>
+        <div className="policy-modal-backdrop" onClick={resetToGenericKioskForm}>
           <div
             className="policy-modal"
             style={{ width: 'min(680px, 100%)' }}
@@ -565,7 +570,7 @@ export default function KioskSignIn() {
           >
             <div className="policy-modal-header">
               <h2>Member Sign-In</h2>
-              <button className="btn btn-secondary" type="button" onClick={() => { setCardModalOpen(false); resetCardFlowState(); }}>
+              <button className="btn btn-secondary" type="button" onClick={resetToGenericKioskForm}>
                 Close
               </button>
             </div>
