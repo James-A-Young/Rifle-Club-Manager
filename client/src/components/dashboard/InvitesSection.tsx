@@ -33,6 +33,8 @@ export default function InvitesSection({
   const [bulkEmails, setBulkEmails] = useState('');
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkModeEnabled, setBulkModeEnabled] = useState(false);
+  const [showRedeemed, setShowRedeemed] = useState(false);
+  const visibleInvites = showRedeemed ? invites : invites.filter(invite => !invite.redeemedAt);
 
   async function handleCreateBulk() {
     const emails = Array.from(new Set(
@@ -66,9 +68,19 @@ export default function InvitesSection({
     <section>
       <div className="page-header">
         <h2>Invites</h2>
-        <button className="btn btn-secondary btn-sm" onClick={toggleBulkMode}>
-          {bulkModeEnabled ? 'Disable Bulk Mode' : 'Enable Bulk Mode'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={showRedeemed}
+              onChange={e => setShowRedeemed(e.target.checked)}
+            />
+            Show Redeemed
+          </label>
+          <button className="btn btn-secondary btn-sm" onClick={toggleBulkMode}>
+            {bulkModeEnabled ? 'Disable Bulk Mode' : 'Enable Bulk Mode'}
+          </button>
+        </div>
       </div>
       <div
         className="stats-grid"
@@ -157,7 +169,7 @@ export default function InvitesSection({
           </tr>
         </thead>
         <tbody>
-          {invites.map(invite => (
+          {visibleInvites.map(invite => (
             <tr key={invite.id}>
               <td>{invite.email}</td>
               <td>
@@ -199,10 +211,10 @@ export default function InvitesSection({
               </td>
             </tr>
           ))}
-          {invites.length === 0 && (
+          {visibleInvites.length === 0 && (
             <tr>
               <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
-                No invites created yet
+                No invites outstanding
               </td>
             </tr>
           )}
