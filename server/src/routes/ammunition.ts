@@ -65,6 +65,8 @@ const stockInputSchema = z.object({
   ammunitionTypeId: z.string().min(1),
   ammunitionSafeId: z.string().min(1),
   quantity: z.number().int().positive(),
+  type: z.enum(['INPUT', 'CORRECTION']).optional().default('INPUT'),
+  note: z.string().trim().min(1).max(500).optional(),
 });
 
 const createSaleSchema = z.object({
@@ -449,6 +451,11 @@ router.post('/club/:clubId/stock/input', async (req: AuthRequest, res: Response)
     return;
   }
 
+  if (parsed.data.type === 'CORRECTION' && !parsed.data.note) {
+    res.status(400).json({ error: 'Correction requires a note' });
+    return;
+  }
+
   const type = await prisma.ammunitionType.findFirst({
     where: { id: parsed.data.ammunitionTypeId, clubId },
     select: { id: true },
@@ -462,37 +469,65 @@ router.post('/club/:clubId/stock/input', async (req: AuthRequest, res: Response)
     return;
   }
 
-  await prisma.$transaction(async tx => {
-    await tx.ammunitionStock.upsert({
-      where: {
-        ammunitionTypeId_ammunitionSafeId: {
+  try {
+    await prisma.$transaction(async tx => {
+      if (parsed.data.type === 'CORRECTION') {
+        const updated = await tx.ammunitionStock.updateMany({
+          where: {
+            clubId,
+            ammunitionTypeId: parsed.data.ammunitionTypeId,
+            ammunitionSafeId: parsed.data.ammunitionSafeId,
+            quantity: { gte: parsed.data.quantity },
+          },
+          data: {
+            quantity: { decrement: parsed.data.quantity },
+          },
+        });
+
+        if (updated.count !== 1) {
+          throw new Error('INSUFFICIENT_STOCK_FOR_CORRECTION');
+        }
+      } else {
+        await tx.ammunitionStock.upsert({
+          where: {
+            ammunitionTypeId_ammunitionSafeId: {
+              ammunitionTypeId: parsed.data.ammunitionTypeId,
+              ammunitionSafeId: parsed.data.ammunitionSafeId,
+            },
+          },
+          update: {
+            quantity: {
+              increment: parsed.data.quantity,
+            },
+          },
+          create: {
+            clubId,
+            ammunitionTypeId: parsed.data.ammunitionTypeId,
+            ammunitionSafeId: parsed.data.ammunitionSafeId,
+            quantity: parsed.data.quantity,
+          },
+        });
+      }
+
+      await tx.ammunitionStockInput.create({
+        data: {
+          clubId,
           ammunitionTypeId: parsed.data.ammunitionTypeId,
           ammunitionSafeId: parsed.data.ammunitionSafeId,
+          quantity: parsed.data.type === 'CORRECTION' ? -parsed.data.quantity : parsed.data.quantity,
+          note: parsed.data.type === 'CORRECTION' ? parsed.data.note : undefined,
+          inputByUserId: req.user!.id,
         },
-      },
-      update: {
-        quantity: {
-          increment: parsed.data.quantity,
-        },
-      },
-      create: {
-        clubId,
-        ammunitionTypeId: parsed.data.ammunitionTypeId,
-        ammunitionSafeId: parsed.data.ammunitionSafeId,
-        quantity: parsed.data.quantity,
-      },
+      });
     });
-
-    await tx.ammunitionStockInput.create({
-      data: {
-        clubId,
-        ammunitionTypeId: parsed.data.ammunitionTypeId,
-        ammunitionSafeId: parsed.data.ammunitionSafeId,
-        quantity: parsed.data.quantity,
-        inputByUserId: req.user!.id,
-      },
-    });
-  });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'INSUFFICIENT_STOCK_FOR_CORRECTION') {
+      res.status(400).json({ error: 'Insufficient stock in safe for correction' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to input stock' });
+    return;
+  }
 
   res.status(201).json({ success: true });
 });
