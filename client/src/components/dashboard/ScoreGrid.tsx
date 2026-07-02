@@ -10,6 +10,17 @@ interface Props {
 
 type CellStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+function hasAtMostTwoDecimalPlaces(value: number): boolean {
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
+}
+
+function isValidScoreValue(value: number): boolean {
+  return Number.isFinite(value)
+    && value >= 0
+    && value <= 10000
+    && hasAtMostTwoDecimalPlaces(value);
+}
+
 export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
   const [cellStatus, setCellStatus] = useState<Record<string, CellStatus>>({});
   // Local display values so the input stays responsive while saving
@@ -45,7 +56,10 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
     const trimmed = raw.trim();
     const value = trimmed === '' ? null : Number(trimmed);
 
-    if (trimmed !== '' && (Number.isNaN(value) || !Number.isFinite(value))) return;
+    if (trimmed !== '' && (value === null || !isValidScoreValue(value))) {
+      setCellStatus(prev => ({ ...prev, [scoreId]: 'error' }));
+      return;
+    }
 
     // Abort any previous in-flight request for this cell
     abortControllers.current[scoreId]?.abort();
@@ -118,7 +132,7 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
       if (cell) {
         const v = localValues[cell.id];
         const n = v !== undefined && v.trim() !== '' ? Number(v) : null;
-        if (n !== null && !Number.isNaN(n)) total += n;
+        if (n !== null && isValidScoreValue(n)) total += n;
       }
     }
     return total;
@@ -229,6 +243,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
                       <input
                         type="number"
                         min={0}
+                        max={10000}
+                        step="0.01"
                         value={localValues[cell.id] ?? ''}
                         onChange={e => handleChange(cell.id, e.target.value)}
                         onBlur={e => handleBlur(cell.id, e.target.value)}

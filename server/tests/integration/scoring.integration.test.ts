@@ -588,6 +588,78 @@ describe('score autosave', () => {
     expect(res.body.score).toBe(47);
   });
 
+  it('accepts decimal scores up to 2 decimal places', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Decimal Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Decimal Competition',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2024-11-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const stub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${stub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 47.25 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.score).toBe(47.25);
+  });
+
+  it('rejects scores with more than 2 decimal places', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const { body: season } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/seasons`)
+      .set(authHeader(admin))
+      .send({ name: 'Precision Season' });
+
+    const { body: comp } = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions`)
+      .set(authHeader(admin))
+      .send({
+        seasonId: season.id,
+        name: 'Precision Competition',
+        roundCount: 1,
+        cardsPerRound: 1,
+        rounds: [{ dueDate: '2024-11-01' }],
+      });
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/scoring/competitions/${comp.id}/members`)
+      .set(authHeader(admin))
+      .send({ userIds: [member.id] });
+
+    const stub = await prisma.score.findFirst({ where: { competitionId: comp.id, userId: member.id } });
+
+    const res = await request(app)
+      .patch(`/api/clubs/${club.id}/scoring/scores/${stub!.id}`)
+      .set(authHeader(admin))
+      .send({ score: 47.255 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Score can have up to 2 decimal places');
+  });
+
   it('can set score back to null', async () => {
     const { admin, club } = await createClubWithAdmin();
     const member = await addApprovedMember(club.id);
@@ -1204,5 +1276,18 @@ describe('practice cards', () => {
     expect(Array.isArray(listRes.body)).toBe(true);
     expect(listRes.body.length).toBe(1);
     expect(listRes.body[0].discipline).toBe('Benchrest');
+  });
+
+  it('rejects practice card scores with more than 2 decimal places', async () => {
+    const { admin, club } = await createClubWithAdmin();
+    const member = await addApprovedMember(club.id);
+
+    const res = await request(app)
+      .post(`/api/clubs/${club.id}/scoring/practice-cards`)
+      .set(authHeader(admin))
+      .send({ userId: member.id, discipline: 'Benchrest', score: 57.123 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('Score can have up to 2 decimal places');
   });
 });
