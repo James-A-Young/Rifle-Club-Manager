@@ -140,7 +140,7 @@ export function createApp() {
 
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 500,
+    max: 700,
     message: { error: 'Too many requests, please try again later.' },
     skip: () => process.env.NODE_ENV === 'test',
   });
