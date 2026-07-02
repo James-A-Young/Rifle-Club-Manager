@@ -33,6 +33,10 @@ interface PracticeCardForm {
   recordedAt: string;
 }
 
+function hasAtMostTwoDecimalPlaces(value: number): boolean {
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
+}
+
 function toDateInputValue(value: string): string {
   return value.slice(0, 10);
 }
@@ -429,8 +433,11 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
       return;
     }
     const parsedScore = Number(practiceForm.score);
-    if (!Number.isInteger(parsedScore) || parsedScore < 0 || parsedScore > 10000) {
-      setError('Score must be an integer between 0 and 10000');
+    if (!Number.isFinite(parsedScore)
+      || parsedScore < 0
+      || parsedScore > 10000
+      || !hasAtMostTwoDecimalPlaces(parsedScore)) {
+      setError('Score must be between 0 and 10000 with up to 2 decimal places');
       return;
     }
 
@@ -542,6 +549,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                     type="number"
                     min={0}
                     max={10000}
+                    step="0.01"
                     value={practiceForm.score}
                     onChange={e => setPracticeForm(prev => ({ ...prev, score: e.target.value }))}
                     placeholder="0-10000"

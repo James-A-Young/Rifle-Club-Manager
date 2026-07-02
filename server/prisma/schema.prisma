@@ -737,7 +737,7 @@ model Score {
   roundId       String
   userId        String
   cardNumber    Int
-  score         Int?
+  score         Float?
   updatedAt     DateTime @updatedAt
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
@@ -756,7 +756,7 @@ model PracticeScore {
   userId          String
   createdByUserId String
   discipline      String
-  score           Int
+  score           Float
   recordedAt      DateTime @default(now())
   createdAt       DateTime @default(now())
 

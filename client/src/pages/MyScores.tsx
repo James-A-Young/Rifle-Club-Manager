@@ -220,6 +220,7 @@ export default function MyScores() {
               id="minScore"
               min={0}
               max={10000}
+              step="0.01"
               value={minScore}
               onChange={e => onFilterChange(setMinScore, e.target.value)}
             />
@@ -232,6 +233,7 @@ export default function MyScores() {
               id="maxScore"
               min={0}
               max={10000}
+              step="0.01"
               value={maxScore}
               onChange={e => onFilterChange(setMaxScore, e.target.value)}
             />

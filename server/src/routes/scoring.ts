@@ -72,14 +72,23 @@ const enrolMembersSchema = z.object({
   userIds: z.array(z.string().min(1)).min(1),
 });
 
+function hasAtMostTwoDecimalPlaces(value: number): boolean {
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
+}
+
+const scoreValueSchema = z.number()
+  .min(0)
+  .max(10000)
+  .refine(hasAtMostTwoDecimalPlaces, { message: 'Score can have up to 2 decimal places' });
+
 const updateScoreSchema = z.object({
-  score: z.number().int().min(0).max(10000).nullable(),
+  score: scoreValueSchema.nullable(),
 });
 
 const createPracticeScoreSchema = z.object({
   userId: z.string().min(1),
   discipline: z.string().trim().min(1).max(80),
-  score: z.number().int().min(0).max(10000),
+  score: scoreValueSchema,
   recordedAt: z.string().datetime().optional(),
 });
 
@@ -96,8 +105,12 @@ const listMemberHistoryQuerySchema = z.object({
   shotTo: z.string().datetime().optional(),
   dueFrom: z.string().datetime().optional(),
   dueTo: z.string().datetime().optional(),
-  minScore: z.coerce.number().int().min(0).max(10000).optional(),
-  maxScore: z.coerce.number().int().min(0).max(10000).optional(),
+  minScore: z.coerce.number().min(0).max(10000)
+    .refine(hasAtMostTwoDecimalPlaces, { message: 'minScore can have up to 2 decimal places' })
+    .optional(),
+  maxScore: z.coerce.number().min(0).max(10000)
+    .refine(hasAtMostTwoDecimalPlaces, { message: 'maxScore can have up to 2 decimal places' })
+    .optional(),
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
 });
@@ -179,7 +192,7 @@ function buildMemberHistoryWhere(
   userId: string,
   filters: z.infer<typeof listMemberHistoryQuerySchema>,
 ): Prisma.ScoreWhereInput {
-  const scoreFilter: Prisma.IntNullableFilter = { not: null };
+  const scoreFilter: Prisma.FloatNullableFilter = { not: null };
   if (typeof filters.minScore === 'number') {
     scoreFilter.gte = filters.minScore;
   }
