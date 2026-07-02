@@ -1,6 +1,6 @@
 # Rifle Club Manager
 
-Rifle Club Manager is a full-stack TypeScript app for managing club members, sign-ins, firearms, and visit logs.
+Rifle Club Manager is a full-stack TypeScript app for managing club members, sign-ins, firearms, and visit logs, ammunition stock and sales, competitions scores and averages, club cash handling, and reporting
 
 It is organized as an npm workspace with:
 - `client`: React + Vite frontend

@@ -539,6 +539,7 @@ export default function KioskSignIn() {
           loading={visitsLoading}
           error={visitsError}
           signOutLoadingId={signoutLoading}
+          showEmail={false}
           showSignOutAll={isAdmin}
           signOutAllLoading={signoutAllLoading}
           onSignOut={handleSignOut}

@@ -18,6 +18,8 @@ interface Props {
   signOutLoadingId: string | null;
   /** When true, renders the "Sign Out All" button. */
   showSignOutAll: boolean;
+  /** When true, renders the "Email" column. */
+  showEmail: boolean;
   signOutAllLoading: boolean;
   onSignOut: (signOutId: string) => void;
   onSignOutAll: () => void;
@@ -29,6 +31,7 @@ export default function ActiveVisitorsTable({
   error,
   signOutLoadingId,
   showSignOutAll,
+  showEmail,
   signOutAllLoading,
   onSignOut,
   onSignOutAll,
@@ -59,7 +62,7 @@ export default function ActiveVisitorsTable({
           <thead>
             <tr>
               <th>Name</th>
-              <th>Email</th>
+              {showEmail && <th>Email</th>}
               <th>Purpose</th>
               <th>Firearm</th>
               <th>Time In</th>
@@ -70,7 +73,7 @@ export default function ActiveVisitorsTable({
             {visits.map(v => (
               <tr key={v.signOutId}>
                 <td>{v.visitorName}</td>
-                <td>{v.visitorEmail}</td>
+                {showEmail && <td>{v.visitorEmail}</td>}
                 <td>{v.purpose}</td>
                 <td>{v.firearm || '—'}</td>
                 <td>{new Date(v.timeIn).toLocaleTimeString()}</td>

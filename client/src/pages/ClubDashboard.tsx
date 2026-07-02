@@ -1443,6 +1443,7 @@ export default function ClubDashboard() {
                 error={visitsError}
                 signOutLoadingId={signoutLoading}
                 showSignOutAll={activeVisits.length > 0}
+                showEmail={true}
                 signOutAllLoading={signoutAllLoading}
                 onSignOut={handleSignOut}
                 onSignOutAll={handleSignOutAll}
