@@ -166,11 +166,12 @@ export default function VisitSignInForm({
           </div>
 
           <div className="form-group">
-            <label>Email Address (optional)</label>
+            <label>Email Address *</label>
             <input
               type="email"
               value={guestDetails.guestEmail}
               onChange={e => setGuestDetails(d => ({ ...d, guestEmail: e.target.value }))}
+              required
             />
           </div>
         </>
