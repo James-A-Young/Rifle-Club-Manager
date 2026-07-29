@@ -2,6 +2,11 @@
   "name": "shootingmatch-app",
   "private": true,
   "workspaces": ["server", "client"],
+  "overrides": {
+    "brace-expansion": "^5.0.8",
+    "react-router": "8.3.0",
+    "react-router-dom": "7.18.2"
+  },
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:client": "npm run dev --workspace=client",
