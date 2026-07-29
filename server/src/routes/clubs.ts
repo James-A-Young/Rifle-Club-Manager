@@ -70,10 +70,17 @@ const publicClubBlogParamsSchema = z.object({
 
 const PUBLIC_BLOG_DEFAULT_PAGE_SIZE = 5;
 const PUBLIC_BLOG_MAX_PAGE_SIZE = 20;
+const INVITES_DEFAULT_LIMIT = 100;
+const INVITES_MAX_LIMIT = 500;
 
 const publicBlogListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(PUBLIC_BLOG_MAX_PAGE_SIZE).default(PUBLIC_BLOG_DEFAULT_PAGE_SIZE),
+});
+
+const inviteListQuerySchema = z.object({
+  includeHistorical: z.enum(['true', 'false', '1', '0']).optional(),
+  limit: z.coerce.number().int().min(1).max(INVITES_MAX_LIMIT).default(INVITES_DEFAULT_LIMIT),
 });
 
 const invitePreviewParamsSchema = z.object({
@@ -1467,13 +1474,28 @@ router.get('/:id/invites', async (req: AuthRequest, res: Response) => {
     return;
   }
 
+  const parsedQuery = inviteListQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    res.status(400).json({ error: formatZodError(parsedQuery.error) });
+    return;
+  }
+
+  const includeHistorical = parsedQuery.data.includeHistorical === 'true' || parsedQuery.data.includeHistorical === '1';
+
   const invites = await prisma.clubInvite.findMany({
-    where: { clubId },
+    where: includeHistorical
+      ? { clubId }
+      : {
+          clubId,
+          redeemedAt: null,
+          expiresAt: { gt: new Date() },
+        },
     include: {
       createdBy: { select: { id: true, name: true, email: true } },
       redeemedBy: { select: { id: true, name: true, email: true } },
     },
     orderBy: { createdAt: 'desc' },
+    take: parsedQuery.data.limit,
   });
 
   res.json(invites);

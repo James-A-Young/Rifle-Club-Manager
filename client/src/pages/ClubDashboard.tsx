@@ -149,6 +149,7 @@ export default function ClubDashboard() {
   const [firearms, setFirearms] = useState<Firearm[]>([]);
   const [links, setLinks] = useState<SignInLink[]>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
+  const [showRedeemedInvites, setShowRedeemedInvites] = useState(false);
 
   // UI state
   const [showFirearmForm, setShowFirearmForm] = useState(false);
@@ -310,14 +311,22 @@ export default function ClubDashboard() {
     setBackupDriveFolderName(status.connection.driveFolderName ?? '');
   }
 
+  async function loadInvites(includeHistorical: boolean) {
+    if (!id || !isAdmin) return;
+    const params = new URLSearchParams();
+    params.set('limit', '200');
+    if (includeHistorical) {
+      params.set('includeHistorical', '1');
+    }
+    const rows = await api.get<ClubInvite[]>(`/api/clubs/${id}/invites?${params.toString()}`);
+    setInvites(rows);
+  }
+
   useEffect(() => {
     if (!id || !isAdmin) return;
     api.get<SignInLink[]>(`/api/sign-in-links/club/${id}`)
       .then(setLinks)
       .catch(e => setError(e instanceof Error ? e.message : 'Error loading links'));
-    api.get<ClubInvite[]>(`/api/clubs/${id}/invites`)
-      .then(setInvites)
-      .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
     api.get<ClubSettings>(`/api/clubs/${id}/settings`)
       .then(s => {
         const normalized = {
@@ -381,6 +390,12 @@ export default function ClubDashboard() {
       })
       .catch(() => undefined);
   }, [id, isAdmin]);
+
+  useEffect(() => {
+    if (!id || !isAdmin) return;
+    void loadInvites(showRedeemedInvites)
+      .catch(e => setError(e instanceof Error ? e.message : 'Error loading invites'));
+  }, [id, isAdmin, showRedeemedInvites]);
 
   useEffect(() => {
     if (!id || !isAdmin) return;
@@ -1599,9 +1614,11 @@ export default function ClubDashboard() {
           {isAdmin && (
             <InvitesSection
               invites={invites}
+              showRedeemed={showRedeemedInvites}
               email={inviteEmail}
               role={inviteRole}
               expiresInDays={inviteExpiresInDays}
+              onShowRedeemedChange={setShowRedeemedInvites}
               onEmailChange={setInviteEmail}
               onRoleChange={setInviteRole}
               onExpiresChange={setInviteExpiresInDays}

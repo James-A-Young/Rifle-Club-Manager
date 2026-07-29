@@ -3,9 +3,11 @@ import { ClubInvite, MembershipRoleType } from '../../types/club';
 
 interface Props {
   invites: ClubInvite[];
+  showRedeemed: boolean;
   email: string;
   role: MembershipRoleType;
   expiresInDays: number;
+  onShowRedeemedChange: (value: boolean) => void;
   onEmailChange: (email: string) => void;
   onRoleChange: (role: MembershipRoleType) => void;
   onExpiresChange: (days: number) => void;
@@ -18,9 +20,11 @@ interface Props {
 
 export default function InvitesSection({
   invites,
+  showRedeemed,
   email,
   role,
   expiresInDays,
+  onShowRedeemedChange,
   onEmailChange,
   onRoleChange,
   onExpiresChange,
@@ -33,8 +37,6 @@ export default function InvitesSection({
   const [bulkEmails, setBulkEmails] = useState('');
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [bulkModeEnabled, setBulkModeEnabled] = useState(false);
-  const [showRedeemed, setShowRedeemed] = useState(false);
-  const visibleInvites = showRedeemed ? invites : invites.filter(invite => !invite.redeemedAt);
 
   async function handleCreateBulk() {
     const emails = Array.from(new Set(
@@ -73,9 +75,9 @@ export default function InvitesSection({
             <input
               type="checkbox"
               checked={showRedeemed}
-              onChange={e => setShowRedeemed(e.target.checked)}
+              onChange={e => onShowRedeemedChange(e.target.checked)}
             />
-            Show Redeemed
+            Show Redeemed & Expired
           </label>
           <button className="btn btn-secondary btn-sm" onClick={toggleBulkMode}>
             {bulkModeEnabled ? 'Disable Bulk Mode' : 'Enable Bulk Mode'}
@@ -169,7 +171,7 @@ export default function InvitesSection({
           </tr>
         </thead>
         <tbody>
-          {visibleInvites.map(invite => (
+          {invites.map(invite => (
             <tr key={invite.id}>
               <td>{invite.email}</td>
               <td>
@@ -211,10 +213,10 @@ export default function InvitesSection({
               </td>
             </tr>
           ))}
-          {visibleInvites.length === 0 && (
+          {invites.length === 0 && (
             <tr>
               <td colSpan={5} style={{ textAlign: 'center', color: 'var(--gray-600)' }}>
-                No invites outstanding
+                {showRedeemed ? 'No invites found' : 'No invites outstanding'}
               </td>
             </tr>
           )}
