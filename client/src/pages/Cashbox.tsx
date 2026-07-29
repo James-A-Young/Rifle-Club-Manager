@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { CashBox, CashBoxTransaction } from '../types/club';
 
-type ManualReason = 'ADD_FLOAT' | 'DONATION' | 'FEE_PAYMENT' | 'BANKED_CASH';
+type ManualReason = 'ADD_FLOAT' | 'DONATION' | 'FEE_PAYMENT' | 'BANKED_CASH' | 'CORRECTION';
 type Movement = 'ADD' | 'DEDUCT';
 
 export default function Cashbox() {
@@ -112,6 +112,7 @@ export default function Cashbox() {
                     <option value="DONATION">Donation</option>
                     <option value="FEE_PAYMENT">Fee Payment</option>
                     <option value="BANKED_CASH">Banked Cash</option>
+                    <option value="CORRECTION">Correction</option>
                   </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>

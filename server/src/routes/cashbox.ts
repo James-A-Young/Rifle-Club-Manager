@@ -27,6 +27,7 @@ const createManualTransactionSchema = z.object({
     CashBoxTransactionReason.DONATION,
     CashBoxTransactionReason.FEE_PAYMENT,
     CashBoxTransactionReason.BANKED_CASH,
+    CashBoxTransactionReason.CORRECTION,
   ]),
   movement: z.enum(['ADD', 'DEDUCT']),
   amountPence: z.number().int().positive(),

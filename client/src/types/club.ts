@@ -317,7 +317,7 @@ export interface CashBox {
 export interface CashBoxTransaction {
   id: string;
   clubId: string;
-  reason: 'AMMUNITION_SALE' | 'ADD_FLOAT' | 'DONATION' | 'FEE_PAYMENT' | 'BANKED_CASH';
+  reason: 'AMMUNITION_SALE' | 'ADD_FLOAT' | 'DONATION' | 'FEE_PAYMENT' | 'BANKED_CASH' | 'CORRECTION';
   amountPence: number;
   balanceAfterPence: number;
   relatedSaleId?: string | null;

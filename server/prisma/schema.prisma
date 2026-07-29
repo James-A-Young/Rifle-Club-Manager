@@ -54,6 +54,7 @@ enum CashBoxTransactionReason {
   DONATION
   FEE_PAYMENT
   BANKED_CASH
+  CORRECTION
 }
 
 enum PublicAnnouncementVariant {
