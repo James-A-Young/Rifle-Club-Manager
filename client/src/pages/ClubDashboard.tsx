@@ -61,6 +61,11 @@ interface AmmunitionBuyerOption {
   lastName: string;
 }
 
+interface AmmunitionSaleActionResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface AmmunitionSettingsResponse {
   types: AmmunitionType[];
   safes: AmmunitionSafe[];
@@ -1065,17 +1070,20 @@ export default function ClubDashboard() {
     setSaleBuyerUserId('');
   }
 
-  function prepareAmmunitionSaleConfirmation(): boolean {
+  function prepareAmmunitionSaleConfirmation(): AmmunitionSaleActionResult {
     if (!id || !saleTypeId || !saleSafeId || saleQuantity <= 0 || !saleBuyerFirstName.trim() || !saleBuyerLastName.trim()) {
-      setError('Please complete all sale fields');
-      return false;
+      return {
+        ok: false,
+        error: 'Please complete all sale fields',
+      };
     }
-    return true;
+    return { ok: true };
   }
 
-  async function confirmAmmunitionSale(): Promise<boolean> {
-    if (!prepareAmmunitionSaleConfirmation()) {
-      return false;
+  async function confirmAmmunitionSale(): Promise<AmmunitionSaleActionResult> {
+    const preparation = prepareAmmunitionSaleConfirmation();
+    if (!preparation.ok) {
+      return preparation;
     }
     try {
       await api.post(`/api/ammunition/club/${id}/sales`, {
@@ -1087,12 +1095,23 @@ export default function ClubDashboard() {
         quantity: saleQuantity,
         paymentMethod: salePaymentMethod,
       });
+      setSaleBuyerSelectionValue('');
+      setSaleBuyerUserId('');
+      setSaleBuyerFirstName('');
+      setSaleBuyerLastName('');
+      setSaleTypeId('');
+      setSaleSafeId('');
       setSaleQuantity(50);
+      setSalePaymentMethod('CASH');
       await Promise.all([loadAmmunitionSales(), loadAmmunitionStock()]);
-      return true;
+      return { ok: true };
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error recording sale');
-      return false;
+      const message = e instanceof Error ? e.message : 'Error recording sale';
+      setError(message);
+      return {
+        ok: false,
+        error: message,
+      };
     }
   }
 

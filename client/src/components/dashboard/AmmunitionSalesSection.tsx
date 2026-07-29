@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AmmunitionReorderAnalysisRow, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
 import { PaymentMethod } from '../../types/club';
 import AmmunitionSaleConfirmModal from './AmmunitionSaleConfirmModal';
@@ -6,6 +6,11 @@ import AmmunitionSaleConfirmModal from './AmmunitionSaleConfirmModal';
 interface AmmunitionBuyerOption {
   value: string;
   label: string;
+}
+
+interface AmmunitionSaleActionResult {
+  ok: boolean;
+  error?: string;
 }
 
 interface Props {
@@ -47,8 +52,8 @@ interface Props {
   onSaleSafeIdChange: (value: string) => void;
   onSaleQuantityChange: (value: number) => void;
   onSalePaymentMethodChange: (value: PaymentMethod) => void;
-  onPrepareConfirmSale: () => boolean;
-  onConfirmSale: () => Promise<boolean>;
+  onPrepareConfirmSale: () => AmmunitionSaleActionResult;
+  onConfirmSale: () => Promise<AmmunitionSaleActionResult>;
   onLedgerBuyerSearchChange: (value: string) => void;
   onLedgerSellerSearchChange: (value: string) => void;
   onLedgerTypeIdChange: (value: string) => void;
@@ -81,16 +86,32 @@ function getStockQuantity(stock: AmmunitionStock[], typeId: string, safeId: stri
 export default function AmmunitionSalesSection(props: Props) {
   const [saleConfirmOpen, setSaleConfirmOpen] = useState(false);
   const [saleConfirmError, setSaleConfirmError] = useState('');
+  const [saleFormError, setSaleFormError] = useState('');
   const [saleConfirmSubmitting, setSaleConfirmSubmitting] = useState(false);
   const selectedType = props.types.find(t => t.id === props.saleTypeId);
   const selectedSafeStock = props.saleTypeId && props.saleSafeId
     ? getStockQuantity(props.stock, props.saleTypeId, props.saleSafeId)
     : 0;
 
+  useEffect(() => {
+    setSaleFormError('');
+  }, [
+    props.saleBuyerSelectionValue,
+    props.saleBuyerFirstName,
+    props.saleBuyerLastName,
+    props.saleTypeId,
+    props.saleSafeId,
+    props.saleQuantity,
+    props.salePaymentMethod,
+  ]);
+
   function openSaleConfirmModal() {
-    if (!props.onPrepareConfirmSale()) {
+    const preparation = props.onPrepareConfirmSale();
+    if (!preparation.ok) {
+      setSaleFormError(preparation.error ?? 'Please review sale details and try again.');
       return;
     }
+    setSaleFormError('');
     setSaleConfirmError('');
     setSaleConfirmOpen(true);
   }
@@ -105,20 +126,30 @@ export default function AmmunitionSalesSection(props: Props) {
 
   async function handleConfirmByChannel(channel: 'CASH' | 'ONLINE') {
     if (channel === 'CASH' && props.salePaymentMethod !== 'CASH') {
-      setSaleConfirmError('Payment Type is not Cash. Change Payment Type to Cash, or press Online to confirm this sale.');
+      const message = 'Payment Type is not Cash. Change Payment Type to Cash, or press Online to confirm this sale.';
+      setSaleConfirmError(message);
+      setSaleFormError(message);
       return;
     }
     if (channel === 'ONLINE' && props.salePaymentMethod === 'CASH') {
-      setSaleConfirmError('Payment Type is Cash. Change Payment Type to a non-cash method, or press Cash to confirm this sale.');
+      const message = 'Payment Type is Cash. Change Payment Type to a non-cash method, or press Cash to confirm this sale.';
+      setSaleConfirmError(message);
+      setSaleFormError(message);
       return;
     }
 
     setSaleConfirmError('');
+    setSaleFormError('');
     setSaleConfirmSubmitting(true);
     try {
-      const saved = await props.onConfirmSale();
-      if (saved) {
+      const result = await props.onConfirmSale();
+      if (result.ok) {
         setSaleConfirmOpen(false);
+        setSaleFormError('');
+      } else {
+        const message = result.error ?? 'Unable to record sale. Please review details and try again.';
+        setSaleConfirmError(message);
+        setSaleFormError(message);
       }
     } finally {
       setSaleConfirmSubmitting(false);
@@ -171,6 +202,7 @@ export default function AmmunitionSalesSection(props: Props) {
 
       <section>
         <h2>Record Ammunition Sale</h2>
+        {saleFormError && <div className="alert alert-error" style={{ marginBottom: '1rem' }}>{saleFormError}</div>}
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Member (optional)</label>
