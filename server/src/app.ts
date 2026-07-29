@@ -84,6 +84,12 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 export function createApp() {
   const app = express();
 
+  const securityTxtContent = [
+    'Contact: mailto:security@shootingmatch.app',
+    'Expires: 2030-07-31T23:00:00.000Z',
+    '',
+  ].join('\n');
+
   app.set('trust proxy', resolveTrustProxy());
 
   app.use(helmet({
@@ -165,6 +171,11 @@ export function createApp() {
       clientOrigin: process.env.CLIENT_ORIGIN ?? '',
     });
   });
+
+  app.get('/.well-known/security.txt', (_req: Request, res: Response) => {
+    res.type('text/plain; charset=utf-8').send(securityTxtContent);
+  });
+
 
   app.use('/api/auth', authLimiter, authRouter);
   app.use('/api/users', usersRouter);
