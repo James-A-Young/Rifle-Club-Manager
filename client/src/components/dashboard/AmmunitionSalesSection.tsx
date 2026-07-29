@@ -1,14 +1,22 @@
-import { AmmunitionReorderAnalysisRow, Member, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
+import { useState } from 'react';
+import { AmmunitionReorderAnalysisRow, AmmunitionType, AmmunitionSafe, AmmunitionSale, AmmunitionStock } from '../../types/club';
 import { PaymentMethod } from '../../types/club';
+import AmmunitionSaleConfirmModal from './AmmunitionSaleConfirmModal';
+
+interface AmmunitionBuyerOption {
+  value: string;
+  label: string;
+}
 
 interface Props {
-  members: Member[];
+  saleBuyerSelectionValue: string;
+  signedInBuyerOptions: AmmunitionBuyerOption[];
+  allMemberBuyerOptions: AmmunitionBuyerOption[];
   types: AmmunitionType[];
   safes: AmmunitionSafe[];
   stock: AmmunitionStock[];
   sales: AmmunitionSale[];
   reorderAnalysisRows: AmmunitionReorderAnalysisRow[];
-  saleBuyerUserId: string;
   saleBuyerFirstName: string;
   saleBuyerLastName: string;
   saleTypeId: string;
@@ -32,14 +40,15 @@ interface Props {
   transferFromSafeId: string;
   transferToSafeId: string;
   transferQuantity: number;
-  onSaleBuyerUserIdChange: (value: string) => void;
+  onSaleBuyerSelectionChange: (value: string) => void;
   onSaleBuyerFirstNameChange: (value: string) => void;
   onSaleBuyerLastNameChange: (value: string) => void;
   onSaleTypeIdChange: (value: string) => void;
   onSaleSafeIdChange: (value: string) => void;
   onSaleQuantityChange: (value: number) => void;
   onSalePaymentMethodChange: (value: PaymentMethod) => void;
-  onConfirmSale: () => void;
+  onPrepareConfirmSale: () => boolean;
+  onConfirmSale: () => Promise<boolean>;
   onLedgerBuyerSearchChange: (value: string) => void;
   onLedgerSellerSearchChange: (value: string) => void;
   onLedgerTypeIdChange: (value: string) => void;
@@ -70,10 +79,51 @@ function getStockQuantity(stock: AmmunitionStock[], typeId: string, safeId: stri
 }
 
 export default function AmmunitionSalesSection(props: Props) {
+  const [saleConfirmOpen, setSaleConfirmOpen] = useState(false);
+  const [saleConfirmError, setSaleConfirmError] = useState('');
+  const [saleConfirmSubmitting, setSaleConfirmSubmitting] = useState(false);
   const selectedType = props.types.find(t => t.id === props.saleTypeId);
   const selectedSafeStock = props.saleTypeId && props.saleSafeId
     ? getStockQuantity(props.stock, props.saleTypeId, props.saleSafeId)
     : 0;
+
+  function openSaleConfirmModal() {
+    if (!props.onPrepareConfirmSale()) {
+      return;
+    }
+    setSaleConfirmError('');
+    setSaleConfirmOpen(true);
+  }
+
+  function closeSaleConfirmModal() {
+    if (saleConfirmSubmitting) {
+      return;
+    }
+    setSaleConfirmOpen(false);
+    setSaleConfirmError('');
+  }
+
+  async function handleConfirmByChannel(channel: 'CASH' | 'ONLINE') {
+    if (channel === 'CASH' && props.salePaymentMethod !== 'CASH') {
+      setSaleConfirmError('Payment Type is not Cash. Change Payment Type to Cash, or press Online to confirm this sale.');
+      return;
+    }
+    if (channel === 'ONLINE' && props.salePaymentMethod === 'CASH') {
+      setSaleConfirmError('Payment Type is Cash. Change Payment Type to a non-cash method, or press Cash to confirm this sale.');
+      return;
+    }
+
+    setSaleConfirmError('');
+    setSaleConfirmSubmitting(true);
+    try {
+      const saved = await props.onConfirmSale();
+      if (saved) {
+        setSaleConfirmOpen(false);
+      }
+    } finally {
+      setSaleConfirmSubmitting(false);
+    }
+  }
 
   return (
     <>
@@ -124,11 +174,22 @@ export default function AmmunitionSalesSection(props: Props) {
         <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Member (optional)</label>
-            <select value={props.saleBuyerUserId} onChange={e => props.onSaleBuyerUserIdChange(e.target.value)}>
+            <select value={props.saleBuyerSelectionValue} onChange={e => props.onSaleBuyerSelectionChange(e.target.value)}>
               <option value="">Guest / Manual</option>
-              {props.members.map(member => (
-                <option key={member.userId} value={member.userId}>{member.user.name} ({member.user.email})</option>
-              ))}
+              {props.signedInBuyerOptions.length > 0 && (
+                <optgroup label="Signed In">
+                  {props.signedInBuyerOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </optgroup>
+              )}
+              {props.allMemberBuyerOptions.length > 0 && (
+                <optgroup label="All Members">
+                  {props.allMemberBuyerOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -184,11 +245,26 @@ export default function AmmunitionSalesSection(props: Props) {
             {' '}Available in selected safe: {selectedSafeStock} ·
             {' '}Total: <strong>£{(props.saleTotalPence / 100).toFixed(2)}</strong>
           </div>
-          <button className="btn btn-primary" type="button" onClick={props.onConfirmSale}>
+          <button className="btn btn-primary" type="button" onClick={openSaleConfirmModal}>
             Confirm Sale
           </button>
         </div>
       </section>
+
+      <AmmunitionSaleConfirmModal
+        open={saleConfirmOpen}
+        buyerFirstName={props.saleBuyerFirstName}
+        buyerLastName={props.saleBuyerLastName}
+        ammunitionType={selectedType?.name ?? ''}
+        quantity={props.saleQuantity}
+        paymentMethod={props.salePaymentMethod}
+        error={saleConfirmError}
+        submitting={saleConfirmSubmitting}
+        onPaymentMethodChange={props.onSalePaymentMethodChange}
+        onClose={closeSaleConfirmModal}
+        onConfirmCash={() => void handleConfirmByChannel('CASH')}
+        onConfirmOnline={() => void handleConfirmByChannel('ONLINE')}
+      />
 
       <section>
         <div className="page-header">

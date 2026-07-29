@@ -53,6 +53,14 @@ interface ActiveVisitor {
   firearm: string | null;
 }
 
+interface AmmunitionBuyerOption {
+  value: string;
+  label: string;
+  memberUserId: string | null;
+  firstName: string;
+  lastName: string;
+}
+
 interface AmmunitionSettingsResponse {
   types: AmmunitionType[];
   safes: AmmunitionSafe[];
@@ -105,6 +113,24 @@ function toLocalDayBoundaryIso(date: string, boundary: 'start' | 'end'): string 
     ? new Date(year, month - 1, day, 0, 0, 0, 0)
     : new Date(year, month - 1, day, 23, 59, 59, 999);
   return localDate.toISOString();
+}
+
+function splitNameParts(fullName: string): { firstName: string; lastName: string } {
+  const nameParts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (nameParts.length >= 2) {
+    return {
+      firstName: nameParts.slice(0, -1).join(' '),
+      lastName: nameParts[nameParts.length - 1] ?? '',
+    };
+  }
+  return {
+    firstName: fullName.trim(),
+    lastName: '',
+  };
+}
+
+function normalizePersonValue(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 export default function ClubDashboard() {
@@ -195,6 +221,7 @@ export default function ClubDashboard() {
   const [newAmmunitionTypeName, setNewAmmunitionTypeName] = useState('');
   const [newAmmunitionTypePricePence, setNewAmmunitionTypePricePence] = useState(0);
   const [newAmmunitionSafeName, setNewAmmunitionSafeName] = useState('');
+  const [saleBuyerSelectionValue, setSaleBuyerSelectionValue] = useState('');
   const [saleBuyerUserId, setSaleBuyerUserId] = useState('');
   const [saleBuyerFirstName, setSaleBuyerFirstName] = useState('');
   const [saleBuyerLastName, setSaleBuyerLastName] = useState('');
@@ -482,6 +509,67 @@ export default function ClubDashboard() {
   }, [id, isAdmin]);
 
   const inviteBaseUrl = useMemo(() => `${window.location.origin}/invites`, []);
+  const signedInBuyerOptions = useMemo<AmmunitionBuyerOption[]>(() => {
+    const membersByEmail = new Map<string, Member>();
+    const membersByName = new Map<string, Member>();
+
+    members.forEach(member => {
+      const emailKey = normalizePersonValue(member.user.email);
+      if (emailKey && !membersByEmail.has(emailKey)) {
+        membersByEmail.set(emailKey, member);
+      }
+      const nameKey = normalizePersonValue(member.user.name);
+      if (nameKey && !membersByName.has(nameKey)) {
+        membersByName.set(nameKey, member);
+      }
+    });
+
+    return activeVisits.map(visit => {
+      const matchByEmail = membersByEmail.get(normalizePersonValue(visit.visitorEmail));
+      const matchedMember = matchByEmail ?? membersByName.get(normalizePersonValue(visit.visitorName)) ?? null;
+      const split = splitNameParts(visit.visitorName);
+
+      if (matchedMember) {
+        return {
+          value: matchedMember.userId,
+          label: `${visit.visitorName} (${visit.visitorEmail})`,
+          memberUserId: matchedMember.userId,
+          firstName: split.firstName,
+          lastName: split.lastName,
+        };
+      }
+
+      return {
+        value: `guest:${visit.id}`,
+        label: `${visit.visitorName} (Guest)`,
+        memberUserId: null,
+        firstName: split.firstName,
+        lastName: split.lastName,
+      };
+    });
+  }, [activeVisits, members]);
+
+  const allMemberBuyerOptions = useMemo<AmmunitionBuyerOption[]>(() => {
+    const signedInMemberIds = new Set(
+      signedInBuyerOptions
+        .filter(option => Boolean(option.memberUserId))
+        .map(option => option.memberUserId as string),
+    );
+
+    return members
+      .filter(member => !signedInMemberIds.has(member.userId))
+      .map(member => {
+        const split = splitNameParts(member.user.name);
+        return {
+          value: member.userId,
+          label: `${member.user.name} (${member.user.email})`,
+          memberUserId: member.userId,
+          firstName: split.firstName,
+          lastName: split.lastName,
+        };
+      });
+  }, [members, signedInBuyerOptions]);
+
   const saleTotalPence = useMemo(() => {
     const type = ammunitionTypes.find(t => t.id === saleTypeId);
     return type ? type.currentPricePence * Math.max(0, saleQuantity) : 0;
@@ -950,25 +1038,44 @@ export default function ClubDashboard() {
     }
   }
 
-  function handleSaleBuyerUserIdChange(value: string) {
-    setSaleBuyerUserId(value);
-    const match = members.find(m => m.userId === value);
-    if (match) {
-      const nameParts = match.user.name.trim().split(/\s+/).filter(Boolean);
-      if (nameParts.length >= 2) {
-        setSaleBuyerFirstName(nameParts.slice(0, -1).join(' '));
-        setSaleBuyerLastName(nameParts[nameParts.length - 1]);
-      } else {
-        setSaleBuyerFirstName(match.user.name.trim());
-        setSaleBuyerLastName('');
-      }
+  function handleSaleBuyerSelectionChange(value: string) {
+    setSaleBuyerSelectionValue(value);
+
+    if (!value) {
+      setSaleBuyerUserId('');
+      return;
     }
+
+    const signedInOption = signedInBuyerOptions.find(option => option.value === value);
+    if (signedInOption) {
+      setSaleBuyerUserId(signedInOption.memberUserId ?? '');
+      setSaleBuyerFirstName(signedInOption.firstName);
+      setSaleBuyerLastName(signedInOption.lastName);
+      return;
+    }
+
+    const allMemberOption = allMemberBuyerOptions.find(option => option.value === value);
+    if (allMemberOption?.memberUserId) {
+      setSaleBuyerUserId(allMemberOption.memberUserId);
+      setSaleBuyerFirstName(allMemberOption.firstName);
+      setSaleBuyerLastName(allMemberOption.lastName);
+      return;
+    }
+
+    setSaleBuyerUserId('');
   }
 
-  async function confirmAmmunitionSale() {
+  function prepareAmmunitionSaleConfirmation(): boolean {
     if (!id || !saleTypeId || !saleSafeId || saleQuantity <= 0 || !saleBuyerFirstName.trim() || !saleBuyerLastName.trim()) {
       setError('Please complete all sale fields');
-      return;
+      return false;
+    }
+    return true;
+  }
+
+  async function confirmAmmunitionSale(): Promise<boolean> {
+    if (!prepareAmmunitionSaleConfirmation()) {
+      return false;
     }
     try {
       await api.post(`/api/ammunition/club/${id}/sales`, {
@@ -982,8 +1089,10 @@ export default function ClubDashboard() {
       });
       setSaleQuantity(50);
       await Promise.all([loadAmmunitionSales(), loadAmmunitionStock()]);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error recording sale');
+      return false;
     }
   }
 
@@ -1524,13 +1633,14 @@ export default function ClubDashboard() {
             <div className="alert alert-info">Only club admins can access ammunition sales.</div>
           ) : (
             <AmmunitionSalesSection
-              members={members}
+              saleBuyerSelectionValue={saleBuyerSelectionValue}
+              signedInBuyerOptions={signedInBuyerOptions}
+              allMemberBuyerOptions={allMemberBuyerOptions}
               types={ammunitionTypes}
               safes={ammunitionSafes}
               stock={ammunitionStock}
               sales={ammunitionSales}
               reorderAnalysisRows={reorderAnalysisRows}
-              saleBuyerUserId={saleBuyerUserId}
               saleBuyerFirstName={saleBuyerFirstName}
               saleBuyerLastName={saleBuyerLastName}
               saleTypeId={saleTypeId}
@@ -1554,13 +1664,14 @@ export default function ClubDashboard() {
               transferFromSafeId={transferFromSafeId}
               transferToSafeId={transferToSafeId}
               transferQuantity={transferQuantity}
-              onSaleBuyerUserIdChange={handleSaleBuyerUserIdChange}
+              onSaleBuyerSelectionChange={handleSaleBuyerSelectionChange}
               onSaleBuyerFirstNameChange={setSaleBuyerFirstName}
               onSaleBuyerLastNameChange={setSaleBuyerLastName}
               onSaleTypeIdChange={setSaleTypeId}
               onSaleSafeIdChange={setSaleSafeId}
               onSaleQuantityChange={setSaleQuantity}
               onSalePaymentMethodChange={setSalePaymentMethod}
+              onPrepareConfirmSale={prepareAmmunitionSaleConfirmation}
               onConfirmSale={confirmAmmunitionSale}
               onLedgerBuyerSearchChange={setLedgerBuyerSearch}
               onLedgerSellerSearchChange={setLedgerSellerSearch}
