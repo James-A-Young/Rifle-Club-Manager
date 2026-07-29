@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500">
+  <defs>
+    <!-- Swapped: Orange Gradient for Shield -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF7A00" />
+      <stop offset="100%" stop-color="#D64500" />
+    </linearGradient>
+
+    <!-- Swapped: Blue Gradient for Target Ring -->
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2B72FF" />
+      <stop offset="100%" stop-color="#0E2A78" />
+    </linearGradient>
+
+    <!-- Shadow Filter -->
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="4" stdDeviation="4" flood-opacity="0.15" />
+    </filter>
+  </defs>
+
+  <g transform="translate(250, 250) scale(1.5) translate(-250, -225)">
+    <!-- Base Shield (Dark Blue) -->
+    <path
+      fill="url(#shieldGrad)"
+      filter="url(#subtleShadow)"
+      d="
+      M 240 80
+      L 350 140
+      C 350 280, 240 370, 240 370
+      C 240 370, 130 280, 130 140
+      Z"
+    />
+
+    <!-- Orange Concentric Ring (Target motif) -->
+    <path
+      fill="url(#orangeGrad)"
+      d="
+      M 240 150
+      A 70 70 0 1 1 170 220
+      A 70 70 0 0 1 240 150
+      Z
+      M 240 190
+      A 30 30 0 1 0 270 220
+      A 30 30 0 0 0 240 190
+      Z"
+    />
+
+    <!-- Center Bullseye scaled +50% diameter -->
+    <circle cx="240" cy="220" r="59.4" fill="#FFFFFF" opacity="0.95" />
+    <circle cx="240" cy="220" r="42" fill="#FF7A00" />
+    <circle cx="240" cy="220" r="27" fill="#FFFFFF" />
+    <circle cx="240" cy="220" r="12" fill="#FF7A00" />
+  </g>
+</svg>

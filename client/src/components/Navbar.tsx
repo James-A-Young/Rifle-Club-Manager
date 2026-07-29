@@ -12,7 +12,10 @@ export default function Navbar() {
 
   return (
     <nav>
-      <Link to="/" className="brand">🎯 ShootingMatch</Link>
+      <Link to="/" className="brand" aria-label="ShootingMatch home">
+        <img src="/favicon.svg" alt="" className="brand-logo" aria-hidden="true" />
+        <span>ShootingMatch</span>
+      </Link>
       <span className="spacer" />
       {user ? (
         <>

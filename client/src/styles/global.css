@@ -47,10 +47,20 @@ nav {
 }
 
 nav .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-weight: 700;
   font-size: 1.2rem;
   color: var(--white);
   letter-spacing: 0.5px;
+}
+
+nav .brand-logo {
+  width: 3rem;
+  height: 3rem;
+  display: block;
+  flex: 0 0 auto;
 }
 
 nav a {
