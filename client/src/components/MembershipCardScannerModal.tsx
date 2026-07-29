@@ -30,16 +30,37 @@ export default function MembershipCardScannerModal({
 }: Props) {
   const [scanError, setScanError] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
+  const [restartKey, setRestartKey] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerRef = useRef<QrScanner | null>(null);
   const detectingRef = useRef(false);
+  const onPreviewRef = useRef(onPreview);
+  const onDuplicateSignInRef = useRef(onDuplicateSignIn);
+
+  useEffect(() => {
+    onPreviewRef.current = onPreview;
+  }, [onPreview]);
+
+  useEffect(() => {
+    onDuplicateSignInRef.current = onDuplicateSignIn;
+  }, [onDuplicateSignIn]);
+
+  function isRecoverableStartError(message: string) {
+    return /(interrupted by a new load request|AbortError|play\(\) request|NotReadableError)/i.test(message);
+  }
 
   function stopScanner() {
     scannerRef.current?.stop();
     scannerRef.current?.destroy();
     scannerRef.current = null;
     if (videoRef.current) {
+      const activeStream = videoRef.current.srcObject;
+      if (activeStream instanceof MediaStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
+      videoRef.current.load();
     }
     detectingRef.current = false;
     setScanLoading(false);
@@ -57,69 +78,85 @@ export default function MembershipCardScannerModal({
         return;
       }
 
-      try {
-        setScanLoading(true);
+      stopScanner();
+      setScanError('');
+      setScanLoading(true);
 
-        const scanner = new QrScanner(
-          videoRef.current,
-          async (result: QrScanner.ScanResult) => {
-            if (cancelled || detectingRef.current) {
-              return;
-            }
-
-            detectingRef.current = true;
-            const qrData = result.data.trim();
-
-            try {
-              const preview = await api.post<MemberCardPreviewResponse>('/api/visits/kiosk/qr-preview', {
-                qrData,
-                signInAccessToken,
-              });
-
-              if (!cancelled) {
-                onPreview(preview);
-              }
-              return;
-            } catch (e) {
-              const message = e instanceof Error ? e.message : 'Card scan failed';
-              if (/already signed in/i.test(message)) {
-                if (!cancelled) {
-                  onDuplicateSignIn();
-                }
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const scanner = new QrScanner(
+            videoRef.current,
+            async (result: QrScanner.ScanResult) => {
+              if (cancelled || detectingRef.current) {
                 return;
               }
-              if (!cancelled) {
-                setScanError(message);
-              }
-            } finally {
-              detectingRef.current = false;
-            }
-          },
-          {
-            preferredCamera: 'user', // front camera on mobile devices
-            highlightScanRegion: true,
-            returnDetailedScanResult: true,
-          }
-        );
 
-        scannerRef.current = scanner;
-        await scanner.start();
-      } catch (e) {
-        setScanError(e instanceof Error ? e.message : 'Camera access failed');
-        stopScanner();
-      } finally {
+              detectingRef.current = true;
+              const qrData = result.data.trim();
+
+              try {
+                const preview = await api.post<MemberCardPreviewResponse>('/api/visits/kiosk/qr-preview', {
+                  qrData,
+                  signInAccessToken,
+                });
+
+                if (!cancelled) {
+                  onPreviewRef.current(preview);
+                }
+                return;
+              } catch (e) {
+                const message = e instanceof Error ? e.message : 'Card scan failed';
+                if (/already signed in/i.test(message)) {
+                  if (!cancelled) {
+                    onDuplicateSignInRef.current();
+                  }
+                  return;
+                }
+                if (!cancelled) {
+                  setScanError(message);
+                }
+              } finally {
+                detectingRef.current = false;
+              }
+            },
+            {
+              preferredCamera: 'user',
+              highlightScanRegion: true,
+              returnDetailedScanResult: true,
+            }
+          );
+
+          scannerRef.current = scanner;
+          await scanner.start();
+          setScanLoading(false);
+          return;
+        } catch (e) {
+          const message = e instanceof Error ? e.message : 'Camera access failed';
+          stopScanner();
+
+          if (attempt === 0 && isRecoverableStartError(message)) {
+            continue;
+          }
+
+          if (!cancelled) {
+            setScanError(message);
+          }
+          return;
+        }
+      }
+
+      if (!cancelled) {
         setScanLoading(false);
       }
     }
 
-    setScanError('');
     startScan();
 
     return () => {
       cancelled = true;
       stopScanner();
     };
-  }, [open, signInAccessToken, onDuplicateSignIn, onPreview]);
+  }, [open, signInAccessToken, restartKey]);
 
   if (!open) {
     return null;
@@ -160,6 +197,16 @@ export default function MembershipCardScannerModal({
               Starting camera...
             </p>
           )}
+          <div style={{ marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setRestartKey(prev => prev + 1)}
+              disabled={scanLoading}
+            >
+              Restart Camera
+            </button>
+          </div>
         </div>
       </div>
     </div>
