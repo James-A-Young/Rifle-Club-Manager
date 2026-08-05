@@ -295,6 +295,7 @@ model ClubMembership {
   userId    String
   clubId    String
   installedPassId String?    @unique
+  appleInstalledPassSerial String? @unique
   status    MembershipStatus @default(PENDING)
   role      MembershipRole   @default(MEMBER)
   approvedAt DateTime?

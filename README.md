@@ -191,6 +191,19 @@ BACKUP_WORKER_CONCURRENCY=2
 BACKUP_RUN_ON_STARTUP=false
 ```
 
+### Optional: WalletWallet for Apple Membership Cards
+To enable issuing Apple Wallet passes via WalletWallet, add your API key:
+https://www.walletwallet.dev/dashboard/
+
+```env
+WALLETWALLET_API_KEY=ww_live_<your_key>
+```
+
+Behavior:
+- Google Wallet continues to use the direct Google Wallet API flow.
+- Apple Wallet calls WalletWallet only when the Apple Wallet icon is clicked on the dashboard.
+- The returned `serialNumber` is persisted on the membership so nightly refreshes can update the existing Apple pass.
+
 ### Optional: Cloudflare Turnstile (Signup Captcha)
 
 To protect signup from automated abuse, configure Cloudflare Turnstile:

@@ -2,6 +2,7 @@ import { BackupDataset, GoogleDriveConnectionStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { prisma } from '../../prisma';
 import { googleWalletService } from '../googleWallet';
+import { walletWalletService } from '../walletWallet';
 import { buildMonthlyCompetitionResultsCsv } from '../exports/competitionResultsExport';
 import { buildMonthlyMemberDemographicsCsv } from '../exports/memberDemographicsExport';
 import { buildSalesLedgerCsvForMonth } from '../exports/salesLedgerExport';
@@ -289,11 +290,15 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
     const membershipsWithPasses = await prisma.clubMembership.findMany({
       where: {
         clubId,
-        installedPassId: { not: null },
+        OR: [
+          { installedPassId: { not: null } },
+          { appleInstalledPassSerial: { not: null } },
+        ],
         status: 'APPROVED',
       },
       include: {
-        user: { select: { id: true } },
+        user: { select: { id: true, name: true } },
+        club: { select: { name: true } },
       },
     });
 
@@ -314,7 +319,8 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
 
     for (const membership of membershipsWithPasses) {
       const userId = membership.user.id;
-      const objectId = membership.installedPassId!;
+      const objectId = membership.installedPassId;
+      const appleSerial = membership.appleInstalledPassSerial;
 
       try {
         // Calculate updated stats for this membership
@@ -348,20 +354,40 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
           _avg: { score: true },
         });
 
-        // Refresh the pass on Google Wallet with updated stats and colors
-        await googleWalletService.refreshMembershipPass(
-          objectId,
-          visitCount,
-          roundsThisYear._sum.quantity || 0,
-          averageScore._avg.score || 0,
-          settings?.secondaryColor || '#374151',
-          settings?.logoUrl || undefined
-        );
+        if (objectId) {
+          // Refresh the pass on Google Wallet with updated stats and colors.
+          await googleWalletService.refreshMembershipPass(
+            objectId,
+            visitCount,
+            roundsThisYear._sum.quantity || 0,
+            averageScore._avg.score || 0,
+            settings?.secondaryColor || '#374151',
+            settings?.logoUrl || undefined
+          );
+        }
+
+        if (appleSerial) {
+          await walletWalletService.refreshMembershipPass(appleSerial, {
+            userId,
+            clubId,
+            memberName: membership.user.name,
+            clubName: membership.club.name,
+            visitCount,
+            roundsThisYear: roundsThisYear._sum.quantity || 0,
+            average: averageScore._avg.score || 0,
+            averageLabel: 'Average',
+            settings: {
+              secondaryColor: settings?.secondaryColor || '#374151',
+              logoUrl: settings?.logoUrl || undefined,
+            },
+          });
+        }
       } catch (error) {
         logWarn('MEMBERSHIP_PASS_REFRESH_FAILED', {
           clubId,
           userId,
-          objectId,
+          objectId: objectId || null,
+          appleSerial: appleSerial || null,
           error: error instanceof Error ? error.message : 'Unknown error',
         });
       }

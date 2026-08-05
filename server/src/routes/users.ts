@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { formatZodError } from '../utils/zodError';
 import { googleWalletService, CreatePassParams } from '../services/googleWallet';
+import { walletWalletService } from '../services/walletWallet';
 import { recordUserProfileHistoryChange, TrackedProfile } from '../services/profileHistory';
 import { getDeclarationStatus } from '../services/section21Declaration';
 import {
@@ -585,15 +586,27 @@ async function handleMembershipPassStatusRequest(req: AuthRequest, res: Response
       select: { passIssuingEnabled: true },
     });
 
-    res.json({ passIssuingEnabled: Boolean(settings?.passIssuingEnabled) });
+    const passIssuingEnabled = Boolean(settings?.passIssuingEnabled);
+    res.json({
+      passIssuingEnabled,
+      appleEnabled: passIssuingEnabled && walletWalletService.isEnabled(),
+    });
   } catch (error) {
     console.error('Error loading membership pass status:', error);
     res.status(500).json({ error: 'Failed to load membership pass status' });
   }
 }
 
+function resolveMembershipPassPlatform(req: AuthRequest): 'google' | 'apple' {
+  const queryPlatform = typeof req.query.platform === 'string' ? req.query.platform : undefined;
+  const bodyPlatform = typeof req.body?.platform === 'string' ? req.body.platform : undefined;
+  const platform = (queryPlatform || bodyPlatform || 'google').toLowerCase();
+  return platform === 'apple' ? 'apple' : 'google';
+}
+
 async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Response) {
   const clubId = req.params.clubId as string;
+  const platform = resolveMembershipPassPlatform(req);
 
   try {
     // Fetch current user with name
@@ -742,7 +755,7 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
 
 
 
-    const passResult = await googleWalletService.issueMembershipPass({
+    const passRequest: CreatePassParams = {
       userId: req.user!.id,
       clubId,
       memberName: currentUser.name,
@@ -757,8 +770,49 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
         accentColor: settings.accentColor || '#3b82f6',
         logoUrl: settings.logoUrl || undefined,
       },
-    } as CreatePassParams);
-    
+    };
+
+    if (platform === 'apple') {
+      if (!walletWalletService.isEnabled()) {
+        res.status(503).json({ error: 'Apple Wallet pass issuing is not configured' });
+        return;
+      }
+
+      const passResult = await walletWalletService.createMembershipPass({
+        userId: passRequest.userId,
+        clubId: passRequest.clubId,
+        memberName: passRequest.memberName,
+        clubName: passRequest.clubName,
+        visitCount: passRequest.visitCount,
+        roundsThisYear: passRequest.roundsThisYear,
+        average: passRequest.average,
+        averageLabel: passRequest.averageLabel,
+        settings: {
+          secondaryColor: passRequest.settings?.secondaryColor,
+          logoUrl: passRequest.settings?.logoUrl,
+        },
+      });
+
+      if (!passResult) {
+        res.status(502).json({ error: 'Failed to generate Apple Wallet pass' });
+        return;
+      }
+
+      await prisma.clubMembership.update({
+        where: { id: membership.id },
+        data: { appleInstalledPassSerial: passResult.serialNumber },
+      });
+
+      res.json({
+        serialNumber: passResult.serialNumber,
+        applePass: passResult.applePass,
+        shareUrl: passResult.shareUrl,
+      });
+      return;
+    }
+
+    const passResult = await googleWalletService.issueMembershipPass(passRequest);
+
     res.json(passResult);
     
   } catch (error) {

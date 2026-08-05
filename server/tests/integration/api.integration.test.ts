@@ -11,6 +11,7 @@ import { createApp } from '../../src/app';
 import { prisma } from '../../src/prisma';
 import { emailService } from '../../src/services/email';
 import { encryptStoredTwoFactorSecret } from '../../src/services/twoFactor';
+import { walletWalletService } from '../../src/services/walletWallet';
 
 const app = createApp();
 const ORIGINAL_TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
@@ -2509,6 +2510,64 @@ describe('ammunition routes', () => {
 });
 
 describe('membership pass routes', () => {
+  it('returns appleEnabled false when WalletWallet is not configured', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ passIssuingEnabled: true });
+
+    const isEnabledSpy = vi.spyOn(walletWalletService, 'isEnabled', 'get').mockReturnValue(() => false);
+
+    const res = await request(app)
+      .get(`/api/users/me/membership-passes/${club.id}/status`)
+      .set(authHeader(admin));
+
+    expect(res.status).toBe(200);
+    expect(res.body.passIssuingEnabled).toBe(true);
+    expect(res.body.appleEnabled).toBe(false);
+
+    isEnabledSpy.mockRestore();
+  });
+
+  it('creates Apple membership pass and persists serial number', async () => {
+    const { club, admin } = await createClubWithAdmin();
+
+    await request(app)
+      .post(`/api/clubs/${club.id}/settings`)
+      .set(authHeader(admin))
+      .send({ passIssuingEnabled: true });
+
+    const isEnabledSpy = vi.spyOn(walletWalletService, 'isEnabled', 'get').mockReturnValue(() => true);
+    const createSpy = vi.spyOn(walletWalletService, 'createMembershipPass', 'get').mockReturnValue(
+      vi.fn().mockResolvedValue({
+        serialNumber: 'apple-serial-123',
+        applePass: 'UEsDBBQAAAAA',
+        shareUrl: 'https://api.walletwallet.dev/p/apple-serial-123',
+      })
+    );
+
+    const res = await request(app)
+      .post(`/api/users/me/membership-passes/${club.id}`)
+      .set(authHeader(admin))
+      .send({ platform: 'apple' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.serialNumber).toBe('apple-serial-123');
+    expect(res.body.applePass).toBe('UEsDBBQAAAAA');
+
+    const membership = await prisma.clubMembership.findUnique({
+      where: { userId_clubId: { userId: admin.id, clubId: club.id } },
+      select: { appleInstalledPassSerial: true },
+    });
+
+    expect(membership?.appleInstalledPassSerial).toBe('apple-serial-123');
+
+    createSpy.mockRestore();
+    isEnabledSpy.mockRestore();
+  });
+
   it('generates membership pass for user', async () => {
     if(!process.env.GOOGLE_WALLET_ISSUER_ID || !process.env.GOOGLE_WALLET_SIGNING_KEY) {
       console.warn('Google Wallet credentials not set, skipping addToWalletLink and addToWalletJwt assertions');
