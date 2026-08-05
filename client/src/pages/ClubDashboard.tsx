@@ -197,6 +197,8 @@ export default function ClubDashboard() {
   const [settingsForm, setSettingsForm] = useState<ClubSettings>({
     clubId: '',
     logoUrl: '',
+    clubLatitude: null,
+    clubLongitude: null,
     primaryColor: '#1f2937',
     secondaryColor: '#374151',
     accentColor: '#3b82f6',
@@ -864,6 +866,8 @@ export default function ClubDashboard() {
     try {
       const updated = await api.post<ClubSettings>(`/api/clubs/${id}/settings`, {
         logoUrl: settingsForm.logoUrl || null,
+        clubLatitude: settingsForm.clubLatitude ?? null,
+        clubLongitude: settingsForm.clubLongitude ?? null,
         primaryColor: settingsForm.primaryColor,
         secondaryColor: settingsForm.secondaryColor,
         accentColor: settingsForm.accentColor,
@@ -1508,6 +1512,7 @@ export default function ClubDashboard() {
           {isAdmin && (
             <ClubSettingsSection
               settings={settings}
+              clubAddress={club?.address ?? clubForm.address}
               editing={editingSettings}
               saving={savingSettings}
               form={settingsForm}

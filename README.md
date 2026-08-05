@@ -203,6 +203,7 @@ Behavior:
 - Google Wallet continues to use the direct Google Wallet API flow.
 - Apple Wallet calls WalletWallet only when the Apple Wallet icon is clicked on the dashboard.
 - The returned `serialNumber` is persisted on the membership so nightly refreshes can update the existing Apple pass.
+- Club admins can set `clubLatitude` and `clubLongitude` in Club Settings; when set, both Google and Apple passes include location relevance data so passes surface near the club.
 
 ### Optional: Cloudflare Turnstile (Signup Captcha)
 

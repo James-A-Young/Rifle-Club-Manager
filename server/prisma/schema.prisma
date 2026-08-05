@@ -447,6 +447,8 @@ model ClubSettings {
   id                       String   @id @default(cuid())
   clubId                   String   @unique
   logoUrl                  String?
+  clubLatitude             Float?
+  clubLongitude            Float?
   primaryColor             String?  @default("#1f2937")
   secondaryColor           String?  @default("#374151")
   accentColor              String?  @default("#3b82f6")

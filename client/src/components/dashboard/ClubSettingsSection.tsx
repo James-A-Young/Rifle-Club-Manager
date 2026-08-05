@@ -5,6 +5,7 @@ type AmmunitionTypeCreateMode = 'ROUND' | 'BOX';
 
 interface Props {
   settings: ClubSettings | null;
+  clubAddress?: string | null;
   editing: boolean;
   saving: boolean;
   form: ClubSettings;
@@ -54,6 +55,7 @@ interface Props {
 
 export default function ClubSettingsSection({
   settings,
+  clubAddress,
   editing,
   saving,
   form,
@@ -117,6 +119,11 @@ export default function ClubSettingsSection({
   const calculatedEditBoxModePricePence = editBoxSize > 0 && editBoxPricePence > 0
     ? Math.round(editBoxPricePence / editBoxSize)
     : 0;
+
+  const normalizedClubAddress = (clubAddress ?? '').trim();
+  const mapsAddressUrl = normalizedClubAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(normalizedClubAddress)}`
+    : null;
 
   function getPricePenceFromMode(mode: AmmunitionTypeCreateMode, roundPricePence: number, size: number, boxPriceInPence: number) {
     if (mode === 'ROUND') {
@@ -288,6 +295,48 @@ export default function ClubSettingsSection({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
             <div className="form-group">
+              <label>Club Latitude</label>
+              <input
+                type="number"
+                min={-90}
+                max={90}
+                step="0.000001"
+                value={form.clubLatitude ?? ''}
+                onChange={e => onFormChange({ clubLatitude: e.target.value === '' ? null : Number(e.target.value) })}
+                placeholder="e.g. 51.507400"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Club Longitude</label>
+              <input
+                type="number"
+                min={-180}
+                max={180}
+                step="0.000001"
+                value={form.clubLongitude ?? ''}
+                onChange={e => onFormChange({ clubLongitude: e.target.value === '' ? null : Number(e.target.value) })}
+                placeholder="e.g. -0.127800"
+              />
+            </div>
+
+            <div className="form-group" />
+
+            <div style={{ gridColumn: '1 / -1', fontSize: '0.9rem', color: 'var(--gray-600)' }}>
+              {mapsAddressUrl ? (
+                <>
+                  Open your club address in{' '}
+                  <a href={mapsAddressUrl} target="_blank" rel="noreferrer">
+                    Google Maps
+                  </a>{' '}
+                  and copy the pin coordinates into Latitude/Longitude.
+                </>
+              ) : (
+                <>Set a club address in Club Profile to unlock a quick Google Maps link for finding coordinates.</>
+              )}
+            </div>
+
+            <div className="form-group">
               <label>Ammunition Usage Lookback (Days)</label>
               <input
                 type="number"
@@ -430,6 +479,10 @@ export default function ClubSettingsSection({
           </dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Pass Issuing Enabled</dt>
           <dd>{settings?.passIssuingEnabled ? 'Yes' : 'No'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Club Latitude</dt>
+          <dd>{settings?.clubLatitude ?? 'Not set'}</dd>
+          <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Club Longitude</dt>
+          <dd>{settings?.clubLongitude ?? 'Not set'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Member Card Sign-In Enabled</dt>
           <dd>{settings?.memberCardSignInEnabled ? 'Yes' : 'No'}</dd>
           <dt style={{ fontWeight: 600, color: 'var(--gray-600)' }}>Nightly Google Drive Backups Enabled</dt>

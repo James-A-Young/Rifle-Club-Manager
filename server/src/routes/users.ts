@@ -769,6 +769,8 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
         secondaryColor: settings.secondaryColor || '#374151',
         accentColor: settings.accentColor || '#3b82f6',
         logoUrl: settings.logoUrl || undefined,
+        clubLatitude: settings.clubLatitude ?? undefined,
+        clubLongitude: settings.clubLongitude ?? undefined,
       },
     };
 
@@ -790,6 +792,8 @@ async function handleMembershipPassGenerateRequest(req: AuthRequest, res: Respon
         settings: {
           secondaryColor: passRequest.settings?.secondaryColor,
           logoUrl: passRequest.settings?.logoUrl,
+          clubLatitude: passRequest.settings?.clubLatitude,
+          clubLongitude: passRequest.settings?.clubLongitude,
         },
       });
 

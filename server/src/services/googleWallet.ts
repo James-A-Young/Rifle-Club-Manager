@@ -52,6 +52,10 @@ export interface PassObject {
   heroImage?: {
     sourceUri?: { uri?: string };
   };
+  locations?: Array<{
+    latitude: number;
+    longitude: number;
+  }>;
   state?: 'ACTIVE' | 'INACTIVE' | 'EXPIRED';
 }
 
@@ -69,6 +73,8 @@ export interface CreatePassParams {
     secondaryColor?: string;
     accentColor?: string;
     logoUrl?: string;
+    clubLatitude?: number;
+    clubLongitude?: number;
   };
 }
 
@@ -181,6 +187,7 @@ export class GoogleWalletService {
     params: CreatePassParams & { classId: string; objectId: string }
   ): PassObject {
     const logoUrl = this.resolveLogoUrl(params.settings?.logoUrl);
+    const locations = this.resolveLocations(params.settings?.clubLatitude, params.settings?.clubLongitude);
     return {
       id: params.objectId,
       classId: params.classId,
@@ -241,8 +248,22 @@ export class GoogleWalletService {
         params.settings?.secondaryColor && this.validateHexColor(params.settings.secondaryColor)
           ? params.settings.secondaryColor
           : '#374151',
+      locations,
 
     };
+  }
+
+  private resolveLocations(latitude?: number, longitude?: number): Array<{ latitude: number; longitude: number }> | undefined {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return undefined;
+    }
+    if ((latitude as number) < -90 || (latitude as number) > 90) {
+      return undefined;
+    }
+    if ((longitude as number) < -180 || (longitude as number) > 180) {
+      return undefined;
+    }
+    return [{ latitude: latitude as number, longitude: longitude as number }];
   }
 
   private async ensurePassClass(classId: string, clubId: string): Promise<void> {
@@ -384,7 +405,7 @@ export class GoogleWalletService {
         genericObjects: [passObject],
       },
     };
-
+    console.log('Google Wallet JWT claims:', JSON.stringify(claims, null, 2));
     return jwt.sign(claims, privateKey, { algorithm: 'RS256' });
   }
 
@@ -469,7 +490,9 @@ export class GoogleWalletService {
     roundsThisYear: number,
     average: number,
     secondaryColor?: string,
-    logoUrl?: string
+    logoUrl?: string,
+    clubLatitude?: number,
+    clubLongitude?: number
   ): Promise<void> {
     if (!this.walletEnabled) {
       return;
@@ -510,6 +533,14 @@ export class GoogleWalletService {
         hasChanges = true;
       }
 
+      const newLocations = this.resolveLocations(clubLatitude, clubLongitude);
+      const currentLocation = currentData.locations?.[0];
+      const newLocation = newLocations?.[0];
+      if ((currentLocation?.latitude ?? null) !== (newLocation?.latitude ?? null)
+        || (currentLocation?.longitude ?? null) !== (newLocation?.longitude ?? null)) {
+        hasChanges = true;
+      }
+
       // Skip update if nothing has changed
       if (!hasChanges) {
         return;
@@ -536,6 +567,7 @@ export class GoogleWalletService {
           },
         ],
         hexBackgroundColor: newBackgroundColor,
+        locations: newLocations,
       };
 
       // Update logo if provided

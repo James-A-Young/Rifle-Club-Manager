@@ -166,6 +166,8 @@ export interface ClubInvite {
 export interface ClubSettings {
   clubId: string;
   logoUrl?: string | null;
+  clubLatitude?: number | null;
+  clubLongitude?: number | null;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;

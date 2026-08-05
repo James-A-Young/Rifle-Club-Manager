@@ -1924,6 +1924,8 @@ const hexColorSchema = z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'I
 
 const updateClubSettingsSchema = z.object({
   logoUrl: z.string().url('Invalid URL').optional().nullable(),
+  clubLatitude: z.number().min(-90).max(90).optional().nullable(),
+  clubLongitude: z.number().min(-180).max(180).optional().nullable(),
   primaryColor: hexColorSchema,
   secondaryColor: hexColorSchema,
   accentColor: hexColorSchema,
@@ -1971,6 +1973,8 @@ router.get('/:id/settings', async (req: AuthRequest, res: Response) => {
         primaryColor: '#1f2937',
         secondaryColor: '#374151',
         accentColor: '#3b82f6',
+        clubLatitude: null,
+        clubLongitude: null,
         passIssuingEnabled: false,
         memberCardSignInEnabled: false,
         membershipCardAverageMetric: MembershipCardAverageMetric.OVERALL_LAST_10,
@@ -2003,6 +2007,8 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
 
   const updateData: {
     logoUrl?: string | null;
+    clubLatitude?: number | null;
+    clubLongitude?: number | null;
     primaryColor?: string;
     secondaryColor?: string;
     accentColor?: string;
@@ -2019,6 +2025,12 @@ router.post('/:id/settings', async (req: AuthRequest, res: Response) => {
 
   if ('logoUrl' in parsed.data) {
     updateData.logoUrl = parsed.data.logoUrl ? normalizeOptionalText(parsed.data.logoUrl) : null;
+  }
+  if ('clubLatitude' in parsed.data) {
+    updateData.clubLatitude = parsed.data.clubLatitude ?? null;
+  }
+  if ('clubLongitude' in parsed.data) {
+    updateData.clubLongitude = parsed.data.clubLongitude ?? null;
   }
   if ('primaryColor' in parsed.data && parsed.data.primaryColor) {
     updateData.primaryColor = parsed.data.primaryColor;

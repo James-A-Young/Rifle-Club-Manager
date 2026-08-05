@@ -312,6 +312,8 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
       select: {
         secondaryColor: true,
         logoUrl: true,
+        clubLatitude: true,
+        clubLongitude: true,
       },
     });
 
@@ -362,7 +364,9 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
             roundsThisYear._sum.quantity || 0,
             averageScore._avg.score || 0,
             settings?.secondaryColor || '#374151',
-            settings?.logoUrl || undefined
+            settings?.logoUrl || undefined,
+            settings?.clubLatitude ?? undefined,
+            settings?.clubLongitude ?? undefined
           );
         }
 
@@ -379,6 +383,8 @@ async function refreshMembershipPassesForClub(clubId: string): Promise<void> {
             settings: {
               secondaryColor: settings?.secondaryColor || '#374151',
               logoUrl: settings?.logoUrl || undefined,
+              clubLatitude: settings?.clubLatitude ?? undefined,
+              clubLongitude: settings?.clubLongitude ?? undefined,
             },
           });
         }

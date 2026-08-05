@@ -18,6 +18,11 @@ type WalletWalletPassPayload = {
   primaryFields?: WalletWalletField[];
   secondaryFields?: WalletWalletField[];
   backFields?: WalletWalletField[];
+  locations?: Array<{
+    latitude: number;
+    longitude: number;
+    relevantText?: string;
+  }>;
 };
 
 type WalletWalletCreateResponse = {
@@ -46,6 +51,8 @@ export type WalletWalletPassParams = {
   settings?: {
     secondaryColor?: string;
     logoUrl?: string;
+    clubLatitude?: number;
+    clubLongitude?: number;
   };
 };
 
@@ -140,6 +147,11 @@ export class WalletWalletService {
   private buildPayload(params: WalletWalletPassParams): WalletWalletPassPayload {
     const logoUrl = this.resolveLogoUrl(params.settings?.logoUrl);
     const color = this.resolveColor(params.settings?.secondaryColor);
+    const locations = this.resolveLocations(
+      params.settings?.clubLatitude,
+      params.settings?.clubLongitude,
+      params.clubName
+    );
 
     return {
       barcodeValue: `membership:${params.clubId}:${params.userId}`,
@@ -177,7 +189,25 @@ export class WalletWalletService {
           changeMessage: '%@',
         },
       ],
+      locations,
     };
+  }
+
+  private resolveLocations(
+    latitude?: number,
+    longitude?: number,
+    relevantText?: string
+  ): Array<{ latitude: number; longitude: number; relevantText?: string }> | undefined {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return undefined;
+    }
+    if ((latitude as number) < -90 || (latitude as number) > 90) {
+      return undefined;
+    }
+    if ((longitude as number) < -180 || (longitude as number) > 180) {
+      return undefined;
+    }
+    return [{ latitude: latitude as number, longitude: longitude as number, relevantText }];
   }
 
   private resolveLogoUrl(urlString?: string): string | undefined {
