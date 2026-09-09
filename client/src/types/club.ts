@@ -416,6 +416,8 @@ export interface Round {
   dueDate: string;
 }
 
+export type HandicapSystem = 'NONE' | 'MCCRAE';
+
 export interface Competition {
   id: string;
   clubId: string;
@@ -425,6 +427,7 @@ export interface Competition {
   discipline: string;
   roundCount: number;
   cardsPerRound: number;
+  handicapSystem: HandicapSystem;
   createdAt: string;
   updatedAt: string;
   rounds: Round[];
@@ -435,6 +438,7 @@ export interface CompetitionEntry {
   id: string;
   competitionId: string;
   userId: string;
+  handicap: number | null;
   user: { id: string; name: string; email: string };
 }
 
@@ -443,6 +447,7 @@ export interface ScoreCell {
   userId: string;
   cardNumber: number;
   score: number | null;
+  handicapScore: number | null;
 }
 
 export interface SheetRound {
@@ -460,8 +465,9 @@ export interface ScoreSheet {
     discipline: string;
     roundCount: number;
     cardsPerRound: number;
+    handicapSystem: HandicapSystem;
   };
-  members: { id: string; name: string; email: string }[];
+  members: { id: string; name: string; email: string; handicap: number | null }[];
   rounds: SheetRound[];
 }
 

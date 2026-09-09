@@ -38,6 +38,8 @@ const roundDueDateSchema = z.object({
     }, { message: 'Invalid date value' }),
 });
 
+const handicapSystemSchema = z.enum(['NONE', 'MCCRAE']);
+
 const createCompetitionSchema = z.object({
   seasonId: z.string().min(1),
   name: z.string().trim().min(1),
@@ -45,6 +47,7 @@ const createCompetitionSchema = z.object({
   discipline: z.string().trim().min(1).max(80).optional(),
   roundCount: z.number().int().min(1).max(52),
   cardsPerRound: z.number().int().min(1).max(20),
+  handicapSystem: handicapSystemSchema.optional(),
   rounds: z.array(roundDueDateSchema),
 }).refine(d => d.rounds.length === d.roundCount, {
   message: 'rounds array length must match roundCount',
@@ -57,6 +60,7 @@ const updateCompetitionSchema = z.object({
   discipline: z.string().trim().min(1).max(80).optional(),
   roundCount: z.number().int().min(1).max(52).optional(),
   cardsPerRound: z.number().int().min(1).max(20).optional(),
+  handicapSystem: handicapSystemSchema.optional(),
   rounds: z.array(z.object({
     roundNumber: z.number().int().min(1),
     dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/, 'Date must be in YYYY-MM-DD or ISO format')
@@ -68,8 +72,16 @@ const updateCompetitionSchema = z.object({
   })).optional(),
 });
 
+const handicapValueSchema = z.number().min(0).max(9999)
+  .refine(hasAtMostTwoDecimalPlaces, { message: 'Handicap can have up to 2 decimal places' });
+
 const enrolMembersSchema = z.object({
   userIds: z.array(z.string().min(1)).min(1),
+  handicaps: z.record(z.string(), handicapValueSchema.nullable()).optional(),
+});
+
+const updateMemberHandicapSchema = z.object({
+  handicap: handicapValueSchema.nullable(),
 });
 
 function hasAtMostTwoDecimalPlaces(value: number): boolean {
@@ -226,6 +238,25 @@ function buildMemberHistoryWhere(
 }
 
 // ---------------------------------------------------------------------------
+// Handicap systems
+// ---------------------------------------------------------------------------
+
+/**
+ * McCrae handicap formula: (GunScore - Handicap) / (100 * 31/30 - Handicap) + 100
+ */
+function computeMcCraeHandicapScore(gunScore: number, handicap: number): number | null {
+  const denominator = (100 * 31 / 30) - handicap;
+  if (denominator === 0) return null;
+  return (gunScore - handicap) / denominator + 100;
+}
+
+function computeHandicapScore(system: 'NONE' | 'MCCRAE', gunScore: number | null, handicap: number | null | undefined): number | null {
+  if (system === 'NONE' || gunScore === null || handicap === null || handicap === undefined) return null;
+  if (system === 'MCCRAE') return computeMcCraeHandicapScore(gunScore, handicap);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Season CRUD
 // ---------------------------------------------------------------------------
 
@@ -361,6 +392,7 @@ router.post('/clubs/:clubId/scoring/competitions', async (req: AuthRequest, res:
           discipline,
           roundCount: parsed.data.roundCount,
           cardsPerRound: parsed.data.cardsPerRound,
+          handicapSystem: parsed.data.handicapSystem ?? 'NONE',
         },
       });
 
@@ -545,6 +577,7 @@ router.patch('/clubs/:clubId/scoring/competitions/:competitionId', async (req: A
           ...(parsed.data.name !== undefined && { name: parsed.data.name }),
           ...(parsed.data.organiser !== undefined && { organiser: parsed.data.organiser }),
           ...(nextDiscipline !== undefined && { discipline: nextDiscipline }),
+          ...(parsed.data.handicapSystem !== undefined && { handicapSystem: parsed.data.handicapSystem }),
           roundCount: nextRoundCount,
           cardsPerRound: nextCardsPerRound,
         },
@@ -763,7 +796,7 @@ router.post('/clubs/:clubId/scoring/competitions/:competitionId/members', async 
   await prisma.$transaction(async tx => {
     // Create entries
     await tx.competitionEntry.createMany({
-      data: newUserIds.map(userId => ({ competitionId, userId })),
+      data: newUserIds.map(userId => ({ competitionId, userId, handicap: parsed.data.handicaps?.[userId] ?? null })),
     });
 
     // Create Score stubs for each new member × each round × each card
@@ -779,6 +812,31 @@ router.post('/clubs/:clubId/scoring/competitions/:competitionId/members', async 
   });
 
   res.status(201).json({ enrolled: newUserIds.length });
+});
+
+router.patch('/clubs/:clubId/scoring/competitions/:competitionId/members/:userId', async (req: AuthRequest, res: Response) => {
+  const clubId = req.params.clubId as string;
+  const competitionId = req.params.competitionId as string;
+  const userId = req.params.userId as string;
+  const isAdmin = await ensureAdminForClub(req.user!.id, clubId);
+  if (!isAdmin) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const parsed = updateMemberHandicapSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: formatZodError(parsed.error) }); return; }
+
+  const entry = await prisma.competitionEntry.findFirst({
+    where: { competitionId, userId, competition: { clubId } },
+    select: { id: true },
+  });
+  if (!entry) { res.status(404).json({ error: 'Entry not found' }); return; }
+
+  const updated = await prisma.competitionEntry.update({
+    where: { id: entry.id },
+    data: { handicap: parsed.data.handicap },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+
+  res.json(updated);
 });
 
 router.delete('/clubs/:clubId/scoring/competitions/:competitionId/members/:userId', async (req: AuthRequest, res: Response) => {
@@ -850,18 +908,23 @@ router.get('/clubs/:clubId/scoring/competitions/:competitionId/scoresheet', asyn
       discipline: comp.discipline,
       roundCount: comp.roundCount,
       cardsPerRound: comp.cardsPerRound,
+      handicapSystem: comp.handicapSystem,
     },
-    members: comp.entries.map(e => ({ id: e.user.id, name: e.user.name, email: e.user.email })),
+    members: comp.entries.map(e => ({ id: e.user.id, name: e.user.name, email: e.user.email, handicap: e.handicap })),
     rounds: comp.rounds.map(r => ({
       id: r.id,
       roundNumber: r.roundNumber,
       dueDate: r.dueDate,
-      scores: r.scores.map(s => ({
-        id: s.id,
-        userId: s.userId,
-        cardNumber: s.cardNumber,
-        score: s.score,
-      })),
+      scores: r.scores.map(s => {
+        const entry = comp.entries.find(e => e.userId === s.userId);
+        return {
+          id: s.id,
+          userId: s.userId,
+          cardNumber: s.cardNumber,
+          score: s.score,
+          handicapScore: computeHandicapScore(comp.handicapSystem, s.score, entry?.handicap),
+        };
+      }),
     })),
   });
 });
