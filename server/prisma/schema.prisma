@@ -34,6 +34,11 @@ enum BackupDataset {
   MEMBER_DEMOGRAPHICS
 }
 
+enum HandicapSystem {
+  NONE
+  MCCRAE
+}
+
 enum GoogleDriveConnectionStatus {
   ACTIVE
   DISCONNECTED
@@ -686,16 +691,17 @@ model Season {
 }
 
 model Competition {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   clubId          String
   seasonId        String
   name            String
   organiser       String?
-  discipline      String   @default("General")
+  discipline      String         @default("General")
   roundCount      Int
   cardsPerRound   Int
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  handicapSystem  HandicapSystem @default(NONE)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   club    Club              @relation(fields: [clubId], references: [id], onDelete: Cascade)
   season  Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
@@ -726,6 +732,7 @@ model CompetitionEntry {
   id            String   @id @default(cuid())
   competitionId String
   userId        String
+  handicap      Float?
   createdAt     DateTime @default(now())
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)

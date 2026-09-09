@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { ScoreSheet } from '../../types/club';
+import { computeHandicapScore } from '../../shared/handicap';
 
 interface Props {
   clubId: string;
@@ -107,6 +108,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
   }
 
   const { competition, members, rounds } = sheet;
+  const handicapSystem = competition.handicapSystem;
+  const memberHandicap = new Map<string, number | null>(members.map(m => [m.id, m.handicap]));
 
   // Build column header: Round 1 C1, Round 1 C2 … Round N Cx
   const columns: { roundId: string; roundNumber: number; dueDate: string; cardNumber: number }[] = [];
@@ -124,15 +127,26 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
     }
   }
 
+  // Compute a cell's live gun score from local (unsaved) input value
+  function cellGunScore(cellId: string): number | null {
+    const v = localValues[cellId];
+    const n = v !== undefined && v.trim() !== '' ? Number(v) : null;
+    return n !== null && isValidScoreValue(n) ? n : null;
+  }
+
+  function cellHandicapScore(memberId: string, cellId: string): number | null {
+    if (handicapSystem === 'NONE') return null;
+    return computeHandicapScore(handicapSystem, cellGunScore(cellId), memberHandicap.get(memberId));
+  }
+
   // Per-member row totals
   function memberRowTotal(memberId: string): number {
     let total = 0;
     for (const col of columns) {
       const cell = scoreLookup.get(`${col.roundId}|${memberId}|${col.cardNumber}`);
       if (cell) {
-        const v = localValues[cell.id];
-        const n = v !== undefined && v.trim() !== '' ? Number(v) : null;
-        if (n !== null && isValidScoreValue(n)) total += n;
+        const n = cellGunScore(cell.id);
+        if (n !== null) total += n;
       }
     }
     return total;
@@ -149,6 +163,20 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
       }
     }
     return count;
+  }
+
+  // Per-member handicap-adjusted row totals/count
+  function memberHandicapRowTotal(memberId: string): { total: number; count: number } {
+    let total = 0;
+    let count = 0;
+    for (const col of columns) {
+      const cell = scoreLookup.get(`${col.roundId}|${memberId}|${col.cardNumber}`);
+      if (cell) {
+        const h = cellHandicapScore(memberId, cell.id);
+        if (h !== null) { total += h; count++; }
+      }
+    }
+    return { total, count };
   }
 
   const now = new Date();
@@ -212,6 +240,12 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
             })}
             <th style={{ ...thStyle, minWidth: 60 }}>Total</th>
             <th style={{ ...thStyle, minWidth: 50 }}>Avg</th>
+            {handicapSystem !== 'NONE' && (
+              <>
+                <th style={{ ...thStyle, minWidth: 70 }}>H'cap Total</th>
+                <th style={{ ...thStyle, minWidth: 60 }}>H'cap Avg</th>
+              </>
+            )}
           </tr>
           {/* Card number sub-row */}
           <tr>
@@ -221,6 +255,12 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
             ))}
             <th style={thStyle}></th>
             <th style={thStyle}></th>
+            {handicapSystem !== 'NONE' && (
+              <>
+                <th style={thStyle}></th>
+                <th style={thStyle}></th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -228,6 +268,8 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
             const total = memberRowTotal(member.id);
             const cardCount = memberCardCount(member.id);
             const avg = cardCount > 0 ? (total / cardCount).toFixed(1) : '—';
+            const { total: handicapTotal, count: handicapCount } = memberHandicapRowTotal(member.id);
+            const handicapAvg = handicapCount > 0 ? (handicapTotal / handicapCount).toFixed(1) : '—';
 
             return (
               <tr key={member.id}>
@@ -238,6 +280,7 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
                     return <td key={i} style={tdStyle}>—</td>;
                   }
                   const status = cellStatus[cell.id] ?? 'idle';
+                  const handicapValue = handicapSystem !== 'NONE' ? cellHandicapScore(member.id, cell.id) : null;
                   return (
                     <td key={i} style={tdStyle}>
                       <input
@@ -263,17 +306,28 @@ export default function ScoreGrid({ clubId, sheet, onScoreUpdated }: Props) {
                         placeholder="—"
                         title={status === 'error' ? 'Save failed — try again' : undefined}
                       />
+                      {handicapSystem !== 'NONE' && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--gray-600)', marginTop: 2 }}>
+                          {handicapValue !== null ? handicapValue.toFixed(1) : '—'}
+                        </div>
+                      )}
                     </td>
                   );
                 })}
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{cardCount > 0 ? total : '—'}</td>
                 <td style={tdStyle}>{avg}</td>
+                {handicapSystem !== 'NONE' && (
+                  <>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{handicapCount > 0 ? handicapTotal.toFixed(1) : '—'}</td>
+                    <td style={tdStyle}>{handicapAvg}</td>
+                  </>
+                )}
               </tr>
             );
           })}
           {members.length === 0 && (
             <tr>
-              <td colSpan={columns.length + 3} style={{ ...tdStyle, color: 'var(--gray-600)', padding: '1rem' }}>
+              <td colSpan={columns.length + 3 + (handicapSystem !== 'NONE' ? 2 : 0)} style={{ ...tdStyle, color: 'var(--gray-600)', padding: '1rem' }}>
                 No members enrolled yet.
               </td>
             </tr>
