@@ -159,9 +159,9 @@ export class WalletWalletService {
       logoText: params.clubName,
       organizationName: params.clubName,
       colorPreset: DEFAULT_COLOR_PRESET,
-      color,
-      logoURL: logoUrl,
-      iconURL: logoUrl,
+      //color,
+      //logoURL: logoUrl,
+      //iconURL: logoUrl,
       primaryFields: [
         {
           label: params.clubName,
