@@ -34,6 +34,9 @@ function resolveTrustProxy(): boolean | number | string | string[] {
   if (normalized === 'false') {
     return false;
   }
+  if (/^\d+$/.test(configuredValue)) {
+    return Number(configuredValue);
+  }
 
   return configuredValue;
 }
