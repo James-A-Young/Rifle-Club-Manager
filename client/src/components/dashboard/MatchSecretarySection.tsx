@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api';
-import { Season, Competition, CompetitionEntry, ScoreSheet, Member, PracticeCardRecord } from '../../types/club';
+import { Season, Competition, CompetitionEntry, ScoreSheet, Member, PracticeCardRecord, HandicapSystem } from '../../types/club';
 import ScoreGrid from './ScoreGrid';
 import CompetitionForm, { CompetitionFormData } from './CompetitionForm';
 
@@ -23,6 +23,7 @@ interface CompetitionEditForm {
   discipline: string;
   roundCount: number;
   cardsPerRound: number;
+  handicapSystem: HandicapSystem;
   rounds: CompetitionEditRound[];
 }
 
@@ -92,6 +93,9 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
   const [sheetLoading, setSheetLoading] = useState<Record<string, boolean>>({});
   const [enrolledMembers, setEnrolledMembers] = useState<Record<string, CompetitionEntry[]>>({});
   const [enrollTab, setEnrollTab] = useState<Record<string, 'scores' | 'members'>>({});
+  // Handicap input state for new (not-yet-enrolled) members, keyed by `${compId}:${userId}`
+  const [newMemberHandicap, setNewMemberHandicap] = useState<Record<string, string>>({});
+  const [handicapSaving, setHandicapSaving] = useState<Record<string, boolean>>({});
 
   const approvedMembers = members.filter(m => m.status === 'APPROVED');
 
@@ -238,6 +242,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
       discipline: comp.discipline,
       roundCount: comp.roundCount,
       cardsPerRound: comp.cardsPerRound,
+      handicapSystem: comp.handicapSystem,
       rounds: comp.rounds
         .slice()
         .sort((a, b) => a.roundNumber - b.roundNumber)
@@ -299,6 +304,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
         discipline: editForm.discipline.trim(),
         roundCount: editForm.roundCount,
         cardsPerRound: editForm.cardsPerRound,
+        handicapSystem: editForm.handicapSystem,
         rounds: editForm.rounds.map(r => ({ roundNumber: r.roundNumber, dueDate: r.dueDate })),
       });
 
@@ -375,14 +381,57 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
   }
 
   async function enrolMember(compId: string, userId: string) {
+    const raw = newMemberHandicap[`${compId}:${userId}`];
+    const trimmed = raw?.trim() ?? '';
+    let handicap: number | null = null;
+    if (trimmed !== '') {
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 9999 || !hasAtMostTwoDecimalPlaces(parsed)) {
+        setError('Handicap must be between 0 and 9999 with up to 2 decimal places');
+        return;
+      }
+      handicap = parsed;
+    }
     try {
-      await api.post(`/api/clubs/${clubId}/scoring/competitions/${compId}/members`, { userIds: [userId] });
+      await api.post(`/api/clubs/${clubId}/scoring/competitions/${compId}/members`, {
+        userIds: [userId],
+        ...(handicap !== null && { handicaps: { [userId]: handicap } }),
+      });
+      setNewMemberHandicap(prev => { const n = { ...prev }; delete n[`${compId}:${userId}`]; return n; });
       await loadEnrolledMembers(compId);
       // Reload score sheet so new rows appear
       setSheets(prev => { const n = { ...prev }; delete n[compId]; return n; });
       await loadScoreSheet(compId);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error enrolling member');
+    }
+  }
+
+  async function updateMemberHandicap(compId: string, userId: string, raw: string) {
+    const trimmed = raw.trim();
+    let handicap: number | null = null;
+    if (trimmed !== '') {
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 9999 || !hasAtMostTwoDecimalPlaces(parsed)) {
+        setError('Handicap must be between 0 and 9999 with up to 2 decimal places');
+        return;
+      }
+      handicap = parsed;
+    }
+    const key = `${compId}:${userId}`;
+    setHandicapSaving(prev => ({ ...prev, [key]: true }));
+    try {
+      await api.patch(`/api/clubs/${clubId}/scoring/competitions/${compId}/members/${userId}`, { handicap });
+      setEnrolledMembers(prev => ({
+        ...prev,
+        [compId]: (prev[compId] ?? []).map(e => e.userId === userId ? { ...e, handicap } : e),
+      }));
+      setSheets(prev => { const n = { ...prev }; delete n[compId]; return n; });
+      if (openCompId === compId) await loadScoreSheet(compId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error updating handicap');
+    } finally {
+      setHandicapSaving(prev => ({ ...prev, [key]: false }));
     }
   }
 
@@ -746,6 +795,7 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                       <span style={{ color: 'var(--gray-600)', marginLeft: '0.75rem', fontSize: '0.8rem' }}>
                         {comp.roundCount} rounds × {comp.cardsPerRound} cards
                         {comp._count !== undefined && ` · ${comp._count.entries} members`}
+                        {comp.handicapSystem !== 'NONE' && ` · ${comp.handicapSystem} handicap`}
                       </span>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -829,6 +879,16 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                                   setEditForm(prev => prev ? { ...prev, cardsPerRound: value } : prev);
                                 }}
                               />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label>Handicap System</label>
+                              <select
+                                value={editForm.handicapSystem}
+                                onChange={e => setEditForm(prev => prev ? { ...prev, handicapSystem: e.target.value as HandicapSystem } : prev)}
+                              >
+                                <option value="NONE">None</option>
+                                <option value="MCCRAE">McCrae</option>
+                              </select>
                             </div>
                           </div>
 
@@ -929,6 +989,21 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                                     <tr key={entry.userId}>
                                       <td>{entry.user.name}</td>
                                       <td style={{ color: 'var(--gray-600)', fontSize: '0.8rem' }}>{entry.user.email}</td>
+                                      {comp.handicapSystem !== 'NONE' && (
+                                        <td>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={9999}
+                                            step="0.01"
+                                            defaultValue={entry.handicap ?? ''}
+                                            placeholder="Handicap"
+                                            disabled={handicapSaving[`${comp.id}:${entry.userId}`]}
+                                            onBlur={e => updateMemberHandicap(comp.id, entry.userId, e.target.value)}
+                                            style={{ width: 80 }}
+                                          />
+                                        </td>
+                                      )}
                                       <td>
                                         <button
                                           className="btn btn-danger btn-sm"
@@ -956,6 +1031,20 @@ export default function MatchSecretarySection({ clubId, members, disciplineOptio
                                     <tr key={m.userId}>
                                       <td>{m.user.name}</td>
                                       <td style={{ color: 'var(--gray-600)', fontSize: '0.8rem' }}>{m.user.email}</td>
+                                      {comp.handicapSystem !== 'NONE' && (
+                                        <td>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={9999}
+                                            step="0.01"
+                                            value={newMemberHandicap[`${comp.id}:${m.userId}`] ?? ''}
+                                            placeholder="Handicap"
+                                            onChange={e => setNewMemberHandicap(prev => ({ ...prev, [`${comp.id}:${m.userId}`]: e.target.value }))}
+                                            style={{ width: 80 }}
+                                          />
+                                        </td>
+                                      )}
                                       <td>
                                         <button
                                           className="btn btn-primary btn-sm"

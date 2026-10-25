@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { HandicapSystem } from '../../types/club';
 
 interface RoundInput {
   dueDate: string;
@@ -11,6 +12,7 @@ export interface CompetitionFormData {
   discipline: string;
   roundCount: number;
   cardsPerRound: number;
+  handicapSystem: HandicapSystem;
   rounds: RoundInput[];
 }
 
@@ -28,6 +30,7 @@ export default function CompetitionForm({ seasonId, clubId, disciplineOptions, o
   const [discipline, setDiscipline] = useState(disciplineOptions[0] ?? '');
   const [roundCount, setRoundCount] = useState(6);
   const [cardsPerRound, setCardsPerRound] = useState(2);
+  const [handicapSystem, setHandicapSystem] = useState<HandicapSystem>('NONE');
   const [rounds, setRounds] = useState<RoundInput[]>(() =>
     Array.from({ length: 6 }, () => ({ dueDate: '' }))
   );
@@ -73,6 +76,7 @@ export default function CompetitionForm({ seasonId, clubId, disciplineOptions, o
         discipline: discipline.trim(),
         roundCount,
         cardsPerRound,
+        handicapSystem,
         rounds,
       });
     } catch (err) {
@@ -132,6 +136,13 @@ export default function CompetitionForm({ seasonId, clubId, disciplineOptions, o
             value={cardsPerRound}
             onChange={e => setCardsPerRound(Math.max(1, Number(e.target.value)))}
           />
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Handicap System</label>
+          <select value={handicapSystem} onChange={e => setHandicapSystem(e.target.value as HandicapSystem)}>
+            <option value="NONE">None</option>
+            <option value="MCCRAE">McCrae</option>
+          </select>
         </div>
       </div>
 
